@@ -236,6 +236,28 @@ struct StreamInfo: Codable {
     }
 }
 
+// MARK: - Favorite Song Model
+
+struct FavoriteSong: Identifiable, Codable {
+    let id: String
+    let title: String
+    let artist: String?
+    let thumbnailURL: String?
+    let duration: TimeInterval?
+    let videoId: String
+    let addedDate: Date
+    
+    init(from searchResult: SearchResult) {
+        self.id = searchResult.id
+        self.title = searchResult.title
+        self.artist = searchResult.artist
+        self.thumbnailURL = searchResult.thumbnailURL
+        self.duration = searchResult.duration
+        self.videoId = searchResult.videoId ?? ""
+        self.addedDate = Date()
+    }
+}
+
 // MARK: - Service Request/Response Models
 
 struct SearchRequest: Codable {

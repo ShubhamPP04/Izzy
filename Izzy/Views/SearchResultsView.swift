@@ -19,6 +19,7 @@ struct SearchResultsView: View {
     @ObservedObject var musicSearchManager: MusicSearchManager
     @ObservedObject var playbackManager: PlaybackManager
     @ObservedObject var windowManager: WindowManager
+    var searchState: SearchState? // Add this to access favorites functionality
     
     @State private var expandedAlbums: Set<String> = []
     @State private var expandedPlaylists: Set<String> = []
@@ -51,6 +52,7 @@ struct SearchResultsView: View {
                         albumTracks: albumTracks,
                         playlistTracks: playlistTracks,
                         artistSongs: artistSongs,
+                        searchState: searchState, // Pass searchState down
                         onResultTap: { result, context in
                             handleResultSelection(result, context: context)
                         },
@@ -264,6 +266,7 @@ struct SearchCategorySection: View {
     let albumTracks: [String: [SearchResult]]
     let playlistTracks: [String: [SearchResult]]
     let artistSongs: [String: [SearchResult]]
+    var searchState: SearchState? // Add this parameter
     let onResultTap: (SearchResult, PlaybackContext) -> Void
     let onAlbumExpand: (SearchResult) -> Void
     let onPlaylistExpand: (SearchResult) -> Void
@@ -311,6 +314,7 @@ struct SearchCategorySection: View {
                         isSelected: selectedCategory == category && selectedIndex == index,
                         isCurrentlyPlaying: currentTrack?.videoId == result.videoId && !(result.videoId?.isEmpty ?? true),
                         isExpanded: isExpanded(result),
+                        searchState: searchState, // Pass searchState down
                         onTap: { 
                             if result.type == .album {
                                 onAlbumExpand(result)
@@ -336,6 +340,7 @@ struct SearchCategorySection: View {
                                         isSelected: false,
                                         isCurrentlyPlaying: currentTrack?.videoId == track.videoId && !(track.videoId?.isEmpty ?? true),
                                         isExpanded: false,
+                                        searchState: searchState, // Pass searchState down
                                         onTap: { 
                                             // Determine context based on parent result
                                             let context: PlaybackContext
@@ -411,6 +416,7 @@ struct SearchResultRow: View {
     let isSelected: Bool
     let isCurrentlyPlaying: Bool
     let isExpanded: Bool
+    var searchState: SearchState? // Add this parameter
     let onTap: () -> Void
     
     @State private var isHovered = false
@@ -489,6 +495,19 @@ struct SearchResultRow: View {
             }
             
             Spacer()
+            
+            // Favorite button (only for songs and videos)
+            if (category == .song || category == .video) && searchState != nil {
+                Button(action: {
+                    searchState?.toggleFavorite(result)
+                }) {
+                    Image(systemName: (searchState?.isFavorited(result) ?? false) ? "heart.fill" : "heart")
+                        .foregroundColor((searchState?.isFavorited(result) ?? false) ? .red : .secondary)
+                        .font(.system(size: 14, weight: .medium))
+                }
+                .buttonStyle(PlainButtonStyle())
+                .opacity(isHovered ? 1.0 : 0.0)
+            }
             
             // Expand/collapse indicator for albums, playlists, and artists
             if result.type == .album || result.type == .playlist || result.type == .artist {

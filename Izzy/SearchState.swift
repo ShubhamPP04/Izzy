@@ -20,6 +20,8 @@ class SearchState: ObservableObject {
         }
     }
     @Published var showResults: Bool = true
+    @Published var favorites: [FavoriteSong] = []
+    @Published var recentlyPlayed: [FavoriteSong] = [] // Add this line for recently played songs
     
     // Music search integration
     let musicSearchManager = MusicSearchManager()
@@ -32,14 +34,169 @@ class SearchState: ObservableObject {
     private var cancellables = Set<AnyCancellable>()
     private var isRestoringState: Bool = false
     
+    private let favoritesKey = "IzzyFavorites"
+    private let recentlyPlayedKey = "IzzyRecentlyPlayed" // Add this line for persistence
+    
     init() {
         setupSearchObserver()
         setupMusicSearchObserver()
+        setupPlaybackObserver() // Add this line to observe playback changes
+        loadFavorites()
+        loadRecentlyPlayed() // Add this line to load recently played songs
     }
     
     deinit {
         searchCancellable?.cancel()
         cancellables.removeAll()
+    }
+    
+    // Add this function to observe playback changes
+    private func setupPlaybackObserver() {
+        // Subscribe to playback manager updates
+        playbackManager.$currentTrack
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] track in
+                if let track = track {
+                    self?.addRecentlyPlayed(track)
+                }
+            }
+            .store(in: &cancellables)
+    }
+    
+    // Add this function to add songs to recently played
+    func addRecentlyPlayed(_ track: Track) {
+        // Convert Track to FavoriteSong
+        let searchResult = SearchResult(
+            id: track.id,
+            type: .song,
+            title: track.title,
+            artist: track.artist,
+            thumbnailURL: track.thumbnailURL,
+            duration: track.duration,
+            explicit: false,
+            videoId: track.videoId,
+            browseId: nil,
+            year: track.year,
+            playCount: nil
+        )
+        
+        let favoriteSong = FavoriteSong(from: searchResult)
+        
+        // Remove if already exists
+        recentlyPlayed.removeAll { $0.videoId == favoriteSong.videoId }
+        
+        // Add to beginning of list (most recent first)
+        recentlyPlayed.insert(favoriteSong, at: 0)
+        
+        // Limit to 50 recently played songs
+        if recentlyPlayed.count > 50 {
+            recentlyPlayed.removeLast()
+        }
+        
+        // Save to persistence
+        saveRecentlyPlayed()
+    }
+    
+    // Add this function to remove a song from recently played
+    func removeRecentlyPlayed(_ favoriteSong: FavoriteSong) {
+        recentlyPlayed.removeAll { $0.videoId == favoriteSong.videoId }
+        saveRecentlyPlayed()
+    }
+    
+    // Add this function to clear all recently played songs
+    func clearRecentlyPlayed() {
+        recentlyPlayed.removeAll()
+        saveRecentlyPlayed()
+    }
+    
+    // MARK: - Favorites Management
+    
+    func addFavorite(_ searchResult: SearchResult) {
+        // Check if already favorited
+        if isFavorited(searchResult) {
+            return
+        }
+        
+        let favoriteSong = FavoriteSong(from: searchResult)
+        favorites.insert(favoriteSong, at: 0) // Add to beginning of list
+        saveFavorites()
+    }
+    
+    func removeFavorite(_ searchResult: SearchResult) {
+        favorites.removeAll { $0.videoId == searchResult.videoId }
+        saveFavorites()
+    }
+    
+    func toggleFavorite(_ searchResult: SearchResult) {
+        if isFavorited(searchResult) {
+            removeFavorite(searchResult)
+        } else {
+            addFavorite(searchResult)
+        }
+    }
+    
+    func isFavorited(_ searchResult: SearchResult) -> Bool {
+        return favorites.contains { $0.videoId == searchResult.videoId }
+    }
+    
+    func reorderFavorites(from sourceIndex: Int, to destinationIndex: Int) {
+        // Make sure indices are valid
+        guard sourceIndex < favorites.count && destinationIndex < favorites.count else { return }
+        guard sourceIndex != destinationIndex else { return }
+        
+        // Move the favorite
+        let movedFavorite = favorites.remove(at: sourceIndex)
+        favorites.insert(movedFavorite, at: destinationIndex)
+        saveFavorites()
+    }
+    
+    func updateFavoritesOrder(_ newOrder: [FavoriteSong]) {
+        favorites = newOrder
+        saveFavorites()
+    }
+    
+    // MARK: - Persistence
+    
+    private func saveFavorites() {
+        do {
+            let data = try JSONEncoder().encode(favorites)
+            UserDefaults.standard.set(data, forKey: favoritesKey)
+        } catch {
+            print("❌ Failed to save favorites: \(error)")
+        }
+    }
+    
+    private func loadFavorites() {
+        guard let data = UserDefaults.standard.data(forKey: favoritesKey) else { return }
+        
+        do {
+            favorites = try JSONDecoder().decode([FavoriteSong].self, from: data)
+        } catch {
+            print("❌ Failed to load favorites: \(error)")
+            favorites = []
+        }
+    }
+    
+    // Change this function from private to public
+    func saveRecentlyPlayed() {
+        do {
+            let data = try JSONEncoder().encode(recentlyPlayed)
+            UserDefaults.standard.set(data, forKey: recentlyPlayedKey)
+        } catch {
+            print("❌ Failed to save recently played: \(error)")
+        }
+    }
+    
+    // Add this function to load recently played songs
+    private func loadRecentlyPlayed() {
+        guard let data = UserDefaults.standard.data(forKey: recentlyPlayedKey) else { return }
+        
+        do {
+            recentlyPlayed = try JSONDecoder().decode([FavoriteSong].self, from: data)
+        } catch {
+            print("❌ Failed to load recently played: \(error)")
+            recentlyPlayed = []
+        }
     }
     
     private func setupSearchObserver() {

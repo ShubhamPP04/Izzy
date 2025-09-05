@@ -1,11 +1,11 @@
 //
-//  RecentlyPlayedView.swift
+//  FavoritesView.swift
 //  Izzy
 //
 
 import SwiftUI
 
-struct RecentlyPlayedView: View {
+struct FavoritesView: View {
     @ObservedObject var searchState: SearchState
     @State private var editMode = false
     
@@ -13,21 +13,21 @@ struct RecentlyPlayedView: View {
         VStack(alignment: .leading, spacing: 12) {
             // Header
             HStack {
-                Image(systemName: "clock.fill")
-                    .foregroundColor(.blue)
+                Image(systemName: "heart.fill")
+                    .foregroundColor(.red)
                     .font(.system(size: 16, weight: .medium))
                 
-                Text("Recently Played")
+                Text("Favorites")
                     .font(.system(size: 16, weight: .semibold))
                     .foregroundColor(.primary)
                 
                 Spacer()
                 
-                Text("\(searchState.recentlyPlayed.count)")
+                Text("\(searchState.favorites.count)")
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(.secondary)
                 
-                if !searchState.recentlyPlayed.isEmpty {
+                if !searchState.favorites.isEmpty {
                     Button(action: {
                         editMode.toggle()
                     }) {
@@ -40,14 +40,14 @@ struct RecentlyPlayedView: View {
             }
             .padding(.horizontal, 4)
             
-            // Recently played grid/list
-            if searchState.recentlyPlayed.isEmpty {
+            // Favorites grid/list
+            if searchState.favorites.isEmpty {
                 HStack {
-                    Image(systemName: "clock")
+                    Image(systemName: "heart")
                         .foregroundColor(.secondary)
                         .font(.system(size: 14))
                     
-                    Text("No recently played songs yet. Play some music to see them here.")
+                    Text("No favorites yet. Hover over songs and click the heart to add favorites.")
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                 }
@@ -56,7 +56,7 @@ struct RecentlyPlayedView: View {
                 if editMode {
                     // Reorderable list view
                     List {
-                        ForEach(searchState.recentlyPlayed) { recentlyPlayed in
+                        ForEach(searchState.favorites) { favorite in
                             HStack {
                                 // Drag handle
                                 Image(systemName: "line.horizontal.3")
@@ -64,8 +64,8 @@ struct RecentlyPlayedView: View {
                                     .font(.system(size: 16, weight: .medium))
                                     .padding(.trailing, 8)
                                 
-                                // Recently played item
-                                RecentlyPlayedItemView(recentlyPlayed: recentlyPlayed, searchState: searchState)
+                                // Favorite item
+                                FavoriteItemView(favorite: favorite, searchState: searchState)
                                 
                                 Spacer()
                             }
@@ -75,15 +75,14 @@ struct RecentlyPlayedView: View {
                             )
                         }
                         .onMove { indices, newOffset in
-                            // Convert recently played to a mutable array
-                            var recentlyPlayedArray = searchState.recentlyPlayed
+                            // Convert favorites to a mutable array
+                            var favoritesArray = searchState.favorites
                             
                             // Perform the move operation
-                            recentlyPlayedArray.move(fromOffsets: indices, toOffset: newOffset)
+                            favoritesArray.move(fromOffsets: indices, toOffset: newOffset)
                             
                             // Update the searchState with the new order
-                            searchState.recentlyPlayed = recentlyPlayedArray
-                            searchState.saveRecentlyPlayed()
+                            searchState.updateFavoritesOrder(favoritesArray)
                         }
                     }
                     .padding(.vertical, 8)
@@ -94,8 +93,8 @@ struct RecentlyPlayedView: View {
                             GridItem(.flexible()),
                             GridItem(.flexible())
                         ], spacing: 12) {
-                            ForEach(searchState.recentlyPlayed) { recentlyPlayed in
-                                RecentlyPlayedItemView(recentlyPlayed: recentlyPlayed, searchState: searchState)
+                            ForEach(searchState.favorites) { favorite in
+                                FavoriteItemView(favorite: favorite, searchState: searchState)
                             }
                         }
                         .padding(.vertical, 8)
@@ -108,14 +107,14 @@ struct RecentlyPlayedView: View {
     }
 }
 
-struct RecentlyPlayedItemView: View {
-    let recentlyPlayed: FavoriteSong
+struct FavoriteItemView: View {
+    let favorite: FavoriteSong
     @ObservedObject var searchState: SearchState
     
     var body: some View {
         HStack(spacing: 8) {
             // Thumbnail
-            AsyncImage(url: URL(string: recentlyPlayed.thumbnailURL ?? "")) { image in
+            AsyncImage(url: URL(string: favorite.thumbnailURL ?? "")) { image in
                 image
                     .resizable()
                     .aspectRatio(contentMode: .fill)
@@ -133,19 +132,19 @@ struct RecentlyPlayedItemView: View {
             
             // Content
             VStack(alignment: .leading, spacing: 2) {
-                Text(recentlyPlayed.title)
+                Text(favorite.title)
                     .font(.system(size: 13, weight: .medium))
                     .foregroundColor(.primary)
                     .lineLimit(1)
                 
-                if let artist = recentlyPlayed.artist, !artist.isEmpty {
+                if let artist = favorite.artist, !artist.isEmpty {
                     Text(artist)
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
                         .lineLimit(1)
                 }
                 
-                if let duration = recentlyPlayed.duration {
+                if let duration = favorite.duration {
                     Text(duration.formattedDuration)
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
@@ -154,9 +153,23 @@ struct RecentlyPlayedItemView: View {
             
             Spacer()
             
-            // Remove recently played button
+            // Remove favorite button
             Button(action: {
-                searchState.removeRecentlyPlayed(recentlyPlayed)
+                // Create a SearchResult from the favorite to remove it
+                let searchResult = SearchResult(
+                    id: favorite.id,
+                    type: .song,
+                    title: favorite.title,
+                    artist: favorite.artist,
+                    thumbnailURL: favorite.thumbnailURL,
+                    duration: favorite.duration,
+                    explicit: false,
+                    videoId: favorite.videoId,
+                    browseId: nil,
+                    year: nil,
+                    playCount: nil
+                )
+                searchState.removeFavorite(searchResult)
             }) {
                 Image(systemName: "xmark")
                     .foregroundColor(.secondary)
@@ -169,31 +182,31 @@ struct RecentlyPlayedItemView: View {
         .padding(.vertical, 6)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(searchState.playbackManager.currentTrack?.videoId == recentlyPlayed.videoId ? 
+                .fill(searchState.playbackManager.currentTrack?.videoId == favorite.videoId ? 
                       Color.blue.opacity(0.3) : Color.primary.opacity(0.05))
         )
         .onTapGesture {
-            // Create a SearchResult from the recently played to play it
+            // Create a SearchResult from the favorite to play it
             let searchResult = SearchResult(
-                id: recentlyPlayed.id,
+                id: favorite.id,
                 type: .song,
-                title: recentlyPlayed.title,
-                artist: recentlyPlayed.artist,
-                thumbnailURL: recentlyPlayed.thumbnailURL,
-                duration: recentlyPlayed.duration,
+                title: favorite.title,
+                artist: favorite.artist,
+                thumbnailURL: favorite.thumbnailURL,
+                duration: favorite.duration,
                 explicit: false,
-                videoId: recentlyPlayed.videoId,
+                videoId: favorite.videoId,
                 browseId: nil,
                 year: nil,
                 playCount: nil
             )
             
-            // Play the recently played song
+            // Play the favorite song in the order of the favorites list
             Task {
                 let track = Track(from: searchResult)
                 
-                // Create queue from all recently played in their current order
-                let allTracks = searchState.recentlyPlayed.map { favorite in
+                // Create queue from all favorites in their current order
+                let allTracks = searchState.favorites.map { favorite in
                     SearchResult(
                         id: favorite.id,
                         type: .song,
@@ -220,7 +233,7 @@ struct RecentlyPlayedItemView: View {
 }
 
 #Preview {
-    RecentlyPlayedView(searchState: SearchState())
+    FavoritesView(searchState: SearchState())
         .frame(width: 600, height: 400)
         .background(Color.black.opacity(0.1))
 }

@@ -10,33 +10,97 @@ import SwiftUI
 struct MusicSearchView: View {
     @ObservedObject var searchState: SearchState
     @ObservedObject var windowManager: WindowManager
+    @State private var selectedTab = 0 // 0 = Search, 1 = Favorites, 2 = Recently Played
     
     var body: some View {
         VStack(spacing: 0) {
-            // Search Bar
-            SearchBarView(
-                searchState: searchState,
-                windowManager: windowManager
-            )
-            
-            // Search Results
-            if searchState.showResults {
-                SearchResultsView(
-                    musicSearchManager: searchState.musicSearchManager,
-                    playbackManager: searchState.playbackManager,
-                    windowManager: windowManager
-                )
-                .transition(.opacity.combined(with: .move(edge: .top)))
-                .onAppear {
-                    print("🎯 SearchResultsView appeared")
-                }
-            } else {
-                SearchStateIndicator(musicSearchManager: searchState.musicSearchManager)
-                    .frame(maxHeight: 60)
-                    .transition(.opacity)
-                    .onAppear {
-                        print("🎯 SearchStateIndicator appeared")
+            // Tab selector
+            HStack {
+                Button(action: {
+                    selectedTab = 0
+                }) {
+                    HStack {
+                        Image(systemName: "magnifyingglass")
+                        Text("Search")
                     }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                }
+                .buttonStyle(PlainButtonStyle())
+                .background(selectedTab == 0 ? Color.blue.opacity(0.2) : Color.clear)
+                .cornerRadius(8)
+                
+                Button(action: {
+                    selectedTab = 1
+                }) {
+                    HStack {
+                        Image(systemName: "heart.fill")
+                        Text("Favorites")
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                }
+                .buttonStyle(PlainButtonStyle())
+                .background(selectedTab == 1 ? Color.blue.opacity(0.2) : Color.clear)
+                .cornerRadius(8)
+                
+                Button(action: {
+                    selectedTab = 2
+                }) {
+                    HStack {
+                        Image(systemName: "clock.fill")
+                        Text("Recently Played")
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                }
+                .buttonStyle(PlainButtonStyle())
+                .background(selectedTab == 2 ? Color.blue.opacity(0.2) : Color.clear)
+                .cornerRadius(8)
+                
+                Spacer()
+            }
+            .padding(.horizontal, 20)
+            .padding(.top, 16)
+            
+            // Content based on selected tab
+            if selectedTab == 0 {
+                // Search Content
+                VStack(spacing: 0) {
+                    SearchBarView(
+                        searchState: searchState,
+                        windowManager: windowManager
+                    )
+                    
+                    // Search Results
+                    if searchState.showResults {
+                        SearchResultsView(
+                            musicSearchManager: searchState.musicSearchManager,
+                            playbackManager: searchState.playbackManager,
+                            windowManager: windowManager,
+                            searchState: searchState
+                        )
+                        .transition(.opacity.combined(with: .move(edge: .top)))
+                        .onAppear {
+                            print("🎯 SearchResultsView appeared")
+                        }
+                    } else {
+                        SearchStateIndicator(musicSearchManager: searchState.musicSearchManager)
+                            .frame(maxHeight: 60)
+                            .transition(.opacity)
+                            .onAppear {
+                                print("🎯 SearchStateIndicator appeared")
+                            }
+                    }
+                }
+            } else if selectedTab == 1 {
+                // Favorites Content
+                FavoritesView(searchState: searchState)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                // Recently Played Content
+                RecentlyPlayedView(searchState: searchState)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             
             // Playback Controls (show when there's a current track OR when there's a playback error OR when buffering)
@@ -57,6 +121,7 @@ struct MusicSearchView: View {
         .padding(.vertical, 16)
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: searchState.showResults)
         .animation(.spring(response: 0.3, dampingFraction: 0.9), value: searchState.playbackManager.currentTrack != nil)
+        .animation(.spring(response: 0.3, dampingFraction: 0.9), value: selectedTab)
         .onReceive(searchState.playbackManager.$currentTrack) { currentTrack in
             // Force UI update when currentTrack changes
             print("🎮 PlaybackManager currentTrack changed: \(currentTrack?.title ?? "nil")")
