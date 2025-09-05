@@ -1,0 +1,23 @@
+# Python dependencies for Izzy Music Player
+# YouTube Music API integration
+ytmusicapi>=1.7.0
+
+# Video/audio stream extraction
+yt-dlp>=2023.12.30
+
+# HTTP requests
+requests>=2.31.0
+
+# JSON handling (built-in, but specified for clarity)
+# json (built-in)
+
+# System integration (built-in)
+# subprocess (built-in)
+# sys (built-in)
+# os (built-in)
+
+# Optional: Enhanced logging
+# loguru>=0.7.0
+
+# Optional: Better error handling
+# rich>=13.0.0
