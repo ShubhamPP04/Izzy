@@ -1,0 +1,54 @@
+{
+  "latest": {
+    "version": "1.0.3",
+    "build": "3",
+    "releaseDate": "2025-09-06",
+    "downloadURL": "https://github.com/ShubhamPP04/Izzy/releases/latest",
+    "releaseNotesURL": "https://github.com/ShubhamPP04/Izzy/releases/latest",
+    "minimumOSVersion": "15.5",
+    "features": [
+      "Real-time YouTube Music search with intelligent suggestions",
+      "Global hotkey support (Option + Space)",
+      "Floating window interface that appears above all applications",
+      "Persistent playback state and search context",
+      "Recently played music tracking",
+      "Native macOS media key integration",
+      "Auto-update functionality"
+    ]
+  },
+  "releaseNotes": [
+    {
+      "version": "1.0.3",
+      "date": "2025-09-06",
+      "changes": [
+        "Updated to version 1.0.3",
+        "Improved auto-update functionality",
+        "Enhanced error handling for network requests",
+        "Better user feedback for update checks"
+      ]
+    },
+    {
+      "version": "1.0.1",
+      "date": "2025-09-06",
+      "changes": [
+        "Added auto-update functionality",
+        "Improved update checking reliability",
+        "Added option to enable/disable automatic updates",
+        "Enhanced update notification system"
+      ]
+    },
+    {
+      "version": "1.0",
+      "date": "2025-07-26",
+      "changes": [
+        "Initial release of Izzy",
+        "Real-time YouTube Music search with intelligent suggestions",
+        "Global hotkey support (Option + Space)",
+        "Floating window interface that appears above all applications",
+        "Persistent playback state and search context",
+        "Recently played music tracking",
+        "Native macOS media key integration"
+      ]
+    }
+  ]
+}

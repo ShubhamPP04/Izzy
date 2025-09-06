@@ -1,0 +1,58 @@
+<?xml version="1.0" encoding="utf-8"?>
+<rss version="2.0" xmlns:sparkle="http://www.andymatuschak.org/xml-namespaces/sparkle">
+  <channel>
+    <title>Izzy Changelog</title>
+    <link>https://yourwebsite.com/izzy/appcast.xml</link>
+    <description>Most recent changes with links to updates.</description>
+    <language>en</language>
+    
+    <!-- Version 1.0.1 -->
+    <item>
+      <title>Version 1.0.1</title>
+      <description>
+        <![CDATA[
+          <ul>
+            <li>Added auto-update functionality</li>
+            <li>Improved update checking reliability</li>
+            <li>Added option to enable/disable automatic updates</li>
+            <li>Enhanced update notification system</li>
+          </ul>
+        ]]>
+      </description>
+      <pubDate>Fri, 06 Sep 2025 12:00:00 +0000</pubDate>
+      <sparkle:version>2</sparkle:version>
+      <sparkle:shortVersionString>1.0.1</sparkle:shortVersionString>
+      <enclosure url="https://yourwebsite.com/izzy/Izzy.dmg"
+                 sparkle:version="2"
+                 sparkle:shortVersionString="1.0.1"
+                 length="16839788"
+                 type="application/octet-stream" />
+    </item>
+    
+    <!-- Initial release -->
+    <item>
+      <title>Version 1.0</title>
+      <description>
+        <![CDATA[
+          <ul>
+            <li>Initial release of Izzy</li>
+            <li>Real-time YouTube Music search with intelligent suggestions</li>
+            <li>Global hotkey support (Option + Space)</li>
+            <li>Floating window interface that appears above all applications</li>
+            <li>Persistent playback state and search context</li>
+            <li>Recently played music tracking</li>
+            <li>Native macOS media key integration</li>
+          </ul>
+        ]]>
+      </description>
+      <pubDate>Sat, 26 Jul 2025 12:00:00 +0000</pubDate>
+      <sparkle:version>1</sparkle:version>
+      <sparkle:shortVersionString>1.0</sparkle:shortVersionString>
+      <enclosure url="https://yourwebsite.com/izzy/Izzy.dmg"
+                 sparkle:version="1"
+                 sparkle:shortVersionString="1.0"
+                 length="16839788"
+                 type="application/octet-stream" />
+    </item>
+  </channel>
+</rss>

@@ -55,6 +55,23 @@ else
   echo "⚠️ ytmusic_service.py not found at repo root; skipping copy"
 fi
 
+# Copy update files
+echo "📦 Bundling update files..."
+if [ -f "update.json" ]; then
+  cp "update.json" "$RESOURCES_DIR/"
+  echo "✅ Copied update.json"
+fi
+
+if [ -f "appcast.xml" ]; then
+  cp "appcast.xml" "$RESOURCES_DIR/"
+  echo "✅ Copied appcast.xml"
+fi
+
+if [ -f "release-notes.html" ]; then
+  cp "release-notes.html" "$RESOURCES_DIR/"
+  echo "✅ Copied release-notes.html"
+fi
+
 # Copy virtual environment or runtime if present
 if [ -d "music_env" ]; then
   rsync -a --delete --exclude "**/__pycache__" --exclude "**/*.pyc" "music_env" "$RESOURCES_DIR/"

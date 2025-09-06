@@ -13,10 +13,12 @@ class AppCoordinator: ObservableObject {
     private let windowManager = WindowManager()
     private let hotkeyManager = GlobalHotkeyManager()
     private var appIsActive = false
+    private var updateCheckTimer: Timer?
     
     init() {
         setupCoordination()
         setupAppActivityObserver()
+        startPeriodicUpdateChecks()
     }
     
     private func setupCoordination() {
@@ -43,6 +45,19 @@ class AppCoordinator: ObservableObject {
             queue: .main
         ) { [weak self] _ in
             self?.handleAppResignActive()
+        }
+    }
+    
+    // Start periodic update checks
+    private func startPeriodicUpdateChecks() {
+        // Check for updates every 24 hours (86400 seconds)
+        updateCheckTimer = Timer.scheduledTimer(withTimeInterval: 86400, repeats: true) { _ in
+            UpdateManager.shared.autoCheckForUpdates()
+        }
+        
+        // Also check for updates on app launch (after a short delay)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
+            UpdateManager.shared.autoCheckForUpdates()
         }
     }
     
@@ -91,10 +106,13 @@ class AppCoordinator: ObservableObject {
     func handleAppTermination() {
         // Save playback state before app terminates
         searchState.playbackManager.savePlaybackState()
+        // Invalidate the update check timer
+        updateCheckTimer?.invalidate()
     }
     
     deinit {
         NotificationCenter.default.removeObserver(self)
+        updateCheckTimer?.invalidate()
     }
 }
 
