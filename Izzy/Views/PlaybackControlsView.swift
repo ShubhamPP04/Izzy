@@ -248,8 +248,13 @@ struct ControlButtonsView: View {
     
     var body: some View {
         HStack(spacing: 20) {
+            // Left spacer to push controls to center
+            Spacer()
+            
             // Previous button
             Button(action: {
+                // 🔋 BATTERY EFFICIENCY: Save state before skipping tracks
+                playbackManager.savePlaybackState()
                 Task {
                     await playbackManager.playPrevious()
                 }
@@ -263,6 +268,8 @@ struct ControlButtonsView: View {
             
             // Play/Pause button (bigger)
             Button(action: {
+                // 🔋 BATTERY EFFICIENCY: Save state when play/pause is pressed
+                playbackManager.savePlaybackState()
                 if playbackManager.isPlaying {
                     playbackManager.pause()
                 } else {
@@ -288,6 +295,8 @@ struct ControlButtonsView: View {
             
             // Next button
             Button(action: {
+                // 🔋 BATTERY EFFICIENCY: Save state before skipping tracks
+                playbackManager.savePlaybackState()
                 Task {
                     await playbackManager.playNext()
                 }
@@ -298,6 +307,65 @@ struct ControlButtonsView: View {
             }
             .buttonStyle(ControlButtonStyle())
             .disabled(!playbackManager.queue.hasNext)
+            
+            Spacer()
+            
+            // Combined Shuffle/Repeat button that cycles through 3 modes
+            // Mode 1: Off (no auto-play next, no repeat)
+            // Mode 2: On (auto-play next)
+            // Mode 3: Repeat (repeat current song)
+            // Mode 4: Back to Off
+            Button(action: {
+                // 🔋 BATTERY EFFICIENCY: Save state when shuffle/repeat mode changes
+                playbackManager.savePlaybackState()
+                toggleShuffleRepeatMode()
+            }) {
+                Image(systemName: shuffleRepeatModeImage())
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(shuffleRepeatModeColor())
+            }
+            .buttonStyle(ControlButtonStyle())
+        }
+    }
+    
+    // Toggle through shuffle/repeat modes as requested by user:
+    // Off -> On (auto-play next) -> Repeat (repeat current song) -> Off
+    private func toggleShuffleRepeatMode() {
+        switch playbackManager.queue.repeatMode {
+        case .none:
+            // Off -> On (auto-play next)
+            playbackManager.queue.repeatMode = .all
+            playbackManager.queue.shuffleEnabled = false
+        case .all:
+            // On -> Repeat (repeat current song)
+            playbackManager.queue.repeatMode = .single
+            playbackManager.queue.shuffleEnabled = false
+        case .single:
+            // Repeat -> Off
+            playbackManager.queue.repeatMode = .none
+            playbackManager.queue.shuffleEnabled = false
+        }
+    }
+    
+    // Return appropriate image based on current mode
+    private func shuffleRepeatModeImage() -> String {
+        switch playbackManager.queue.repeatMode {
+        case .none:
+            return "repeat"
+        case .all:
+            return "repeat"
+        case .single:
+            return "repeat.1"
+        }
+    }
+    
+    // Return appropriate color based on current mode
+    private func shuffleRepeatModeColor() -> Color {
+        switch playbackManager.queue.repeatMode {
+        case .none:
+            return .secondary
+        case .all, .single:
+            return .blue
         }
     }
 }

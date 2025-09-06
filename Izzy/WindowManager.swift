@@ -33,6 +33,9 @@ class WindowManager: ObservableObject {
         // Prevent multiple rapid calls
         guard !isVisible else { return }
         
+        // 🔋 BATTERY EFFICIENCY: Save playback state before showing window
+        searchState?.playbackManager.savePlaybackState()
+        
         // If panel already exists, just show it
         if let panel = floatingPanel {
             isVisible = true
@@ -87,6 +90,9 @@ class WindowManager: ObservableObject {
         
         // Save current state before hiding
         searchState?.saveState()
+        
+        // 🔋 BATTERY EFFICIENCY: Save playback state when hiding window
+        searchState?.playbackManager.savePlaybackState()
         
         // Close the panel
         panel.close()

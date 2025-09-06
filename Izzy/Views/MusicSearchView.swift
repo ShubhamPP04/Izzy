@@ -10,13 +10,15 @@ import SwiftUI
 struct MusicSearchView: View {
     @ObservedObject var searchState: SearchState
     @ObservedObject var windowManager: WindowManager
-    @State private var selectedTab = 0 // 0 = Search, 1 = Favorites, 2 = Recently Played
+    @State private var selectedTab = 0 // 0 = Search, 1 = Favorites, 2 = Recently Played, 3 = Settings
     
     var body: some View {
         VStack(spacing: 0) {
             // Tab selector
             HStack {
                 Button(action: {
+                    // 🔋 BATTERY EFFICIENCY: Save playback state when switching tabs
+                    searchState.playbackManager.savePlaybackState()
                     selectedTab = 0
                 }) {
                     HStack {
@@ -31,6 +33,8 @@ struct MusicSearchView: View {
                 .cornerRadius(8)
                 
                 Button(action: {
+                    // 🔋 BATTERY EFFICIENCY: Save playback state when switching tabs
+                    searchState.playbackManager.savePlaybackState()
                     selectedTab = 1
                 }) {
                     HStack {
@@ -45,6 +49,8 @@ struct MusicSearchView: View {
                 .cornerRadius(8)
                 
                 Button(action: {
+                    // 🔋 BATTERY EFFICIENCY: Save playback state when switching tabs
+                    searchState.playbackManager.savePlaybackState()
                     selectedTab = 2
                 }) {
                     HStack {
@@ -56,6 +62,22 @@ struct MusicSearchView: View {
                 }
                 .buttonStyle(PlainButtonStyle())
                 .background(selectedTab == 2 ? Color.blue.opacity(0.2) : Color.clear)
+                .cornerRadius(8)
+                
+                Button(action: {
+                    // 🔋 BATTERY EFFICIENCY: Save playback state when switching tabs
+                    searchState.playbackManager.savePlaybackState()
+                    selectedTab = 3
+                }) {
+                    HStack {
+                        Image(systemName: "gear")
+                        Text("Settings")
+                    }
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 8)
+                }
+                .buttonStyle(PlainButtonStyle())
+                .background(selectedTab == 3 ? Color.blue.opacity(0.2) : Color.clear)
                 .cornerRadius(8)
                 
                 Spacer()
@@ -97,9 +119,13 @@ struct MusicSearchView: View {
                 // Favorites Content
                 FavoritesView(searchState: searchState)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
+            } else if selectedTab == 2 {
                 // Recently Played Content
                 RecentlyPlayedView(searchState: searchState)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                // Settings Content
+                SettingsView(searchState: searchState)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             

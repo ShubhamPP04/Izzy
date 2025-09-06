@@ -12,15 +12,38 @@ class AppCoordinator: ObservableObject {
     private let searchState = SearchState()
     private let windowManager = WindowManager()
     private let hotkeyManager = GlobalHotkeyManager()
+    private var appIsActive = false
     
     init() {
         setupCoordination()
+        setupAppActivityObserver()
     }
     
     private func setupCoordination() {
         // Connect managers
         hotkeyManager.windowManager = windowManager
         windowManager.searchState = searchState
+    }
+    
+    // 🔋 BATTERY EFFICIENCY: Save playback state when app becomes active
+    private func setupAppActivityObserver() {
+        // Observe when app becomes active
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didBecomeActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.handleAppActivation()
+        }
+        
+        // Observe when app resigns active
+        NotificationCenter.default.addObserver(
+            forName: NSApplication.didResignActiveNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] _ in
+            self?.handleAppResignActive()
+        }
     }
     
     func createSearchView() -> some View {
@@ -45,14 +68,33 @@ class AppCoordinator: ObservableObject {
     }
     
     func handleAppActivation() {
+        // 🔋 BATTERY EFFICIENCY: Save playback state when app becomes active
+        // This ensures state is saved when user interacts with the app
+        if !appIsActive {
+            appIsActive = true
+            searchState.playbackManager.savePlaybackState()
+            print("💾 Saved playback state on app activation")
+        }
+        
         // Don't automatically show window on app activation
         // The window should only be shown via hotkey (Option + Space)
         // This prevents flickering when the app becomes active
     }
     
+    func handleAppResignActive() {
+        // 🔋 BATTERY EFFICIENCY: Save playback state when app resigns active
+        appIsActive = false
+        searchState.playbackManager.savePlaybackState()
+        print("💾 Saved playback state on app resign active")
+    }
+    
     func handleAppTermination() {
         // Save playback state before app terminates
         searchState.playbackManager.savePlaybackState()
+    }
+    
+    deinit {
+        NotificationCenter.default.removeObserver(self)
     }
 }
 

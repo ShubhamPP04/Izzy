@@ -52,6 +52,7 @@ class PlaybackManager: ObservableObject {
     // 🚀 FAST SEEK OPTIMIZATION: Advanced caching for instant seeking
     private var streamCache = NSCache<NSString, CachedStreamInfo>()
     private var prefetchTask: Task<Void, Never>?
+    private var bufferTimer: Timer?
     
     private let queueManager = QueueManager()
     private let pythonService = PythonServiceManager.shared
@@ -278,14 +279,17 @@ class PlaybackManager: ObservableObject {
         playerItem = AVPlayerItem(url: url)
         player = AVPlayer(playerItem: playerItem)
         
-        // 🚀 PERFECT SEEKING: Configure player for complete buffering
-        player?.automaticallyWaitsToMinimizeStalling = true  // Wait for complete buffering
+        // 🚀 PERFECT SEEKING: Configure player for partial buffering
+        player?.automaticallyWaitsToMinimizeStalling = true  // Wait for buffering before playing
         player?.volume = 1.0
         
         // 🚀 Configure player item for better buffering and seeking
         if let playerItem = playerItem {
-            // Prefer forward buffer for smooth playback
+            // Prefer forward buffer for smooth playback - 2 minutes ahead for better performance with long songs
             playerItem.preferredForwardBufferDuration = 120.0  // 2 minutes ahead
+            
+            // Configure for better buffering behavior with long songs
+            playerItem.canUseNetworkResourcesForLiveStreamingWhilePaused = true
             
             // Set maximum duration for complete song loading
             if #available(macOS 13.0, *) {
@@ -318,6 +322,9 @@ class PlaybackManager: ObservableObject {
         print("🚀 Player with prefetch optimization ready, waiting for buffering...")
         playbackState = PlaybackState.buffering
         
+        // Start periodic buffer monitoring for better long song performance
+        startBufferMonitoring()
+        
         print("🚀 Enhanced player setup complete with perfect seeking capabilities")
     }
     
@@ -347,6 +354,34 @@ class PlaybackManager: ObservableObject {
                 
             } catch {
                 print("🚀 Prefetch failed (not critical): \(error)")
+            }
+        }
+    }
+    
+    // Monitor buffer status and update UI accordingly for better long song performance
+    private func startBufferMonitoring() {
+        // Cancel any existing timer
+        bufferTimer?.invalidate()
+        
+        // Create a timer to periodically check buffer status
+        bufferTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+            guard let self = self, let playerItem = self.playerItem else { return }
+            
+            // Check if we're still buffering
+            let isBufferEmpty = playerItem.isPlaybackBufferEmpty
+            let isBufferLikelyToKeepUp = playerItem.isPlaybackLikelyToKeepUp
+            
+            DispatchQueue.main.async {
+                // Update buffering state
+                self.isBuffering = isBufferEmpty || !isBufferLikelyToKeepUp
+                
+                // If buffering is complete and we're in buffering state, start playing
+                if !self.isBuffering && self.playbackState == .buffering && self.player?.rate == 0 {
+                    self.player?.play()
+                    self.playbackState = .playing
+                    self.updateNowPlayingInfo()
+                    print("🎵 Buffering complete, starting playback")
+                }
             }
         }
     }
@@ -414,12 +449,19 @@ class PlaybackManager: ObservableObject {
         playbackState = .paused
         saveCurrentTrack() // Save state when pausing
         forceUpdateNowPlayingInfo() // 🔋 Force immediate update for state changes
+        
+        // Stop buffer monitoring when paused
+        bufferTimer?.invalidate()
+        bufferTimer = nil
     }
     
     func resume() {
         player?.play()
         playbackState = .playing
         forceUpdateNowPlayingInfo() // 🔋 Force immediate update for state changes
+        
+        // Restart buffer monitoring when resuming
+        startBufferMonitoring()
     }
     
     func stop() {
@@ -431,6 +473,10 @@ class PlaybackManager: ObservableObject {
         duration = 0
         saveCurrentTrack() // Save nil track
         nowPlayingManager.clearNowPlayingInfo()
+        
+        // Stop buffer monitoring when stopped
+        bufferTimer?.invalidate()
+        bufferTimer = nil
     }
     
     func seek(to time: TimeInterval) {
@@ -517,8 +563,10 @@ class PlaybackManager: ObservableObject {
             self.currentTime = time.seconds
             self.throttledUpdateNowPlayingInfo()
             
-            // Save state periodically (every 5 seconds to avoid too frequent saves)
-            if Int(self.currentTime) % 5 == 0 {
+            // 🔋 BATTERY EFFICIENCY: Save state more frequently when app is active
+            // Save every 2 seconds when app is active, every 10 seconds when inactive
+            let saveInterval = NSApp.isActive ? 2 : 10
+            if Int(self.currentTime) % saveInterval == 0 {
                 self.saveCurrentTrack()
             }
             
@@ -559,13 +607,7 @@ class PlaybackManager: ObservableObject {
             }
         }
         
-        // Buffer status observer
-        playerItem.publisher(for: \.isPlaybackBufferEmpty)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] isEmpty in
-                self?.isBuffering = isEmpty && self?.playbackState.isPlaying == true
-            }
-            .store(in: &cancellables)
+        // Buffer status is now handled by our timer-based monitoring
         
         // Stalled playback observer
         NotificationCenter.default.publisher(for: .AVPlayerItemPlaybackStalled, object: playerItem)
@@ -580,18 +622,8 @@ class PlaybackManager: ObservableObject {
         switch status {
         case .readyToPlay:
             print("🎵 Player ready to play")
-            isBuffering = false
-            
-            // For new tracks, always start from the beginning
-            // Only restore saved position if we're resuming the same track
-            if currentTime > 0 {
-                print("🎵 Note: currentTime is \(currentTime) but new tracks should start from 0:00")
-                print("🎵 Starting new track from beginning instead of saved position")
-            }
-            
-            // Always start new tracks from the beginning
-            player?.play()
-            playbackState = .playing
+            // For partial loading, we wait for buffering to complete before playing
+            // Buffering state is now handled by our timer-based monitoring
             updateNowPlayingInfo()
             
             // Test remote commands after starting playback
@@ -662,6 +694,10 @@ class PlaybackManager: ObservableObject {
             self.timeObserver = nil
         }
         
+        // Stop buffer monitoring
+        bufferTimer?.invalidate()
+        bufferTimer = nil
+        
         cancellables.removeAll()
         player = nil
         playerItem = nil
@@ -673,6 +709,7 @@ class PlaybackManager: ObservableObject {
         savePlaybackState()
     }
     
+    // 🔋 BATTERY EFFICIENCY: Add method to save state with app activity context
     func savePlaybackState() {
         let playbackData = PlaybackData(
             track: currentTrack,
@@ -903,7 +940,8 @@ class QueueManager: ObservableObject {
         case .single, .all:
             return true
         case .none:
-            return currentIndex < currentQueue.count - 1
+            // In "Off" mode, don't auto-play next track
+            return false
         }
     }
     
@@ -917,5 +955,10 @@ class QueueManager: ObservableObject {
     
     var queueSize: Int {
         return currentQueue.count
+    }
+    
+    // Toggle shuffle mode
+    func toggleShuffle() {
+        shuffleEnabled.toggle()
     }
 }

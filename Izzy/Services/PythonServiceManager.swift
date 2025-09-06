@@ -67,6 +67,7 @@ class PythonServiceManager: ObservableObject {
     private var isServiceRunning = false
     private let serviceQueue = DispatchQueue(label: "python-service", qos: .userInitiated)
     private let timeout: TimeInterval = 45.0
+    private var lastRequestTime = Date()  // 🔋 BATTERY EFFICIENCY: Track last request time
     
     private init() {}
     
@@ -160,7 +161,7 @@ class PythonServiceManager: ObservableObject {
         process.standardOutput = outputPipe
         process.standardError = errorPipe
         
-        // 🔋 BATTERY OPTIMIZATION: Set process priority to utility for better battery life
+        // 🔋 BATTERY EFFICIENCY: Set process priority to utility for better battery life
         process.qualityOfService = .utility
         
         // Set working directory
@@ -453,6 +454,25 @@ class PythonServiceManager: ObservableObject {
             // Don't throw to prevent crash
         }
     }
+    
+    // 🔋 BATTERY EFFICIENCY: Add method to suspend service when not needed
+    func suspendServiceIfNeeded() {
+        // Only suspend if no requests have been made recently
+        let timeSinceLastRequest = Date().timeIntervalSince(lastRequestTime)
+        if timeSinceLastRequest > 300 { // 5 minutes
+            print("🔋 Suspending Python service due to inactivity")
+            stopService()
+        }
+    }
+    
+    // 🔋 BATTERY EFFICIENCY: Add method to resume service when needed
+    func ensureServiceRunning() throws {
+        if !isServiceRunning {
+            print("🔋 Resuming Python service")
+            try startService()
+        }
+        lastRequestTime = Date()
+    }
 }
 
 // MARK: - Convenience Methods
@@ -519,17 +539,6 @@ extension PythonServiceManager {
         } catch {
             print("Service health check failed: \(error)")
             return false
-        }
-    }
-    
-    func ensureServiceRunning() async throws {
-        if !isHealthy {
-            do {
-                try await restartService()
-            } catch {
-                print("Failed to ensure service running: \(error)")
-                // Don't throw error to prevent app crash
-            }
         }
     }
 }

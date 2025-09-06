@@ -11,6 +11,9 @@ import Combine
 class SearchState: ObservableObject {
     @Published var searchText: String = "" {
         didSet {
+            // 🔋 BATTERY EFFICIENCY: Save playback state when user interacts with search
+            playbackManager.savePlaybackState()
+            
             // Keep results panel open by default, only hide when explicitly cleared
             let hasText = !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             if hasText && !showResults {
@@ -200,10 +203,13 @@ class SearchState: ObservableObject {
     }
     
     private func setupSearchObserver() {
-        // Debounced search with 800ms delay - only search after user finishes typing
+        // Debounced search with 2 second delay - only search after user finishes typing
         searchCancellable = $searchText
-            .debounce(for: .milliseconds(800), scheduler: RunLoop.main)
+            .debounce(for: .milliseconds(2000), scheduler: RunLoop.main)
             .sink { [weak self] searchText in
+                // 🔋 BATTERY EFFICIENCY: Save playback state before performing search
+                self?.playbackManager.savePlaybackState()
+                
                 // Don't trigger search if we're restoring state
                 guard let self = self, !self.isRestoringState else { return }
                 self.performSearch(searchText)
