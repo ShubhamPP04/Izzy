@@ -6,9 +6,31 @@
     <description>Most recent changes with links to updates.</description>
     <language>en</language>
     
-    <!-- Version 1.0.1 -->
+    <!-- Version 1.0.4 -->
     <item>
-      <title>Version 1.0.1</title>
+      <title>Version 1.0.4</title>
+      <description>
+        <![CDATA[
+          <ul>
+            <li>Added compatibility with macOS 14.0+</li>
+            <li>Fixed API compatibility issues for older macOS versions</li>
+            <li>Updated minimum system requirements documentation</li>
+          </ul>
+        ]]>
+      </description>
+      <pubDate>Fri, 06 Sep 2025 12:00:00 +0000</pubDate>
+      <sparkle:version>4</sparkle:version>
+      <sparkle:shortVersionString>1.0.4</sparkle:shortVersionString>
+      <enclosure url="https://yourwebsite.com/izzy/Izzy.dmg"
+                 sparkle:version="4"
+                 sparkle:shortVersionString="1.0.4"
+                 length="16839788"
+                 type="application/octet-stream" />
+    </item>
+    
+    <!-- Version 1.0.3 -->
+    <item>
+      <title>Version 1.0.3</title>
       <description>
         <![CDATA[
           <ul>
@@ -20,11 +42,11 @@
         ]]>
       </description>
       <pubDate>Fri, 06 Sep 2025 12:00:00 +0000</pubDate>
-      <sparkle:version>2</sparkle:version>
-      <sparkle:shortVersionString>1.0.1</sparkle:shortVersionString>
+      <sparkle:version>3</sparkle:version>
+      <sparkle:shortVersionString>1.0.3</sparkle:shortVersionString>
       <enclosure url="https://yourwebsite.com/izzy/Izzy.dmg"
-                 sparkle:version="2"
-                 sparkle:shortVersionString="1.0.1"
+                 sparkle:version="3"
+                 sparkle:shortVersionString="1.0.3"
                  length="16839788"
                  type="application/octet-stream" />
     </item>
