@@ -139,6 +139,48 @@ struct SettingsView: View {
                         .fill(Color.primary.opacity(0.05))
                 )
                 
+                // Playback Controls section
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Image(systemName: "music.note")
+                            .foregroundColor(.blue)
+                            .font(.system(size: 14, weight: .medium))
+                        
+                        Text("Playback Controls")
+                            .font(.system(size: 14, weight: .medium))
+                        
+                        Spacer()
+                    }
+                    
+                    Text("Customize the layout of playback controls")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                    
+                    // Playback button alignment
+                    HStack {
+                        Text("Center Playback Buttons")
+                            .font(.system(size: 14))
+                        
+                        Spacer()
+                        
+                        Toggle("", isOn: .init(
+                            get: { UserDefaults.standard.bool(forKey: "centerPlaybackButtons") },
+                            set: { UserDefaults.standard.set($0, forKey: "centerPlaybackButtons") }
+                        ))
+                        .labelsHidden()
+                        .toggleStyle(SwitchToggleStyle())
+                    }
+                    
+                    Text("When enabled, Previous, Play/Pause, and Next buttons will be centered. When disabled, they will be left-aligned.")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
+                .padding()
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.primary.opacity(0.05))
+                )
+                
                 // Favorites section
                 VStack(alignment: .leading, spacing: 12) {
                     HStack {

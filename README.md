@@ -6,7 +6,8 @@
 
 A modern macOS music player with a beautiful Spotlight-like interface, featuring global hotkeys, YouTube Music integration, and seamless playback controls.
 
-[![macOS](https://img.shields.io/badge/macOS-15.5+-blue.svg)](https://developer.apple.com/macos/)
+[![License](https://img.shields.io/github/license/ShubhamPP04/Izzy)](LICENSE)
+[![macOS](https://img.shields.io/badge/macOS-14.0+-blue.svg)](https://developer.apple.com/macos/)
 [![Swift](https://img.shields.io/badge/Swift-5.9+-orange.svg)](https://swift.org)
 [![SwiftUI](https://img.shields.io/badge/SwiftUI-5.0+-green.svg)](https://developer.apple.com/swiftui/)
 [![License](https://img.shields.io/badge/License-MIT-lightgrey.svg)](LICENSE)
@@ -57,13 +58,15 @@ open Izzy.xcodeproj
 # Build and run (⌘+R)
 ```
 
-## 📋 System Requirements
+## Compatibility
 
-- **macOS**: 15.5 or later
+Izzy is designed to work on modern macOS systems with the following requirements:
+
+### System Requirements
+
+- **Operating System**: macOS 14.0 (Sonoma) or later
 - **Architecture**: Apple Silicon (M1/M2/M3) or Intel
-- **RAM**: 4GB minimum, 8GB recommended
-- **Storage**: 100MB for app, additional space for music cache
-- **Network**: Internet connection required for streaming
+- **Internet Connection**: Required for music streaming
 
 ## 🎯 Usage Guide
 

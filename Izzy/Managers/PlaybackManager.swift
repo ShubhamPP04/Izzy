@@ -289,7 +289,10 @@ class PlaybackManager: ObservableObject {
             playerItem.preferredForwardBufferDuration = 120.0  // 2 minutes ahead
             
             // Configure for better buffering behavior with long songs
-            playerItem.canUseNetworkResourcesForLiveStreamingWhilePaused = true
+            // This API is only available on macOS 15.0+
+            if #available(macOS 15.0, *) {
+                playerItem.canUseNetworkResourcesForLiveStreamingWhilePaused = true
+            }
             
             // Set maximum duration for complete song loading
             if #available(macOS 13.0, *) {
@@ -651,6 +654,11 @@ class PlaybackManager: ObservableObject {
             print("🎵 Player status unknown default")
             break
         }
+    }
+    
+    // Add a public method to test remote commands manually
+    func testRemoteCommands() {
+        nowPlayingManager.testRemoteCommands()
     }
     
     private func handlePlaybackEnd() async {

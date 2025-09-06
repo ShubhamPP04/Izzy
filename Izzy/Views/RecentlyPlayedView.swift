@@ -8,6 +8,7 @@ import SwiftUI
 struct RecentlyPlayedView: View {
     @ObservedObject var searchState: SearchState
     @State private var editMode = false
+    @State private var showingClearConfirmation = false
     
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -28,8 +29,47 @@ struct RecentlyPlayedView: View {
                     .foregroundColor(.secondary)
                 
                 if !searchState.recentlyPlayed.isEmpty {
+                    // Clear All button (only shown in edit mode)
+                    if editMode {
+                        if showingClearConfirmation {
+                            // Custom confirmation view instead of alert
+                            HStack(spacing: 8) {
+                                Text("Clear all?")
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundColor(.red)
+                                
+                                Button("Yes") {
+                                    searchState.clearRecentlyPlayed()
+                                    showingClearConfirmation = false
+                                }
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(.red)
+                                .buttonStyle(PlainButtonStyle())
+                                
+                                Button("No") {
+                                    showingClearConfirmation = false
+                                }
+                                .font(.system(size: 12, weight: .medium))
+                                .foregroundColor(.blue)
+                                .buttonStyle(PlainButtonStyle())
+                            }
+                        } else {
+                            Button(action: {
+                                // Show confirmation dialog before clearing all
+                                showingClearConfirmation = true
+                            }) {
+                                Text("Clear All")
+                                    .font(.system(size: 12, weight: .medium))
+                                    .foregroundColor(.red)
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                        }
+                    }
+                    
                     Button(action: {
                         editMode.toggle()
+                        // Reset confirmation state when toggling edit mode
+                        showingClearConfirmation = false
                     }) {
                         Text(editMode ? "Done" : "Edit")
                             .font(.system(size: 12, weight: .medium))

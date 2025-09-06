@@ -56,7 +56,7 @@ class WindowManager: ObservableObject {
                     windowManager: self
                 )
             },
-            contentRect: NSRect(x: 0, y: 0, width: 600, height: 650),
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 750),
             didClose: {
                 self.floatingPanel = nil
                 self.isVisible = false
@@ -153,7 +153,7 @@ class WindowManager: ObservableObject {
         guard let panel = floatingPanel else { return }
         
         // Return to original compact size
-        let compactFrame = NSRect(x: 0, y: 0, width: 600, height: 650)
+        let compactFrame = NSRect(x: 0, y: 0, width: 600, height: 750)
         
         // Animate back to compact size and center
         NSAnimationContext.runAnimationGroup { context in

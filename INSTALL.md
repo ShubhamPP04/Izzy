@@ -15,11 +15,9 @@ This comprehensive guide will walk you through every step of installing, buildin
 ## 🖥️ System Requirements
 
 ### Minimum Requirements
-- **Operating System**: macOS 15.5 (Sequoia) or later
-- **Architecture**: Apple Silicon (M1/M2/M3) or Intel-based Mac
-- **RAM**: 4GB minimum, 8GB recommended
-- **Storage**: 100MB for app + 500MB for dependencies and cache
-- **Internet**: Required for music streaming and initial setup
+- **Operating System**: macOS 14.0 (Sonoma) or later
+- **Architecture**: Apple Silicon (M1/M2/M3) or Intel
+- **Internet Connection**: Required for music streaming
 
 ### For Development
 - **Xcode**: 16.0 or later
@@ -356,6 +354,13 @@ top -pid $(pgrep Izzy)
 ```
 
 ## ⚙️ Advanced Configuration
+
+### Build Configuration
+
+- **Development Language**: Swift 5.9+
+- **UI Framework**: SwiftUI 5.0+
+- **Deployment Target**: macOS 14.0
+- **Xcode Version**: 15.0 or later
 
 ### Build Configurations
 
