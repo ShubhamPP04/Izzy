@@ -17,9 +17,12 @@ try:
     import requests
     import re
     import base64
+    import html  # For HTML entity decoding
     HAS_REQUESTS = True
+    HAS_HTML = True
 except ImportError:
     HAS_REQUESTS = False
+    HAS_HTML = False
     print("❌ Failed to import requests for JioSaavn support", file=sys.stderr)
 
 # Import yt-dlp with error handling
@@ -65,6 +68,22 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(sys.stderr)]
 )
 logger = logging.getLogger(__name__)
+
+def decode_html_entities(text: str) -> str:
+    """Safely decode HTML entities"""
+    try:
+        if HAS_HTML:
+            return html.unescape(text)
+        else:
+            # Fallback manual decoding for common entities
+            text = text.replace('&amp;', '&')
+            text = text.replace('&quot;', '"')
+            text = text.replace('&apos;', "'")
+            text = text.replace('&lt;', '<')
+            text = text.replace('&gt;', '>')
+            return text
+    except Exception:
+        return text
 
 # MARK: - JioSaavn Service
 
@@ -189,12 +208,17 @@ class JioSaavnService:
             if song.get('artists') and song['artists'].get('primary'):
                 for artist in song['artists']['primary']:
                     if artist.get('name'):
-                        artists_list.append(artist['name'])
+                        # Decode HTML entities in artist names
+                        artist_name = decode_html_entities(artist['name'].strip())
+                        artists_list.append(artist_name)
+            
+            # Decode HTML entities in title
+            title = decode_html_entities(song.get('name', '').strip())
             
             return {
                 'id': song.get('id', ''),
                 'type': 'songs',
-                'title': song.get('name', '').strip(),
+                'title': title,
                 'artist': ', '.join(artists_list) if artists_list else song.get('album', {}).get('name', ''),
                 'thumbnailURL': image_url,
                 'duration': float(song.get('duration', 0)) if song.get('duration') else None,
@@ -221,12 +245,17 @@ class JioSaavnService:
             if album.get('artists') and album['artists'].get('primary'):
                 for artist in album['artists']['primary']:
                     if artist.get('name'):
-                        artists_list.append(artist['name'])
+                        # Decode HTML entities in artist names
+                        artist_name = decode_html_entities(artist['name'].strip())
+                        artists_list.append(artist_name)
+            
+            # Decode HTML entities in album title
+            title = decode_html_entities(album.get('name', '').strip())
             
             return {
                 'id': album.get('id', ''),
                 'type': 'albums',
-                'title': album.get('name', '').strip(),
+                'title': title,
                 'artist': ', '.join(artists_list),
                 'thumbnailURL': image_url,
                 'duration': None,
@@ -248,11 +277,14 @@ class JioSaavnService:
             if artist.get('image') and isinstance(artist['image'], list) and len(artist['image']) > 0:
                 image_url = artist['image'][-1].get('url', '') if artist['image'][-1] else ''
             
+            # Decode HTML entities in artist name
+            name = decode_html_entities(artist.get('name', '').strip())
+            
             return {
                 'id': artist.get('id', ''),
                 'type': 'artists',
-                'title': artist.get('name', '').strip(),
-                'artist': artist.get('name', '').strip(),
+                'title': name,
+                'artist': name,
                 'thumbnailURL': image_url,
                 'duration': None,
                 'explicit': False,
@@ -273,10 +305,13 @@ class JioSaavnService:
             if playlist.get('image') and isinstance(playlist['image'], list) and len(playlist['image']) > 0:
                 image_url = playlist['image'][-1].get('url', '') if playlist['image'][-1] else ''
             
+            # Decode HTML entities in playlist name
+            name = decode_html_entities(playlist.get('name', '').strip())
+            
             return {
                 'id': playlist.get('id', ''),
                 'type': 'playlists',
-                'title': playlist.get('name', '').strip(),
+                'title': name,
                 'artist': 'JioSaavn Playlist',
                 'thumbnailURL': image_url,
                 'duration': None,
@@ -323,7 +358,7 @@ class JioSaavnService:
                     }
             
             data = response.json()
-            print(f"🎵 JioSaavn API response data keys: {list(data.keys())}", file=sys.stderr)
+            print(f"🎵 JioSaavn API response data keys: {list(data.keys()) if isinstance(data, dict) else f'List with {len(data)} items' if isinstance(data, list) else type(data)}", file=sys.stderr)
             
             if not data.get('success') or not data.get('data'):
                 return {
@@ -339,7 +374,7 @@ class JioSaavnService:
                 }
             
             song_data = songs[0]
-            print(f"🎵 Song data keys: {list(song_data.keys())}", file=sys.stderr)
+            print(f"🎵 Song data keys: {list(song_data.keys()) if isinstance(song_data, dict) else f'Type: {type(song_data)}'}", file=sys.stderr)
             
             # Get stream URLs - JioSaavn provides multiple quality options
             download_url = ''
@@ -348,14 +383,54 @@ class JioSaavnService:
             # Try to get the highest quality download URL
             if song_data.get('downloadUrl'):
                 download_urls = song_data['downloadUrl']
-                print(f"🎵 Available download qualities: {list(download_urls.keys())}", file=sys.stderr)
-                # Prefer 320kbps, then 160kbps, then 96kbps, then 48kbps
-                for qual in ['320kbps', '160kbps', '96kbps', '48kbps']:
-                    if download_urls.get(qual):
-                        download_url = download_urls[qual]
-                        quality = qual
-                        print(f"🎵 Selected quality: {quality}", file=sys.stderr)
-                        break
+                
+                # Handle both dictionary and list formats  
+                if isinstance(download_urls, dict):
+                    print(f"🎵 Available download qualities (dict): {list(download_urls.keys())}", file=sys.stderr)
+                    # Prefer 320kbps, then 160kbps, then 96kbps, then 48kbps
+                    for qual in ['320kbps', '160kbps', '96kbps', '48kbps']:
+                        if download_urls.get(qual):
+                            download_url = download_urls[qual]
+                            quality = qual
+                            print(f"🎵 Selected quality: {quality}", file=sys.stderr)
+                            break
+                elif isinstance(download_urls, list) and len(download_urls) > 0:
+                    # If it's a list of objects with quality and url properties (new API format)
+                    print(f"🎵 Download URLs list format, {len(download_urls)} options available", file=sys.stderr)
+                    # Look for the highest quality in the list
+                    best_url = None
+                    best_quality = 'unknown'
+                    
+                    # Sort by quality preference
+                    quality_priority = {'320kbps': 5, '160kbps': 4, '96kbps': 3, '48kbps': 2, '12kbps': 1}
+                    
+                    for url_info in download_urls:
+                        if isinstance(url_info, dict):
+                            # Check for quality and url properties in the DownloadLink format
+                            url = url_info.get('url')
+                            quality_str = url_info.get('quality', 'unknown')
+                            
+                            if url:
+                                # Prioritize higher quality
+                                current_priority = quality_priority.get(quality_str, 0)
+                                best_priority = quality_priority.get(best_quality, 0)
+                                
+                                if best_url is None or current_priority > best_priority:
+                                    best_url = url
+                                    best_quality = quality_str
+                                    print(f"🎵 Found better quality: {quality_str}", file=sys.stderr)
+                        elif isinstance(url_info, str):
+                            # Fallback for direct URL strings
+                            if best_url is None:
+                                best_url = url_info
+                                best_quality = 'unknown'
+                    
+                    if best_url:
+                        download_url = best_url
+                        quality = best_quality
+                        print(f"🎵 Selected URL from list: {quality}", file=sys.stderr)
+                else:
+                    print(f"🎵 Unexpected downloadUrl format: {type(download_urls)}", file=sys.stderr)
             else:
                 # Check for alternative field names
                 for field in ['media_url', 'stream_url', 'url', 'link']:
@@ -1336,6 +1411,118 @@ class YTMusicService:
                 'success': False,
                 'error': str(e)
             }
+    
+    def get_mood_categories(self) -> Dict[str, Any]:
+        """
+        Get mood & genre categories from YouTube Music explore section
+        """
+        try:
+            if not HAS_YTMUSICAPI or not self.yt:
+                return {
+                    'success': False,
+                    'error': 'ytmusicapi not available - mood categories not supported'
+                }
+            
+            # Get mood categories
+            mood_data = self.yt.get_mood_categories()
+            
+            print(f"Retrieved mood categories with {len(mood_data)} sections", file=sys.stderr)
+            
+            return {
+                'success': True,
+                'data': mood_data
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to get mood categories: {e}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
+    def get_mood_playlists(self, params: str) -> Dict[str, Any]:
+        """
+        Get playlists for a specific mood/genre category
+        """
+        try:
+            if not HAS_YTMUSICAPI or not self.yt:
+                return {
+                    'success': False,
+                    'error': 'ytmusicapi not available - mood playlists not supported'
+                }
+            
+            # Get playlists for the mood category
+            playlists_data = self.yt.get_mood_playlists(params)
+            
+            print(f"Retrieved {len(playlists_data)} mood playlists", file=sys.stderr)
+            
+            return {
+                'success': True,
+                'data': playlists_data
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to get mood playlists: {e}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
+    def get_charts(self, country: str = 'ZZ') -> Dict[str, Any]:
+        """
+        Get charts data from YouTube Music (top songs, artists, etc.)
+        """
+        try:
+            if not HAS_YTMUSICAPI or not self.yt:
+                return {
+                    'success': False,
+                    'error': 'ytmusicapi not available - charts not supported'
+                }
+            
+            # Get charts data
+            charts_data = self.yt.get_charts(country)
+            
+            print(f"Retrieved charts for country {country}", file=sys.stderr)
+            
+            return {
+                'success': True,
+                'data': charts_data
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to get charts: {e}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
+    def get_home(self) -> Dict[str, Any]:
+        """
+        Get home feed from YouTube Music
+        """
+        try:
+            if not HAS_YTMUSICAPI or not self.yt:
+                return {
+                    'success': False,
+                    'error': 'ytmusicapi not available - home feed not supported'
+                }
+            
+            # Get home feed
+            home_data = self.yt.get_home(limit=20)
+            
+            print(f"Retrieved home feed with {len(home_data)} sections", file=sys.stderr)
+            
+            return {
+                'success': True,
+                'data': home_data
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to get home feed: {e}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
 
 def handle_request(request_data: Dict[str, Any]) -> Dict[str, Any]:
     """
@@ -1389,6 +1576,20 @@ def handle_request(request_data: Dict[str, Any]) -> Dict[str, Any]:
         elif action == 'lyrics':
             video_id = request_data.get('videoId', '')
             return service.get_lyrics(video_id)
+            
+        elif action == 'mood_categories':
+            return service.get_mood_categories()
+            
+        elif action == 'mood_playlists':
+            params = request_data.get('params', '')
+            return service.get_mood_playlists(params)
+            
+        elif action == 'charts':
+            country = request_data.get('country', 'ZZ')
+            return service.get_charts(country)
+            
+        elif action == 'home':
+            return service.get_home()
             
         else:
             return {

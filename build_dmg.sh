@@ -47,12 +47,15 @@ echo "📦 Bundling Python backend..."
 RESOURCES_DIR="$APP_PATH/Contents/Resources"
 mkdir -p "$RESOURCES_DIR"
 
-# Copy Python service script
-if [ -f "ytmusic_service.py" ]; then
+# Copy Python service script (use the Xcode project version)
+if [ -f "Izzy/ytmusic_service.py" ]; then
+  cp "Izzy/ytmusic_service.py" "$RESOURCES_DIR/"
+  echo "✅ Copied ytmusic_service.py from Xcode project"
+elif [ -f "ytmusic_service.py" ]; then
   cp "ytmusic_service.py" "$RESOURCES_DIR/"
-  echo "✅ Copied ytmusic_service.py"
+  echo "✅ Copied ytmusic_service.py from root (fallback)"
 else
-  echo "⚠️ ytmusic_service.py not found at repo root; skipping copy"
+  echo "⚠️ ytmusic_service.py not found in Xcode project or repo root; skipping copy"
 fi
 
 # Copy update files

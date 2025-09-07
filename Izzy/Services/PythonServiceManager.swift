@@ -94,7 +94,7 @@ class PythonServiceManager: ObservableObject {
         }()
         
         // Fallback to workspace script (useful for development builds)
-        let workspacePath = "/Users/shubhamkumar/Downloads/Izzy/ytmusic_service.py"
+        let workspacePath = "/Users/shubhamkumar/Downloads/Izzy/Izzy/ytmusic_service.py"
         let chosenScriptPath = bundledScriptPath ?? (FileManager.default.fileExists(atPath: workspacePath) ? workspacePath : nil)
         
         guard let scriptPath = chosenScriptPath else {
