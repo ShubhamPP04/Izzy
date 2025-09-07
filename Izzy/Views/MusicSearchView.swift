@@ -10,83 +10,119 @@ import SwiftUI
 struct MusicSearchView: View {
     @ObservedObject var searchState: SearchState
     @ObservedObject var windowManager: WindowManager
-    @State private var selectedTab = 0 // 0 = Search, 1 = Favorites, 2 = Recently Played, 3 = Settings
+    @AppStorage("selectedTab") private var selectedTab = 1 // 0 = Home, 1 = Search, 2 = Favorites, 3 = Recently Played, 4 = Settings
     
     var body: some View {
         VStack(spacing: 0) {
-            // Tab selector
-            HStack {
-                Button(action: {
-                    // 🔋 BATTERY EFFICIENCY: Save playback state when switching tabs
-                    searchState.playbackManager.savePlaybackState()
-                    selectedTab = 0
-                }) {
-                    HStack {
-                        Image(systemName: "magnifyingglass")
-                        Text("Search")
+            // Tab selector with horizontal scrolling
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    Button(action: {
+                        // 🔋 BATTERY EFFICIENCY: Save playback state when switching tabs
+                        searchState.playbackManager.savePlaybackState()
+                        selectedTab = 0
+                        print("📍 Switched to Home tab (0)")
+                    }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "house.fill")
+                                .font(.system(size: 14))
+                            Text("Home")
+                                .font(.system(size: 14, weight: .medium))
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                }
-                .buttonStyle(PlainButtonStyle())
-                .background(selectedTab == 0 ? Color.blue.opacity(0.2) : Color.clear)
-                .cornerRadius(8)
-                
-                Button(action: {
-                    // 🔋 BATTERY EFFICIENCY: Save playback state when switching tabs
-                    searchState.playbackManager.savePlaybackState()
-                    selectedTab = 1
-                }) {
-                    HStack {
-                        Image(systemName: "heart.fill")
-                        Text("Favorites")
+                    .buttonStyle(PlainButtonStyle())
+                    .background(selectedTab == 0 ? Color.blue.opacity(0.2) : Color.clear)
+                    .cornerRadius(8)
+                    
+                    Button(action: {
+                        // 🔋 BATTERY EFFICIENCY: Save playback state when switching tabs
+                        searchState.playbackManager.savePlaybackState()
+                        selectedTab = 1
+                        print("📍 Switched to Search tab (1)")
+                    }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "magnifyingglass")
+                                .font(.system(size: 14))
+                            Text("Search")
+                                .font(.system(size: 14, weight: .medium))
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                }
-                .buttonStyle(PlainButtonStyle())
-                .background(selectedTab == 1 ? Color.blue.opacity(0.2) : Color.clear)
-                .cornerRadius(8)
-                
-                Button(action: {
-                    // 🔋 BATTERY EFFICIENCY: Save playback state when switching tabs
-                    searchState.playbackManager.savePlaybackState()
-                    selectedTab = 2
-                }) {
-                    HStack {
-                        Image(systemName: "clock.fill")
-                        Text("Recently Played")
+                    .buttonStyle(PlainButtonStyle())
+                    .background(selectedTab == 1 ? Color.blue.opacity(0.2) : Color.clear)
+                    .cornerRadius(8)
+                    
+                    Button(action: {
+                        // 🔋 BATTERY EFFICIENCY: Save playback state when switching tabs
+                        searchState.playbackManager.savePlaybackState()
+                        selectedTab = 2
+                    }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "heart.fill")
+                                .font(.system(size: 14))
+                            Text("Favorites")
+                                .font(.system(size: 14, weight: .medium))
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
-                }
-                .buttonStyle(PlainButtonStyle())
-                .background(selectedTab == 2 ? Color.blue.opacity(0.2) : Color.clear)
-                .cornerRadius(8)
-                
-                Button(action: {
-                    // 🔋 BATTERY EFFICIENCY: Save playback state when switching tabs
-                    searchState.playbackManager.savePlaybackState()
-                    selectedTab = 3
-                }) {
-                    HStack {
-                        Image(systemName: "gear")
-                        Text("Settings")
+                    .buttonStyle(PlainButtonStyle())
+                    .background(selectedTab == 2 ? Color.blue.opacity(0.2) : Color.clear)
+                    .cornerRadius(8)
+                    
+                    Button(action: {
+                        // 🔋 BATTERY EFFICIENCY: Save playback state when switching tabs
+                        searchState.playbackManager.savePlaybackState()
+                        selectedTab = 3
+                    }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "clock.fill")
+                                .font(.system(size: 14))
+                            Text("Recently Played")
+                                .font(.system(size: 14, weight: .medium))
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
                     }
-                    .padding(.horizontal, 16)
-                    .padding(.vertical, 8)
+                    .buttonStyle(PlainButtonStyle())
+                    .background(selectedTab == 3 ? Color.blue.opacity(0.2) : Color.clear)
+                    .cornerRadius(8)
+                    
+                    Button(action: {
+                        // 🔋 BATTERY EFFICIENCY: Save playback state when switching tabs
+                        searchState.playbackManager.savePlaybackState()
+                        selectedTab = 4
+                    }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "gear")
+                                .font(.system(size: 14))
+                            Text("Settings")
+                                .font(.system(size: 14, weight: .medium))
+                        }
+                        .padding(.horizontal, 16)
+                        .padding(.vertical, 8)
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                    .background(selectedTab == 4 ? Color.blue.opacity(0.2) : Color.clear)
+                    .cornerRadius(8)
                 }
-                .buttonStyle(PlainButtonStyle())
-                .background(selectedTab == 3 ? Color.blue.opacity(0.2) : Color.clear)
-                .cornerRadius(8)
-                
-                Spacer()
+                .padding(.horizontal, 20)
             }
-            .padding(.horizontal, 20)
             .padding(.top, 16)
             
             // Content based on selected tab
             if selectedTab == 0 {
+                // Home Content
+                HomeView(
+                    searchState: searchState,
+                    windowManager: windowManager,
+                    selectedTab: $selectedTab
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if selectedTab == 1 {
                 // Search Content
                 VStack(spacing: 0) {
                     SearchBarView(
@@ -115,11 +151,11 @@ struct MusicSearchView: View {
                             }
                     }
                 }
-            } else if selectedTab == 1 {
+            } else if selectedTab == 2 {
                 // Favorites Content
                 FavoritesView(searchState: searchState)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if selectedTab == 2 {
+            } else if selectedTab == 3 {
                 // Recently Played Content
                 RecentlyPlayedView(searchState: searchState)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -151,6 +187,9 @@ struct MusicSearchView: View {
         .onReceive(searchState.playbackManager.$currentTrack) { currentTrack in
             // Force UI update when currentTrack changes
             print("🎮 PlaybackManager currentTrack changed: \(currentTrack?.title ?? "nil")")
+        }
+        .onAppear {
+            print("🏠 MusicSearchView appeared - restored to tab \(selectedTab)")
         }
     }
 }

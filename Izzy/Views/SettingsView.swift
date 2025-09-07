@@ -75,7 +75,16 @@ struct SettingsView: View {
                     // Music source picker
                     Picker("Music Source", selection: Binding(
                         get: { MusicSource(rawValue: musicSource) ?? .youtubeMusic },
-                        set: { musicSource = $0.rawValue }
+                        set: { newSource in
+                            let oldSource = musicSource
+                            musicSource = newSource.rawValue
+                            
+                            // Clear search cache when music source changes
+                            if oldSource != newSource.rawValue {
+                                searchState.musicSearchManager.clearCacheForMusicSourceChange()
+                                print("🔄 Music source changed from '\(oldSource)' to '\(newSource.rawValue)' - cache cleared")
+                            }
+                        }
                     )) {
                         ForEach(MusicSource.allCases, id: \.self) { source in
                             HStack {

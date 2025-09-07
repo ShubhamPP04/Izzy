@@ -505,27 +505,42 @@ extension PythonServiceManager {
     }
     
     func getAlbumTracks(browseId: String) async throws -> [SearchResult] {
-        let request = ServiceRequest(action: "album_tracks", browseId: browseId)
+        // Get the current music source from UserDefaults
+        let currentSource = UserDefaults.standard.string(forKey: "musicSource") ?? "youtube_music"
+        
+        let request = ServiceRequest(action: "album_tracks", browseId: browseId, musicSource: currentSource)
         return try await sendRequest(request, responseType: [SearchResult].self)
     }
     
     func getPlaylistTracks(playlistId: String) async throws -> [SearchResult] {
-        let request = ServiceRequest(action: "playlist_tracks", playlistId: playlistId)
+        // Get the current music source from UserDefaults
+        let currentSource = UserDefaults.standard.string(forKey: "musicSource") ?? "youtube_music"
+        
+        let request = ServiceRequest(action: "playlist_tracks", playlistId: playlistId, musicSource: currentSource)
         return try await sendRequest(request, responseType: [SearchResult].self)
     }
     
     func getArtistSongs(browseId: String) async throws -> [SearchResult] {
-        let request = ServiceRequest(action: "artist_songs", browseId: browseId)
+        // Get the current music source from UserDefaults
+        let currentSource = UserDefaults.standard.string(forKey: "musicSource") ?? "youtube_music"
+        
+        let request = ServiceRequest(action: "artist_songs", browseId: browseId, musicSource: currentSource)
         return try await sendRequest(request, responseType: [SearchResult].self)
     }
     
     func getWatchPlaylist(videoId: String, playlistId: String? = nil) async throws -> [SearchResult] {
-        let request = ServiceRequest(action: "watch_playlist", videoId: videoId, playlistId: playlistId)
+        // Get the current music source from UserDefaults
+        let currentSource = UserDefaults.standard.string(forKey: "musicSource") ?? "youtube_music"
+        
+        let request = ServiceRequest(action: "watch_playlist", videoId: videoId, playlistId: playlistId, musicSource: currentSource)
         return try await sendRequest(request, responseType: [SearchResult].self)
     }
     
     func getSongSuggestions(videoId: String) async throws -> [SearchResult] {
-        let request = ServiceRequest(action: "song_suggestions", videoId: videoId)
+        // Get the current music source from UserDefaults
+        let currentSource = UserDefaults.standard.string(forKey: "musicSource") ?? "youtube_music"
+        
+        let request = ServiceRequest(action: "song_suggestions", videoId: videoId, musicSource: currentSource)
         return try await sendRequest(request, responseType: [SearchResult].self)
     }
 }

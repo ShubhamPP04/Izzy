@@ -57,8 +57,12 @@ class MusicSearchManager: ObservableObject {
     private func performSearch(query: String) async {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         
-        // Check cache first
-        if let cached = searchCache[trimmedQuery],
+        // Get current music source to include in cache key
+        let currentMusicSource = UserDefaults.standard.string(forKey: "musicSource") ?? "youtube_music"
+        let cacheKey = "\(trimmedQuery)_\(currentMusicSource)"
+        
+        // Check cache first (now includes music source in key)
+        if let cached = searchCache[cacheKey],
            Date().timeIntervalSince(cached.timestamp) < cacheTimeout {
             await MainActor.run {
                 self.searchResults = cached.results
@@ -77,15 +81,15 @@ class MusicSearchManager: ObservableObject {
         do {
             let results = try await pythonService.searchMusic(query: query, limit: 20)
             
-            print("🔍 Search completed for '\(query)': \(results.songs.count) songs, \(results.albums.count) albums")
+            print("🔍 Search completed for '\(query)' using '\(currentMusicSource)': \(results.songs.count) songs, \(results.albums.count) albums")
             
             // Log first few results for debugging
             for (index, song) in results.songs.prefix(3).enumerated() {
                 print("🎵 Song \(index + 1): \(song.title) by \(song.artist ?? "Unknown") - VideoID: \(song.videoId ?? "None")")
             }
             
-            // Cache the results
-            searchCache[trimmedQuery] = (results: results, timestamp: Date())
+            // Cache the results with music source in key
+            searchCache[cacheKey] = (results: results, timestamp: Date())
             cleanupOldCache()
             
             await MainActor.run {
@@ -116,6 +120,14 @@ class MusicSearchManager: ObservableObject {
         isSearching = false
         searchError = nil
         resetSelection()
+    }
+    
+    // MARK: - Music Source Change Handling
+    
+    func clearCacheForMusicSourceChange() {
+        // Clear all cached results when music source changes
+        searchCache.removeAll()
+        print("🗑️ Cleared search cache due to music source change")
     }
     
     // MARK: - Selection Management

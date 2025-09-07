@@ -33,6 +33,7 @@ class SearchState: ObservableObject {
     // Persistent state that survives window hide/show
     private var persistentSearchText: String = ""
     private var persistentResults: MusicSearchResults = MusicSearchResults()
+    private var persistentSelectedTab: Int = 1 // Default to Search tab
     private var searchCancellable: AnyCancellable?
     private var cancellables = Set<AnyCancellable>()
     private var isRestoringState: Bool = false
@@ -249,7 +250,17 @@ class SearchState: ObservableObject {
     func saveState() {
         persistentSearchText = searchText
         persistentResults = musicSearchManager.searchResults
+        // Note: persistentSelectedTab will be saved from MusicSearchView directly
         print("💾 Saved search state: '\(persistentSearchText)' with \(persistentResults.totalCount) results")
+    }
+    
+    func saveSelectedTab(_ tabIndex: Int) {
+        persistentSelectedTab = tabIndex
+        print("💾 Saved selected tab: \(tabIndex)")
+    }
+    
+    func getPersistedSelectedTab() -> Int {
+        return persistentSelectedTab
     }
     
     func restoreState() {
