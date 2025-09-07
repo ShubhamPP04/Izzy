@@ -12,6 +12,7 @@ struct SettingsView: View {
     @ObservedObject var searchState: SearchState
     @AppStorage("launchAtLogin") private var launchAtLogin = false
     @AppStorage("autoUpdateEnabled") private var autoUpdateEnabled = true
+    @AppStorage("musicSource") private var musicSource = MusicSource.youtubeMusic.rawValue
     @StateObject private var updateManager = UpdateManager.shared
     
     var body: some View {
@@ -47,6 +48,60 @@ struct SettingsView: View {
                     Text("Automatically start Izzy when you log in to your Mac")
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
+                }
+                .padding()
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.primary.opacity(0.05))
+                )
+                
+                // Music Source section
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Image(systemName: "music.note")
+                            .foregroundColor(.blue)
+                            .font(.system(size: 14, weight: .medium))
+                        
+                        Text("Music Source")
+                            .font(.system(size: 14, weight: .medium))
+                        
+                        Spacer()
+                    }
+                    
+                    Text("Choose your preferred music streaming service")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                    
+                    // Music source picker
+                    Picker("Music Source", selection: Binding(
+                        get: { MusicSource(rawValue: musicSource) ?? .youtubeMusic },
+                        set: { musicSource = $0.rawValue }
+                    )) {
+                        ForEach(MusicSource.allCases, id: \.self) { source in
+                            HStack {
+                                Image(systemName: source.icon)
+                                    .foregroundColor(.blue)
+                                    .font(.system(size: 12))
+                                Text(source.displayName)
+                                    .font(.system(size: 14))
+                            }
+                            .tag(source)
+                        }
+                    }
+                    .pickerStyle(MenuPickerStyle())
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    
+                    if MusicSource(rawValue: musicSource) == .jioSaavn {
+                        HStack {
+                            Image(systemName: "info.circle")
+                                .foregroundColor(.orange)
+                                .font(.system(size: 12))
+                            
+                            Text("JioSaavn integration provides access to Indian music library with high-quality streaming.")
+                                .font(.system(size: 11))
+                                .foregroundColor(.secondary)
+                        }
+                    }
                 }
                 .padding()
                 .background(
@@ -317,6 +372,11 @@ struct SettingsView: View {
         }
         .onChange(of: autoUpdateEnabled) { _, newValue in
             UserDefaults.standard.set(newValue, forKey: "AutoUpdateEnabled")
+        }
+        .onChange(of: musicSource) { _, newValue in
+            UserDefaults.standard.set(newValue, forKey: "musicSource")
+            // Clear search results when music source changes to force refresh
+            searchState.clearSearch()
         }
         .onAppear {
             // Check current launch at login status

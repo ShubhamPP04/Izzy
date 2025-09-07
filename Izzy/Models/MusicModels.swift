@@ -7,6 +7,27 @@
 
 import Foundation
 
+// MARK: - Music Sources
+
+enum MusicSource: String, CaseIterable, Codable {
+    case youtubeMusic = "youtube_music"
+    case jioSaavn = "jiosaavn"
+    
+    var displayName: String {
+        switch self {
+        case .youtubeMusic: return "YouTube Music"
+        case .jioSaavn: return "JioSaavn"
+        }
+    }
+    
+    var icon: String {
+        switch self {
+        case .youtubeMusic: return "play.circle.fill"
+        case .jioSaavn: return "music.note.list"
+        }
+    }
+}
+
 // MARK: - Search Result Types
 
 enum SearchResultType: String, CaseIterable, Codable {

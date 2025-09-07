@@ -12,6 +12,42 @@ import traceback  # Add traceback for better error reporting
 from typing import Dict, List, Any, Optional
 from ytmusicapi import YTMusic
 
+# Import additional libraries
+try:
+    import requests
+    import re
+    import base64
+    HAS_REQUESTS = True
+except ImportError:
+    HAS_REQUESTS = False
+    print("❌ Failed to import requests for JioSaavn support", file=sys.stderr)
+
+# Import yt-dlp with error handling
+try:
+    from yt_dlp import YoutubeDL
+    HAS_YTDLP = True
+    print("✅ Successfully imported yt-dlp", file=sys.stderr)
+except ImportError as e:
+    print(f"❌ Failed to import yt-dlp: {e}", file=sys.stderr)
+    YoutubeDL = None
+    HAS_YTDLP = False
+
+# Check if ytmusicapi is available
+try:
+    HAS_YTMUSICAPI = True
+    print("✅ Successfully imported ytmusicapi", file=sys.stderr)
+except ImportError as e:
+    HAS_YTMUSICAPI = False
+    print(f"❌ Failed to import ytmusicapi: {e}", file=sys.stderr)
+
+import sys
+import json
+import asyncio
+import logging
+import traceback  # Add traceback for better error reporting
+from typing import Dict, List, Any, Optional
+from ytmusicapi import YTMusic
+
 # Import yt-dlp with error handling
 try:
     from yt_dlp import YoutubeDL
@@ -29,6 +65,587 @@ logging.basicConfig(
     handlers=[logging.StreamHandler(sys.stderr)]
 )
 logger = logging.getLogger(__name__)
+
+# MARK: - JioSaavn Service
+
+class JioSaavnService:
+    """
+    JioSaavn music service integration using saavn.dev API
+    """
+    
+    def __init__(self):
+        self.base_url = "https://saavn.dev/api"
+        
+    def search_all(self, query: str, limit: int = 20) -> Dict[str, Any]:
+        """
+        Search across JioSaavn music library using saavn.dev API
+        """
+        try:
+            if not HAS_REQUESTS:
+                return {
+                    'success': False,
+                    'error': 'requests library not available - JioSaavn search not supported'
+                }
+            
+            results = {
+                'songs': [],
+                'albums': [],
+                'artists': [],
+                'playlists': [],
+                'videos': []
+            }
+            
+            # Search songs
+            try:
+                songs_response = requests.get(f"{self.base_url}/search/songs", params={
+                    'query': query,
+                    'page': 0,
+                    'limit': limit
+                }, timeout=10)
+                if songs_response.status_code == 200:
+                    songs_data = songs_response.json()
+                    if songs_data.get('success') and songs_data.get('data'):
+                        for song in songs_data['data'].get('results', [])[:limit]:
+                            formatted_song = self._format_jiosaavn_song(song)
+                            if formatted_song:
+                                results['songs'].append(formatted_song)
+            except Exception as e:
+                print(f"Error searching songs: {e}", file=sys.stderr)
+            
+            # Search albums
+            try:
+                albums_response = requests.get(f"{self.base_url}/search/albums", params={
+                    'query': query,
+                    'page': 0,
+                    'limit': limit
+                }, timeout=10)
+                if albums_response.status_code == 200:
+                    albums_data = albums_response.json()
+                    if albums_data.get('success') and albums_data.get('data'):
+                        for album in albums_data['data'].get('results', [])[:limit]:
+                            formatted_album = self._format_jiosaavn_album(album)
+                            if formatted_album:
+                                results['albums'].append(formatted_album)
+            except Exception as e:
+                print(f"Error searching albums: {e}", file=sys.stderr)
+            
+            # Search artists
+            try:
+                artists_response = requests.get(f"{self.base_url}/search/artists", params={
+                    'query': query,
+                    'page': 0,
+                    'limit': limit
+                }, timeout=10)
+                if artists_response.status_code == 200:
+                    artists_data = artists_response.json()
+                    if artists_data.get('success') and artists_data.get('data'):
+                        for artist in artists_data['data'].get('results', [])[:limit]:
+                            formatted_artist = self._format_jiosaavn_artist(artist)
+                            if formatted_artist:
+                                results['artists'].append(formatted_artist)
+            except Exception as e:
+                print(f"Error searching artists: {e}", file=sys.stderr)
+            
+            # Search playlists
+            try:
+                playlists_response = requests.get(f"{self.base_url}/search/playlists", params={
+                    'query': query,
+                    'page': 0,
+                    'limit': limit
+                }, timeout=10)
+                if playlists_response.status_code == 200:
+                    playlists_data = playlists_response.json()
+                    if playlists_data.get('success') and playlists_data.get('data'):
+                        for playlist in playlists_data['data'].get('results', [])[:limit]:
+                            formatted_playlist = self._format_jiosaavn_playlist(playlist)
+                            if formatted_playlist:
+                                results['playlists'].append(formatted_playlist)
+            except Exception as e:
+                print(f"Error searching playlists: {e}", file=sys.stderr)
+            
+            return {
+                'success': True,
+                'data': results
+            }
+            
+        except Exception as e:
+            logger.error(f"JioSaavn search failed: {e}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
+    def _format_jiosaavn_song(self, song: Dict) -> Optional[Dict]:
+        """Format JioSaavn song result from saavn.dev API"""
+        try:
+            # Get the highest quality image
+            image_url = ''
+            if song.get('image') and isinstance(song['image'], list) and len(song['image']) > 0:
+                # Get the highest quality image (last in array)
+                image_url = song['image'][-1].get('url', '') if song['image'][-1] else ''
+            
+            # Format artists
+            artists_list = []
+            if song.get('artists') and song['artists'].get('primary'):
+                for artist in song['artists']['primary']:
+                    if artist.get('name'):
+                        artists_list.append(artist['name'])
+            
+            return {
+                'id': song.get('id', ''),
+                'type': 'songs',
+                'title': song.get('name', '').strip(),
+                'artist': ', '.join(artists_list) if artists_list else song.get('album', {}).get('name', ''),
+                'thumbnailURL': image_url,
+                'duration': float(song.get('duration', 0)) if song.get('duration') else None,
+                'explicit': song.get('explicitContent', False),
+                'videoId': song.get('id', ''),  # Use JioSaavn ID as videoId
+                'browseId': None,
+                'year': str(song.get('year', '')) if song.get('year') else None,
+                'playCount': str(song.get('playCount', '')) if song.get('playCount') else None
+            }
+        except Exception as e:
+            logger.error(f"Error formatting JioSaavn song: {e}")
+            return None
+    
+    def _format_jiosaavn_album(self, album: Dict) -> Optional[Dict]:
+        """Format JioSaavn album result from saavn.dev API"""
+        try:
+            # Get the highest quality image
+            image_url = ''
+            if album.get('image') and isinstance(album['image'], list) and len(album['image']) > 0:
+                image_url = album['image'][-1].get('url', '') if album['image'][-1] else ''
+            
+            # Format artists
+            artists_list = []
+            if album.get('artists') and album['artists'].get('primary'):
+                for artist in album['artists']['primary']:
+                    if artist.get('name'):
+                        artists_list.append(artist['name'])
+            
+            return {
+                'id': album.get('id', ''),
+                'type': 'albums',
+                'title': album.get('name', '').strip(),
+                'artist': ', '.join(artists_list),
+                'thumbnailURL': image_url,
+                'duration': None,
+                'explicit': album.get('explicitContent', False),
+                'videoId': None,
+                'browseId': album.get('id', ''),
+                'year': str(album.get('year', '')) if album.get('year') else None,
+                'playCount': str(album.get('playCount', '')) if album.get('playCount') else None
+            }
+        except Exception as e:
+            logger.error(f"Error formatting JioSaavn album: {e}")
+            return None
+    
+    def _format_jiosaavn_artist(self, artist: Dict) -> Optional[Dict]:
+        """Format JioSaavn artist result from saavn.dev API"""
+        try:
+            # Get the highest quality image
+            image_url = ''
+            if artist.get('image') and isinstance(artist['image'], list) and len(artist['image']) > 0:
+                image_url = artist['image'][-1].get('url', '') if artist['image'][-1] else ''
+            
+            return {
+                'id': artist.get('id', ''),
+                'type': 'artists',
+                'title': artist.get('name', '').strip(),
+                'artist': artist.get('name', '').strip(),
+                'thumbnailURL': image_url,
+                'duration': None,
+                'explicit': False,
+                'videoId': None,
+                'browseId': artist.get('id', ''),
+                'year': None,
+                'playCount': None
+            }
+        except Exception as e:
+            logger.error(f"Error formatting JioSaavn artist: {e}")
+            return None
+    
+    def _format_jiosaavn_playlist(self, playlist: Dict) -> Optional[Dict]:
+        """Format JioSaavn playlist result from saavn.dev API"""
+        try:
+            # Get the highest quality image
+            image_url = ''
+            if playlist.get('image') and isinstance(playlist['image'], list) and len(playlist['image']) > 0:
+                image_url = playlist['image'][-1].get('url', '') if playlist['image'][-1] else ''
+            
+            return {
+                'id': playlist.get('id', ''),
+                'type': 'playlists',
+                'title': playlist.get('name', '').strip(),
+                'artist': 'JioSaavn Playlist',
+                'thumbnailURL': image_url,
+                'duration': None,
+                'explicit': playlist.get('explicitContent', False),
+                'videoId': None,
+                'browseId': playlist.get('id', ''),
+                'year': None,
+                'playCount': str(playlist.get('songCount', '')) if playlist.get('songCount') else None
+            }
+        except Exception as e:
+            logger.error(f"Error formatting JioSaavn playlist: {e}")
+            return None
+    
+    def get_stream_info(self, video_id: str) -> Dict[str, Any]:
+        """Get JioSaavn stream info using saavn.dev API"""
+        try:
+            if not HAS_REQUESTS:
+                return {
+                    'success': False,
+                    'error': 'requests library not available - JioSaavn streaming not supported'
+                }
+            
+            print(f"🎵 Getting stream info for JioSaavn song ID: {video_id}", file=sys.stderr)
+            
+            # Use the correct API endpoint format based on saavn.dev documentation
+            response = requests.get(f"{self.base_url}/songs/{video_id}", timeout=10)
+            print(f"🎵 JioSaavn API response status: {response.status_code}", file=sys.stderr)
+            
+            if response.status_code != 200:
+                return {
+                    'success': False,
+                    'error': f'Failed to fetch song details: HTTP {response.status_code}'
+                }
+            
+            data = response.json()
+            print(f"🎵 JioSaavn API response data keys: {list(data.keys())}", file=sys.stderr)
+            
+            if not data.get('success') or not data.get('data'):
+                return {
+                    'success': False,
+                    'error': 'Song not found or no data available'
+                }
+            
+            songs = data['data'] if isinstance(data['data'], list) else [data['data']]
+            if not songs:
+                return {
+                    'success': False,
+                    'error': 'No song data found'
+                }
+            
+            song_data = songs[0]
+            print(f"🎵 Song data keys: {list(song_data.keys())}", file=sys.stderr)
+            
+            # Get stream URLs - JioSaavn provides downloadUrl array with different qualities
+            download_url = ''
+            quality = 'unknown'
+            
+            # Look for downloadUrl field which should contain quality links
+            if song_data.get('downloadUrl') and isinstance(song_data['downloadUrl'], list):
+                download_urls = song_data['downloadUrl']
+                print(f"🎵 Found {len(download_urls)} download URLs", file=sys.stderr)
+                
+                # Get the highest quality URL - look for 320kbps first, then highest quality
+                best_url = None
+                for url_info in download_urls:
+                    if isinstance(url_info, dict) and 'url' in url_info:
+                        url_quality = str(url_info.get('quality', ''))
+                        print(f"🎵 Available quality: {url_quality}", file=sys.stderr)
+                        
+                        if '320' in url_quality:
+                            best_url = url_info['url']
+                            quality = url_quality
+                            break
+                        elif best_url is None:
+                            best_url = url_info['url']
+                            quality = url_quality
+                
+                if best_url:
+                    download_url = best_url
+                    print(f"🎵 Selected quality: {quality}", file=sys.stderr)
+            
+            # Fallback: try other possible field names
+            if not download_url:
+                for field in ['media_url', 'stream_url', 'url', 'link']:
+                    if song_data.get(field):
+                        download_url = song_data[field]
+                        quality = 'default'
+                        print(f"🎵 Using alternative field '{field}' for stream URL", file=sys.stderr)
+                        break
+            
+            if not download_url:
+                return {
+                    'success': False,
+                    'error': 'No stream URL available for this song'
+                }
+            
+            print(f"🎵 Successfully got stream URL (quality: {quality})", file=sys.stderr)
+            
+            return {
+                'success': True,
+                'data': {
+                    'url': download_url,
+                    'title': song_data.get('name', ''),
+                    'duration': int(song_data.get('duration', 0)),
+                    'quality': quality
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"JioSaavn stream extraction failed: {e}")
+            print(f"🎵 ERROR: JioSaavn stream extraction failed: {e}", file=sys.stderr)
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
+    def get_album_tracks(self, browse_id: str) -> Dict[str, Any]:
+        """Get tracks from a JioSaavn album using saavn.dev API"""
+        try:
+            if not HAS_REQUESTS:
+                return {
+                    'success': False,
+                    'error': 'requests library not available'
+                }
+            
+            response = requests.get(f"{self.base_url}/albums", params={
+                'id': browse_id
+            }, timeout=10)
+            
+            if response.status_code != 200:
+                return {
+                    'success': False,
+                    'error': f'Failed to fetch album: HTTP {response.status_code}'
+                }
+            
+            data = response.json()
+            if not data.get('success') or not data.get('data'):
+                return {
+                    'success': False,
+                    'error': 'Album not found'
+                }
+            
+            album_data = data['data']
+            tracks = []
+            
+            if album_data.get('songs'):
+                for song in album_data['songs']:
+                    formatted_song = self._format_jiosaavn_song(song)
+                    if formatted_song:
+                        tracks.append(formatted_song)
+            
+            return {
+                'success': True,
+                'data': tracks
+            }
+            
+        except Exception as e:
+            logger.error(f"JioSaavn album tracks failed: {e}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
+    def get_playlist_tracks(self, playlist_id: str) -> Dict[str, Any]:
+        """Get tracks from a JioSaavn playlist using saavn.dev API"""
+        try:
+            if not HAS_REQUESTS:
+                return {
+                    'success': False,
+                    'error': 'requests library not available'
+                }
+            
+            response = requests.get(f"{self.base_url}/playlists", params={
+                'id': playlist_id
+            }, timeout=10)
+            
+            if response.status_code != 200:
+                return {
+                    'success': False,
+                    'error': f'Failed to fetch playlist: HTTP {response.status_code}'
+                }
+            
+            data = response.json()
+            if not data.get('success') or not data.get('data'):
+                return {
+                    'success': False,
+                    'error': 'Playlist not found'
+                }
+            
+            playlist_data = data['data']
+            tracks = []
+            
+            if playlist_data.get('songs'):
+                for song in playlist_data['songs']:
+                    formatted_song = self._format_jiosaavn_song(song)
+                    if formatted_song:
+                        tracks.append(formatted_song)
+            
+            return {
+                'success': True,
+                'data': tracks
+            }
+            
+        except Exception as e:
+            logger.error(f"JioSaavn playlist tracks failed: {e}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
+    def get_artist_songs(self, browse_id: str) -> Dict[str, Any]:
+        """Get songs from a JioSaavn artist using saavn.dev API"""
+        try:
+            if not HAS_REQUESTS:
+                return {
+                    'success': False,
+                    'error': 'requests library not available'
+                }
+            
+            response = requests.get(f"{self.base_url}/artists", params={
+                'id': browse_id
+            }, timeout=10)
+            
+            if response.status_code != 200:
+                return {
+                    'success': False,
+                    'error': f'Failed to fetch artist: HTTP {response.status_code}'
+                }
+            
+            data = response.json()
+            if not data.get('success') or not data.get('data'):
+                return {
+                    'success': False,
+                    'error': 'Artist not found'
+                }
+            
+            artist_data = data['data']
+            tracks = []
+            
+            # Get songs from topSongs
+            if artist_data.get('topSongs'):
+                for song in artist_data['topSongs']:
+                    formatted_song = self._format_jiosaavn_song(song)
+                    if formatted_song:
+                        tracks.append(formatted_song)
+            
+            return {
+                'success': True,
+                'data': tracks
+            }
+            
+        except Exception as e:
+            logger.error(f"JioSaavn artist songs failed: {e}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
+    def get_watch_playlist(self, video_id: str, playlist_id: str = None) -> Dict[str, Any]:
+        """Get watch playlist for JioSaavn using song suggestions"""
+        try:
+            return self.get_song_suggestions(video_id)
+        except Exception as e:
+            logger.error(f"JioSaavn watch playlist failed: {e}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
+    def get_song_suggestions(self, video_id: str) -> Dict[str, Any]:
+        """Get song suggestions for JioSaavn using saavn.dev API"""
+        try:
+            if not HAS_REQUESTS:
+                return {
+                    'success': False,
+                    'error': 'requests library not available'
+                }
+            
+            response = requests.get(f"{self.base_url}/songs/{video_id}/suggestions", timeout=10)
+            
+            if response.status_code != 200:
+                return {
+                    'success': False,
+                    'error': f'Failed to fetch suggestions: HTTP {response.status_code}'
+                }
+            
+            data = response.json()
+            if not data.get('success') or not data.get('data'):
+                return {
+                    'success': False,
+                    'error': 'No suggestions found'
+                }
+            
+            tracks = []
+            for song in data['data']:
+                formatted_song = self._format_jiosaavn_song(song)
+                if formatted_song:
+                    tracks.append(formatted_song)
+            
+            return {
+                'success': True,
+                'data': tracks
+            }
+            
+        except Exception as e:
+            logger.error(f"JioSaavn song suggestions failed: {e}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
+    def get_lyrics(self, video_id: str) -> Dict[str, Any]:
+        """Get lyrics for JioSaavn song using saavn.dev API"""
+        try:
+            if not HAS_REQUESTS:
+                return {
+                    'success': False,
+                    'error': 'requests library not available'
+                }
+            
+            response = requests.get(f"{self.base_url}/songs", params={
+                'id': video_id
+            }, timeout=10)
+            
+            if response.status_code != 200:
+                return {
+                    'success': False,
+                    'error': f'Failed to fetch song details: HTTP {response.status_code}'
+                }
+            
+            data = response.json()
+            if not data.get('success') or not data.get('data'):
+                return {
+                    'success': False,
+                    'error': 'Song not found'
+                }
+            
+            songs = data['data'] if isinstance(data['data'], list) else [data['data']]
+            if not songs:
+                return {
+                    'success': False,
+                    'error': 'No song data found'
+                }
+            
+            song_data = songs[0]
+            
+            # Check if lyrics are available
+            if song_data.get('lyrics'):
+                return {
+                    'success': True,
+                    'data': {
+                        'lyrics': song_data['lyrics'],
+                        'source': 'JioSaavn'
+                    }
+                }
+            else:
+                return {
+                    'success': False,
+                    'error': 'No lyrics found for this song'
+                }
+            
+        except Exception as e:
+            logger.error(f"JioSaavn lyrics failed: {e}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
+
+# MARK: - YouTube Music Service
 
 # 🔋 BATTERY OPTIMIZATION: Check for optional dependencies
 HAS_YTMUSICAPI = True
@@ -730,8 +1347,19 @@ def handle_request(request_data: Dict[str, Any]) -> Dict[str, Any]:
     Handle incoming requests from Swift
     """
     try:
-        service = YTMusicService()
+        # Get the music source from the request (default to YouTube Music)
+        music_source = request_data.get('musicSource', 'youtube_music')
+        print(f"🎵 Python received musicSource: '{music_source}'", file=sys.stderr)
+        
+        if music_source == 'jiosaavn':
+            print("🔥 Using JioSaavn service", file=sys.stderr)
+            service = JioSaavnService()
+        else:
+            print("🔥 Using YouTube Music service", file=sys.stderr)
+            service = YTMusicService()
+            
         action = request_data.get('action')
+        print(f"🎵 Action: {action}", file=sys.stderr)
         
         if action == 'search':
             query = request_data.get('query', '')

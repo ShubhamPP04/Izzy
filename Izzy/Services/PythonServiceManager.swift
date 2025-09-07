@@ -45,14 +45,16 @@ struct ServiceRequest: Codable {
     let browseId: String?
     let playlistId: String?
     let limit: Int?
+    let musicSource: String?
     
-    init(action: String, query: String? = nil, videoId: String? = nil, browseId: String? = nil, playlistId: String? = nil, limit: Int? = nil) {
+    init(action: String, query: String? = nil, videoId: String? = nil, browseId: String? = nil, playlistId: String? = nil, limit: Int? = nil, musicSource: String? = nil) {
         self.action = action
         self.query = query
         self.videoId = videoId
         self.browseId = browseId
         self.playlistId = playlistId
         self.limit = limit
+        self.musicSource = musicSource
     }
 }
 
@@ -486,12 +488,19 @@ extension PythonServiceManager {
             return MusicSearchResults()
         }
         
-        let request = ServiceRequest(action: "search", query: query, limit: limit)
+        // Get the current music source from UserDefaults
+        let currentSource = UserDefaults.standard.string(forKey: "musicSource") ?? "youtube_music"
+        print("🎵 Current music source from UserDefaults: '\(currentSource)'")
+        
+        let request = ServiceRequest(action: "search", query: query, limit: limit, musicSource: currentSource)
         return try await sendRequest(request, responseType: MusicSearchResults.self)
     }
     
     func getStreamInfo(videoId: String) async throws -> StreamInfo {
-        let request = ServiceRequest(action: "stream", videoId: videoId)
+        // Get the current music source from UserDefaults
+        let currentSource = UserDefaults.standard.string(forKey: "musicSource") ?? "youtube_music"
+        
+        let request = ServiceRequest(action: "stream", videoId: videoId, musicSource: currentSource)
         return try await sendRequest(request, responseType: StreamInfo.self)
     }
     
