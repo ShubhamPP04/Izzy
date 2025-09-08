@@ -10,6 +10,7 @@ import SwiftUI
 struct HomeView: View {
     @ObservedObject var searchState: SearchState
     @ObservedObject var windowManager: WindowManager
+    @ObservedObject var playlistManager = PlaylistManager.shared
     @Binding var selectedTab: Int
     
     var body: some View {
@@ -176,7 +177,7 @@ struct HomeView: View {
                         
                         StatCard(
                             icon: "music.note.list",
-                            value: "\(searchState.favorites.count)",
+                            value: "\(playlistManager.playlists.count)",
                             label: "Playlists",
                             color: .purple
                         )

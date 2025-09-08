@@ -13,17 +13,10 @@ struct RecentlyPlayedItemView: View {
     @Binding var editMode: Bool
     @State private var showingAddToPlaylist = false
     @StateObject private var playlistManager = PlaylistManager.shared
+    @State private var isHovered = false // Add hover state
     
     var body: some View {
         HStack(spacing: 8) {
-            if editMode {
-                // Drag handle in edit mode
-                Image(systemName: "line.horizontal.3")
-                    .foregroundColor(.secondary)
-                    .font(.system(size: 16, weight: .medium))
-                    .padding(.trailing, 8)
-            }
-            
             // Thumbnail
             AsyncImage(url: URL(string: recentlyPlayed.thumbnailURL ?? "")) { image in
                 image
@@ -64,54 +57,53 @@ struct RecentlyPlayedItemView: View {
             
             Spacer()
             
-            if editMode {
-                // Action buttons in edit mode
-                HStack(spacing: 8) {
-                    // Add to Playlist button
-                    Button(action: {
-                        showingAddToPlaylist = true
-                    }) {
-                        Image(systemName: "plus.rectangle.on.rectangle")
-                            .foregroundColor(.secondary)
-                            .font(.system(size: 12, weight: .medium))
-                    }
-                    .buttonStyle(PlainButtonStyle())
-                    .popover(isPresented: $showingAddToPlaylist) {
-                        // Convert FavoriteSong to SearchResult for the AddToPlaylistView
-                        let searchResult = SearchResult(
-                            id: recentlyPlayed.id,
-                            type: .song,
-                            title: recentlyPlayed.title,
-                            artist: recentlyPlayed.artist,
-                            thumbnailURL: recentlyPlayed.thumbnailURL,
-                            duration: recentlyPlayed.duration,
-                            explicit: false,
-                            videoId: recentlyPlayed.videoId,
-                            browseId: nil,
-                            year: nil,
-                            playCount: nil
-                        )
-                        
-                        AddToPlaylistView(
-                            song: searchResult,
-                            playlistManager: playlistManager,
-                            searchState: searchState,
-                            isPresented: $showingAddToPlaylist
-                        )
-                    }
-                    
-                    // Remove recently played button
-                    Button(action: {
-                        searchState.removeRecentlyPlayed(recentlyPlayed)
-                    }) {
-                        Image(systemName: "xmark")
-                            .foregroundColor(.secondary)
-                            .font(.system(size: 12, weight: .medium))
-                    }
-                    .buttonStyle(PlainButtonStyle())
+            // Action buttons - show on hover or in edit mode
+            HStack(spacing: 8) {
+                // Add to Playlist button
+                Button(action: {
+                    showingAddToPlaylist = true
+                }) {
+                    Image(systemName: "plus.rectangle.on.rectangle")
+                        .foregroundColor(.secondary)
+                        .font(.system(size: 12, weight: .medium))
                 }
-                .padding(.horizontal, 4)
+                .buttonStyle(PlainButtonStyle())
+                .popover(isPresented: $showingAddToPlaylist) {
+                    // Convert FavoriteSong to SearchResult for the AddToPlaylistView
+                    let searchResult = SearchResult(
+                        id: recentlyPlayed.id,
+                        type: .song,
+                        title: recentlyPlayed.title,
+                        artist: recentlyPlayed.artist,
+                        thumbnailURL: recentlyPlayed.thumbnailURL,
+                        duration: recentlyPlayed.duration,
+                        explicit: false,
+                        videoId: recentlyPlayed.videoId,
+                        browseId: nil,
+                        year: nil,
+                        playCount: nil
+                    )
+                    
+                    AddToPlaylistView(
+                        song: searchResult,
+                        playlistManager: playlistManager,
+                        searchState: searchState,
+                        isPresented: $showingAddToPlaylist
+                    )
+                }
+                
+                // Remove recently played button
+                Button(action: {
+                    searchState.removeRecentlyPlayed(recentlyPlayed)
+                }) {
+                    Image(systemName: "xmark")
+                        .foregroundColor(.secondary)
+                        .font(.system(size: 12, weight: .medium))
+                }
+                .buttonStyle(PlainButtonStyle())
             }
+            .padding(.horizontal, 4)
+            .opacity((isHovered || editMode) ? 1.0 : 0.0) // Show on hover or in edit mode
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
@@ -120,10 +112,15 @@ struct RecentlyPlayedItemView: View {
                 .fill(searchState.playbackManager.currentTrack?.videoId == recentlyPlayed.videoId ? 
                       Color.blue.opacity(0.3) : Color.primary.opacity(0.05))
         )
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.2)) {
+                isHovered = hovering
+            }
+        }
         .onTapGesture {
             guard !editMode else { return }
             
-            // Play the song directly
+            // Play the song with proper shuffle support
             let searchResult = SearchResult(
                 id: recentlyPlayed.id,
                 type: .song,
@@ -140,8 +137,27 @@ struct RecentlyPlayedItemView: View {
             
             // Play the song
             let track = Track(from: searchResult)
+            
+            // Create queue from all recently played songs
+            let tracks = searchState.recentlyPlayed.map { recentlyPlayed in
+                SearchResult(
+                    id: recentlyPlayed.id,
+                    type: .song,
+                    title: recentlyPlayed.title,
+                    artist: recentlyPlayed.artist,
+                    thumbnailURL: recentlyPlayed.thumbnailURL,
+                    duration: recentlyPlayed.duration,
+                    explicit: false,
+                    videoId: recentlyPlayed.videoId,
+                    browseId: nil,
+                    year: nil,
+                    playCount: nil
+                )
+            }.map { Track(from: $0) }
+            
+            // Play with the full queue - the QueueManager will handle shuffle logic
             Task {
-                await searchState.playbackManager.play(track: track, fromQueue: [track])
+                await searchState.playbackManager.play(track: track, fromQueue: tracks)
             }
         }
     }
@@ -153,58 +169,146 @@ struct RecentlyPlayedView: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            // Header
+            // Header with enhanced styling
             HStack {
-                Text("Recently Played")
-                    .font(.headline)
-                    .fontWeight(.semibold)
+                VStack(alignment: .leading, spacing: 4) {
+                    HStack {
+                        Image(systemName: "clock.fill")
+                            .font(.title3)
+                            .foregroundColor(.green)
+                        Text("Recently Played")
+                            .font(.title2)
+                            .fontWeight(.bold)
+                    }
+                    
+                    Text("Your recently played songs")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                }
                 
                 Spacer()
                 
-                // Edit button
+                // Edit button with enhanced styling
+                if editMode {
+                    // Clear All button in edit mode
+                    Button(action: {
+                        // Clear all recently played songs
+                        searchState.recentlyPlayed.removeAll()
+                        searchState.saveRecentlyPlayed()
+                    }) {
+                        HStack(spacing: 6) {
+                            Image(systemName: "trash")
+                            Text("Clear All")
+                        }
+                        .font(.system(size: 13, weight: .medium))
+                        .padding(.horizontal, 10)
+                        .padding(.vertical, 5)
+                        .background(
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(Color.red.opacity(0.1))
+                        )
+                        .foregroundColor(.red)
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                    .padding(.trailing, 6)
+                }
+                
                 Button(action: {
                     withAnimation {
                         editMode.toggle()
                     }
                 }) {
-                    Text(editMode ? "Done" : "Edit")
-                        .font(.system(size: 14, weight: .medium))
-                        .foregroundColor(.blue)
+                    HStack(spacing: 6) {
+                        Image(systemName: editMode ? "checkmark" : "pencil")
+                        Text(editMode ? "Done" : "Edit")
+                    }
+                    .font(.system(size: 13, weight: .medium))
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
+                    .background(
+                        RoundedRectangle(cornerRadius: 6)
+                            .fill(Color.blue.opacity(0.1))
+                    )
+                    .foregroundColor(.blue)
                 }
                 .buttonStyle(PlainButtonStyle())
             }
-            .padding(.horizontal, 16)
-            .padding(.top, 12)
-            .padding(.bottom, 8)
+            .padding(.horizontal, 20)
+            .padding(.top, 20)
+            .padding(.bottom, 12)
             
             Divider()
             
-            // Recently played list
+            // Recently played grid with 2 songs per row
             if searchState.recentlyPlayed.isEmpty {
-                HStack {
-                    Text("No recently played songs yet")
-                        .font(.subheadline)
+                VStack(spacing: 16) {
+                    Image(systemName: "clock")
+                        .font(.system(size: 40))
                         .foregroundColor(.secondary)
-                    Spacer()
-                }
-                .padding(.horizontal, 16)
-                .padding(.vertical, 12)
-            } else {
-                List {
-                    ForEach(searchState.recentlyPlayed, id: \.id) { recentlyPlayed in
-                        RecentlyPlayedItemView(
-                            recentlyPlayed: recentlyPlayed,
-                            searchState: searchState,
-                            editMode: $editMode
-                        )
+                    
+                    VStack(spacing: 8) {
+                        Text("No recently played songs yet")
+                            .font(.headline)
+                            .fontWeight(.semibold)
+                        
+                        Text("Play some songs to see them appear here")
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                            .multilineTextAlignment(.center)
                     }
-                    .onMove { indices, newOffset in
-                        if editMode {
-                            // We don't reorder recently played songs, they're always sorted by most recent
+                }
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .padding(.horizontal, 20)
+            } else {
+                if editMode {
+                    // Edit mode with drag and drop reordering using List
+                    List {
+                        ForEach($searchState.recentlyPlayed, id: \.id) { $recentlyPlayed in
+                            HStack {
+                                // Drag handle in edit mode
+                                Image(systemName: "line.horizontal.3")
+                                    .foregroundColor(.secondary)
+                                    .font(.system(size: 16, weight: .medium))
+                                    .padding(.trailing, 8)
+                                
+                                // Recently played item
+                                RecentlyPlayedItemView(
+                                    recentlyPlayed: recentlyPlayed,
+                                    searchState: searchState,
+                                    editMode: $editMode
+                                )
+                                
+                                Spacer()
+                            }
+                            .padding(.vertical, 4)
+                        }
+                        .onMove { indices, newOffset in
+                            // Update the order in the search state
+                            searchState.recentlyPlayed.move(fromOffsets: indices, toOffset: newOffset)
+                            searchState.updateRecentlyPlayedOrder(searchState.recentlyPlayed)
                         }
                     }
+                    .listStyle(PlainListStyle())
+                    .padding(.horizontal, 16)
+                } else {
+                    // Normal view mode with grid layout
+                    ScrollView {
+                        LazyVGrid(columns: [
+                            GridItem(.flexible(), spacing: 12),
+                            GridItem(.flexible(), spacing: 12)
+                        ], spacing: 12) {
+                            ForEach(searchState.recentlyPlayed, id: \.id) { recentlyPlayed in
+                                RecentlyPlayedItemView(
+                                    recentlyPlayed: recentlyPlayed,
+                                    searchState: searchState,
+                                    editMode: $editMode
+                                )
+                            }
+                        }
+                        .padding(.horizontal, 20)
+                        .padding(.vertical, 12)
+                    }
                 }
-                .listStyle(PlainListStyle())
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)

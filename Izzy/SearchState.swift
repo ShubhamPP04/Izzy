@@ -153,6 +153,23 @@ class SearchState: ObservableObject {
         saveFavorites()
     }
     
+    // Add similar functions for recently played songs
+    func reorderRecentlyPlayed(from sourceIndex: Int, to destinationIndex: Int) {
+        // Make sure indices are valid
+        guard sourceIndex < recentlyPlayed.count && destinationIndex < recentlyPlayed.count else { return }
+        guard sourceIndex != destinationIndex else { return }
+        
+        // Move the recently played song
+        let movedSong = recentlyPlayed.remove(at: sourceIndex)
+        recentlyPlayed.insert(movedSong, at: destinationIndex)
+        saveRecentlyPlayed()
+    }
+    
+    func updateRecentlyPlayedOrder(_ newOrder: [FavoriteSong]) {
+        recentlyPlayed = newOrder
+        saveRecentlyPlayed()
+    }
+    
     // MARK: - Persistence
     
     private func saveFavorites() {
