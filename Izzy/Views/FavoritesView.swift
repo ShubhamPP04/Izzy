@@ -2,117 +2,28 @@
 //  FavoritesView.swift
 //  Izzy
 //
+//  Created by Shubham Kumar on 02/09/25.
+//
 
 import SwiftUI
-
-struct FavoritesView: View {
-    @ObservedObject var searchState: SearchState
-    @State private var editMode = false
-    
-    var body: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            // Header
-            HStack {
-                Image(systemName: "heart.fill")
-                    .foregroundColor(.red)
-                    .font(.system(size: 16, weight: .medium))
-                
-                Text("Favorites")
-                    .font(.system(size: 16, weight: .semibold))
-                    .foregroundColor(.primary)
-                
-                Spacer()
-                
-                Text("\(searchState.favorites.count)")
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundColor(.secondary)
-                
-                if !searchState.favorites.isEmpty {
-                    Button(action: {
-                        editMode.toggle()
-                    }) {
-                        Text(editMode ? "Done" : "Edit")
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(.blue)
-                    }
-                    .buttonStyle(PlainButtonStyle())
-                }
-            }
-            .padding(.horizontal, 4)
-            
-            // Favorites grid/list
-            if searchState.favorites.isEmpty {
-                HStack {
-                    Image(systemName: "heart")
-                        .foregroundColor(.secondary)
-                        .font(.system(size: 14))
-                    
-                    Text("No favorites yet. Hover over songs and click the heart to add favorites.")
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondary)
-                }
-                .padding(.vertical, 8)
-            } else {
-                if editMode {
-                    // Reorderable list view
-                    List {
-                        ForEach(searchState.favorites) { favorite in
-                            HStack {
-                                // Drag handle
-                                Image(systemName: "line.horizontal.3")
-                                    .foregroundColor(.secondary)
-                                    .font(.system(size: 16, weight: .medium))
-                                    .padding(.trailing, 8)
-                                
-                                // Favorite item
-                                FavoriteItemView(favorite: favorite, searchState: searchState)
-                                
-                                Spacer()
-                            }
-                            .background(
-                                RoundedRectangle(cornerRadius: 8)
-                                    .fill(Color.primary.opacity(0.05))
-                            )
-                        }
-                        .onMove { indices, newOffset in
-                            // Convert favorites to a mutable array
-                            var favoritesArray = searchState.favorites
-                            
-                            // Perform the move operation
-                            favoritesArray.move(fromOffsets: indices, toOffset: newOffset)
-                            
-                            // Update the searchState with the new order
-                            searchState.updateFavoritesOrder(favoritesArray)
-                        }
-                    }
-                    .padding(.vertical, 8)
-                } else {
-                    // Grid view
-                    ScrollView {
-                        LazyVGrid(columns: [
-                            GridItem(.flexible()),
-                            GridItem(.flexible())
-                        ], spacing: 12) {
-                            ForEach(searchState.favorites) { favorite in
-                                FavoriteItemView(favorite: favorite, searchState: searchState)
-                            }
-                        }
-                        .padding(.vertical, 8)
-                    }
-                }
-            }
-        }
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-    }
-}
 
 struct FavoriteItemView: View {
     let favorite: FavoriteSong
     @ObservedObject var searchState: SearchState
+    @Binding var editMode: Bool
+    @State private var showingAddToPlaylist = false
+    @StateObject private var playlistManager = PlaylistManager.shared
     
     var body: some View {
         HStack(spacing: 8) {
+            if editMode {
+                // Drag handle in edit mode
+                Image(systemName: "line.horizontal.3")
+                    .foregroundColor(.secondary)
+                    .font(.system(size: 16, weight: .medium))
+                    .padding(.trailing, 8)
+            }
+            
             // Thumbnail
             AsyncImage(url: URL(string: favorite.thumbnailURL ?? "")) { image in
                 image
@@ -153,30 +64,68 @@ struct FavoriteItemView: View {
             
             Spacer()
             
-            // Remove favorite button
-            Button(action: {
-                // Create a SearchResult from the favorite to remove it
-                let searchResult = SearchResult(
-                    id: favorite.id,
-                    type: .song,
-                    title: favorite.title,
-                    artist: favorite.artist,
-                    thumbnailURL: favorite.thumbnailURL,
-                    duration: favorite.duration,
-                    explicit: false,
-                    videoId: favorite.videoId,
-                    browseId: nil,
-                    year: nil,
-                    playCount: nil
-                )
-                searchState.removeFavorite(searchResult)
-            }) {
-                Image(systemName: "xmark")
-                    .foregroundColor(.secondary)
-                    .font(.system(size: 12, weight: .medium))
+            if editMode {
+                // Action buttons in edit mode
+                HStack(spacing: 8) {
+                    // Add to Playlist button
+                    Button(action: {
+                        showingAddToPlaylist = true
+                    }) {
+                        Image(systemName: "plus.rectangle.on.rectangle")
+                            .foregroundColor(.secondary)
+                            .font(.system(size: 12, weight: .medium))
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                    .popover(isPresented: $showingAddToPlaylist) {
+                        // Convert FavoriteSong to SearchResult for the AddToPlaylistView
+                        let searchResult = SearchResult(
+                            id: favorite.id,
+                            type: .song,
+                            title: favorite.title,
+                            artist: favorite.artist,
+                            thumbnailURL: favorite.thumbnailURL,
+                            duration: favorite.duration,
+                            explicit: false,
+                            videoId: favorite.videoId,
+                            browseId: nil,
+                            year: nil,
+                            playCount: nil
+                        )
+                        
+                        AddToPlaylistView(
+                            song: searchResult,
+                            playlistManager: playlistManager,
+                            searchState: searchState,
+                            isPresented: $showingAddToPlaylist
+                        )
+                    }
+                    
+                    // Remove favorite button
+                    Button(action: {
+                        // Create a SearchResult from the favorite to remove it
+                        let searchResult = SearchResult(
+                            id: favorite.id,
+                            type: .song,
+                            title: favorite.title,
+                            artist: favorite.artist,
+                            thumbnailURL: favorite.thumbnailURL,
+                            duration: favorite.duration,
+                            explicit: false,
+                            videoId: favorite.videoId,
+                            browseId: nil,
+                            year: nil,
+                            playCount: nil
+                        )
+                        searchState.removeFavorite(searchResult)
+                    }) {
+                        Image(systemName: "xmark")
+                            .foregroundColor(.secondary)
+                            .font(.system(size: 12, weight: .medium))
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                }
+                .padding(.horizontal, 4)
             }
-            .buttonStyle(PlainButtonStyle())
-            .padding(.horizontal, 4)
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 6)
@@ -186,7 +135,9 @@ struct FavoriteItemView: View {
                       Color.blue.opacity(0.3) : Color.primary.opacity(0.05))
         )
         .onTapGesture {
-            // Create a SearchResult from the favorite to play it
+            guard !editMode else { return }
+            
+            // Play the song directly
             let searchResult = SearchResult(
                 id: favorite.id,
                 type: .song,
@@ -201,39 +152,75 @@ struct FavoriteItemView: View {
                 playCount: nil
             )
             
-            // Play the favorite song in the order of the favorites list
+            // Play the song
+            let track = Track(from: searchResult)
             Task {
-                let track = Track(from: searchResult)
-                
-                // Create queue from all favorites in their current order
-                let allTracks = searchState.favorites.map { favorite in
-                    SearchResult(
-                        id: favorite.id,
-                        type: .song,
-                        title: favorite.title,
-                        artist: favorite.artist,
-                        thumbnailURL: favorite.thumbnailURL,
-                        duration: favorite.duration,
-                        explicit: false,
-                        videoId: favorite.videoId,
-                        browseId: nil,
-                        year: nil,
-                        playCount: nil
-                    )
-                }.map { Track(from: $0) }
-                
-                // Find the index of the selected track in the queue
-                let startIndex = allTracks.firstIndex { $0.id == track.id } ?? 0
-                
-                // Set up the queue starting from the selected track
-                await searchState.playbackManager.play(track: track, fromQueue: Array(allTracks[startIndex...]))
+                await searchState.playbackManager.play(track: track, fromQueue: [track])
             }
         }
     }
 }
 
-#Preview {
-    FavoritesView(searchState: SearchState())
-        .frame(width: 600, height: 400)
-        .background(Color.black.opacity(0.1))
+struct FavoritesView: View {
+    @ObservedObject var searchState: SearchState
+    @State private var editMode = false
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header
+            HStack {
+                Text("Favorites")
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                
+                Spacer()
+                
+                // Edit button
+                Button(action: {
+                    withAnimation {
+                        editMode.toggle()
+                    }
+                }) {
+                    Text(editMode ? "Done" : "Edit")
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.blue)
+                }
+                .buttonStyle(PlainButtonStyle())
+            }
+            .padding(.horizontal, 16)
+            .padding(.top, 12)
+            .padding(.bottom, 8)
+            
+            Divider()
+            
+            // Favorites list
+            if searchState.favorites.isEmpty {
+                HStack {
+                    Text("No favorites yet")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                    Spacer()
+                }
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+            } else {
+                List {
+                    ForEach(searchState.favorites, id: \.id) { favorite in
+                        FavoriteItemView(
+                            favorite: favorite,
+                            searchState: searchState,
+                            editMode: $editMode
+                        )
+                    }
+                    .onMove { indices, newOffset in
+                        if editMode {
+                            searchState.reorderFavorites(from: indices.first!, to: newOffset)
+                        }
+                    }
+                }
+                .listStyle(PlainListStyle())
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
 }

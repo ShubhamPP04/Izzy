@@ -101,18 +101,6 @@ class SearchState: ObservableObject {
         saveRecentlyPlayed()
     }
     
-    // Add this function to remove a song from recently played
-    func removeRecentlyPlayed(_ favoriteSong: FavoriteSong) {
-        recentlyPlayed.removeAll { $0.videoId == favoriteSong.videoId }
-        saveRecentlyPlayed()
-    }
-    
-    // Add this function to clear all recently played songs
-    func clearRecentlyPlayed() {
-        recentlyPlayed.removeAll()
-        saveRecentlyPlayed()
-    }
-    
     // MARK: - Favorites Management
     
     func addFavorite(_ searchResult: SearchResult) {
@@ -130,7 +118,13 @@ class SearchState: ObservableObject {
         favorites.removeAll { $0.videoId == searchResult.videoId }
         saveFavorites()
     }
-    
+
+    // Add this method to remove recently played songs
+    func removeRecentlyPlayed(_ recentlyPlayed: FavoriteSong) {
+        self.recentlyPlayed.removeAll { $0.videoId == recentlyPlayed.videoId }
+        saveRecentlyPlayed()
+    }
+
     func toggleFavorite(_ searchResult: SearchResult) {
         if isFavorited(searchResult) {
             removeFavorite(searchResult)

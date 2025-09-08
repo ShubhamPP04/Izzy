@@ -420,6 +420,8 @@ struct SearchResultRow: View {
     let onTap: () -> Void
     
     @State private var isHovered = false
+    @State private var showingAddToPlaylist = false
+    @StateObject private var playlistManager = PlaylistManager.shared
     
     var body: some View {
         HStack(spacing: 12) {
@@ -496,17 +498,39 @@ struct SearchResultRow: View {
             
             Spacer()
             
-            // Favorite button (only for songs and videos)
+            // Action buttons (only for songs and videos)
             if (category == .song || category == .video) && searchState != nil {
-                Button(action: {
-                    searchState?.toggleFavorite(result)
-                }) {
-                    Image(systemName: (searchState?.isFavorited(result) ?? false) ? "heart.fill" : "heart")
-                        .foregroundColor((searchState?.isFavorited(result) ?? false) ? .red : .secondary)
-                        .font(.system(size: 14, weight: .medium))
+                HStack(spacing: 8) {
+                    // Add to Playlist button
+                    Button(action: {
+                        showingAddToPlaylist = true
+                    }) {
+                        Image(systemName: "plus.rectangle.on.rectangle")
+                            .foregroundColor(.secondary)
+                            .font(.system(size: 14, weight: .medium))
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                    .opacity(isHovered ? 1.0 : 0.0)
+                    .popover(isPresented: $showingAddToPlaylist) {
+                        AddToPlaylistView(
+                            song: result,
+                            playlistManager: playlistManager,
+                            searchState: searchState!,
+                            isPresented: $showingAddToPlaylist
+                        )
+                    }
+                    
+                    // Favorite button
+                    Button(action: {
+                        searchState?.toggleFavorite(result)
+                    }) {
+                        Image(systemName: (searchState?.isFavorited(result) ?? false) ? "heart.fill" : "heart")
+                            .foregroundColor((searchState?.isFavorited(result) ?? false) ? .red : .secondary)
+                            .font(.system(size: 14, weight: .medium))
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                    .opacity(isHovered ? 1.0 : 0.0)
                 }
-                .buttonStyle(PlainButtonStyle())
-                .opacity(isHovered ? 1.0 : 0.0)
             }
             
             // Expand/collapse indicator for albums, playlists, and artists

@@ -10,7 +10,7 @@ import SwiftUI
 struct MusicSearchView: View {
     @ObservedObject var searchState: SearchState
     @ObservedObject var windowManager: WindowManager
-    @AppStorage("selectedTab") private var selectedTab = 1 // 0 = Home, 1 = Search, 2 = Favorites, 3 = Recently Played, 4 = Settings, 5 = Playlists
+    @AppStorage("selectedTab") private var selectedTab = 1 // 0 = Home, 1 = Search, 2 = Favorites, 3 = Recently Played, 4 = Settings
     
     var body: some View {
         VStack(spacing: 0) {
@@ -94,24 +94,6 @@ struct MusicSearchView: View {
                     Button(action: {
                         // 🔋 BATTERY EFFICIENCY: Save playback state when switching tabs
                         searchState.playbackManager.savePlaybackState()
-                        selectedTab = 5
-                    }) {
-                        HStack(spacing: 6) {
-                            Image(systemName: "music.note.list")
-                                .font(.system(size: 14))
-                            Text("Playlists")
-                                .font(.system(size: 14, weight: .medium))
-                        }
-                        .padding(.horizontal, 16)
-                        .padding(.vertical, 8)
-                    }
-                    .buttonStyle(PlainButtonStyle())
-                    .background(selectedTab == 5 ? Color.blue.opacity(0.2) : Color.clear)
-                    .cornerRadius(8)
-                    
-                    Button(action: {
-                        // 🔋 BATTERY EFFICIENCY: Save playback state when switching tabs
-                        searchState.playbackManager.savePlaybackState()
                         selectedTab = 4
                     }) {
                         HStack(spacing: 6) {
@@ -176,10 +158,6 @@ struct MusicSearchView: View {
             } else if selectedTab == 3 {
                 // Recently Played Content
                 RecentlyPlayedView(searchState: searchState)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if selectedTab == 5 {
-                // Playlists Content
-                PlaylistView(searchState: searchState)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 // Settings Content

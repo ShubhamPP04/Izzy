@@ -259,7 +259,7 @@ struct StreamInfo: Codable {
 
 // MARK: - Favorite Song Model
 
-struct FavoriteSong: Identifiable, Codable {
+struct FavoriteSong: Identifiable, Codable, Equatable {
     let id: String
     let title: String
     let artist: String?
@@ -276,6 +276,17 @@ struct FavoriteSong: Identifiable, Codable {
         self.duration = searchResult.duration
         self.videoId = searchResult.videoId ?? ""
         self.addedDate = Date()
+    }
+    
+    // Equatable conformance
+    static func == (lhs: FavoriteSong, rhs: FavoriteSong) -> Bool {
+        return lhs.id == rhs.id &&
+               lhs.title == rhs.title &&
+               lhs.artist == rhs.artist &&
+               lhs.thumbnailURL == rhs.thumbnailURL &&
+               lhs.duration == rhs.duration &&
+               lhs.videoId == rhs.videoId &&
+               lhs.addedDate == rhs.addedDate
     }
 }
 

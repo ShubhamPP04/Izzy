@@ -68,6 +68,16 @@ struct HomeView: View {
                         selectedTab = 3 // Switch to Recently Played tab
                     }
                     
+                    // Playlists Quick Action
+                    QuickActionCard(
+                        icon: "music.note.list",
+                        title: "Playlists",
+                        subtitle: "Your custom playlists",
+                        color: .purple
+                    ) {
+                        selectedTab = 5 // Switch to Playlists tab
+                    }
+                    
                     // Settings Quick Action
                     QuickActionCard(
                         icon: "gear",
@@ -162,6 +172,13 @@ struct HomeView: View {
                             value: "\(searchState.recentlyPlayed.count)",
                             label: "Recent",
                             color: .green
+                        )
+                        
+                        StatCard(
+                            icon: "music.note.list",
+                            value: "\(searchState.favorites.count)",
+                            label: "Playlists",
+                            color: .purple
                         )
                     }
                 }
