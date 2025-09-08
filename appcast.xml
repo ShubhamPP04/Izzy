@@ -6,6 +6,28 @@
     <description>Most recent changes with links to updates.</description>
     <language>en</language>
     
+    <!-- Version 1.0.6 -->
+    <item>
+      <title>Version 1.0.6</title>
+      <description>
+        <![CDATA[
+          <ul>
+            <li>Updated to version 1.0.6</li>
+            <li>Minor bug fixes and performance improvements</li>
+            <li>Enhanced stability and reliability</li>
+          </ul>
+        ]]>
+      </description>
+      <pubDate>Mon, 08 Sep 2025 12:00:00 +0000</pubDate>
+      <sparkle:version>6</sparkle:version>
+      <sparkle:shortVersionString>1.0.6</sparkle:shortVersionString>
+      <enclosure url="https://yourwebsite.com/izzy/Izzy.dmg"
+                 sparkle:version="6"
+                 sparkle:shortVersionString="1.0.6"
+                 length="16839788"
+                 type="application/octet-stream" />
+    </item>
+    
     <!-- Version 1.0.4 -->
     <item>
       <title>Version 1.0.4</title>
