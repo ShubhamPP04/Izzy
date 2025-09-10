@@ -267,8 +267,9 @@ struct FavoriteSong: Identifiable, Codable, Equatable {
     let duration: TimeInterval?
     let videoId: String
     let addedDate: Date
+    let musicSource: String?  // Add music source field
     
-    init(from searchResult: SearchResult) {
+    init(from searchResult: SearchResult, musicSource: String? = nil) {
         self.id = searchResult.id
         self.title = searchResult.title
         self.artist = searchResult.artist
@@ -276,6 +277,21 @@ struct FavoriteSong: Identifiable, Codable, Equatable {
         self.duration = searchResult.duration
         self.videoId = searchResult.videoId ?? ""
         self.addedDate = Date()
+        self.musicSource = musicSource ?? UserDefaults.standard.string(forKey: "musicSource") ?? "youtube_music"
+    }
+    
+    // Custom decoder to handle missing musicSource field in existing data
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        self.id = try container.decode(String.self, forKey: .id)
+        self.title = try container.decode(String.self, forKey: .title)
+        self.artist = try container.decodeIfPresent(String.self, forKey: .artist)
+        self.thumbnailURL = try container.decodeIfPresent(String.self, forKey: .thumbnailURL)
+        self.duration = try container.decodeIfPresent(TimeInterval.self, forKey: .duration)
+        self.videoId = try container.decode(String.self, forKey: .videoId)
+        self.addedDate = try container.decode(Date.self, forKey: .addedDate)
+        // For musicSource, use the decoded value if present, otherwise default to "youtube_music"
+        self.musicSource = try container.decodeIfPresent(String.self, forKey: .musicSource) ?? "youtube_music"
     }
     
     // Equatable conformance
@@ -286,7 +302,8 @@ struct FavoriteSong: Identifiable, Codable, Equatable {
                lhs.thumbnailURL == rhs.thumbnailURL &&
                lhs.duration == rhs.duration &&
                lhs.videoId == rhs.videoId &&
-               lhs.addedDate == rhs.addedDate
+               lhs.addedDate == rhs.addedDate &&
+               lhs.musicSource == rhs.musicSource
     }
 }
 

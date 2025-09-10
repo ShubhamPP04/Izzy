@@ -38,7 +38,11 @@ struct FavoriteItemView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(favorite.title)
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.primary)
+                    .foregroundColor(
+                        favorite.musicSource == "jiosaavn" ? 
+                        Color.green : 
+                        Color.primary
+                    )
                     .lineLimit(1)
                 
                 if let artist = favorite.artist, !artist.isEmpty {

@@ -7,6 +7,7 @@
 
 import SwiftUI
 import Combine
+import Foundation
 
 class SearchState: ObservableObject {
     @Published var searchText: String = "" {
@@ -69,6 +70,9 @@ class SearchState: ObservableObject {
     
     // Add this function to add songs to recently played
     func addRecentlyPlayed(_ track: Track) {
+        // Get the current music source
+        let currentMusicSource = UserDefaults.standard.string(forKey: "musicSource") ?? "youtube_music"
+        
         // Convert Track to FavoriteSong
         let searchResult = SearchResult(
             id: track.id,
@@ -84,7 +88,7 @@ class SearchState: ObservableObject {
             playCount: nil
         )
         
-        let favoriteSong = FavoriteSong(from: searchResult)
+        let favoriteSong = FavoriteSong(from: searchResult, musicSource: currentMusicSource)
         
         // Remove if already exists
         recentlyPlayed.removeAll { $0.videoId == favoriteSong.videoId }
@@ -109,7 +113,10 @@ class SearchState: ObservableObject {
             return
         }
         
-        let favoriteSong = FavoriteSong(from: searchResult)
+        // Get the current music source
+        let currentMusicSource = UserDefaults.standard.string(forKey: "musicSource") ?? "youtube_music"
+        
+        let favoriteSong = FavoriteSong(from: searchResult, musicSource: currentMusicSource)
         favorites.insert(favoriteSong, at: 0) // Add to beginning of list
         saveFavorites()
     }

@@ -38,7 +38,11 @@ struct RecentlyPlayedItemView: View {
             VStack(alignment: .leading, spacing: 2) {
                 Text(recentlyPlayed.title)
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.primary)
+                    .foregroundColor(
+                        recentlyPlayed.musicSource == "jiosaavn" ? 
+                        Color.green : 
+                        Color.primary
+                    )
                     .lineLimit(1)
                 
                 if let artist = recentlyPlayed.artist, !artist.isEmpty {
@@ -54,7 +58,7 @@ struct RecentlyPlayedItemView: View {
                         .foregroundColor(.secondary)
                 }
             }
-            
+
             Spacer()
             
             // Action buttons - show on hover or in edit mode
