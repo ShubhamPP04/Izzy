@@ -2,9 +2,13 @@
 
 <div align="center">
 
-![Izzy Logo](Izzy/Assets.xcassets/AppIcon.appiconset/icon_256x256.png)
+![Izzy Logo](Izzy/Assets.xcassets/AppIcon.appiconset/512-mac.png)
+
+![Izzy Screenshot](image.png)
 
 A modern macOS music player with a beautiful Spotlight-like interface, featuring global hotkeys, YouTube Music integration, and seamless playback controls.
+
+
 
 [![License](https://img.shields.io/github/license/ShubhamPP04/Izzy)](LICENSE)
 [![macOS](https://img.shields.io/badge/macOS-14.0+-blue.svg)](https://developer.apple.com/macos/)
@@ -13,6 +17,8 @@ A modern macOS music player with a beautiful Spotlight-like interface, featuring
 [![License](https://img.shields.io/badge/License-MIT-lightgrey.svg)](LICENSE)
 
 </div>
+
+To support me, here is my UPI ID - kumar.shubham.6@superyes
 
 ## ✨ Features
 
@@ -351,8 +357,6 @@ FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT.
 
 - **Issues**: [GitHub Issues](../../issues)
 - **Discussions**: [GitHub Discussions](../../discussions)
-- **Email**: support@izzyapp.com
-- **Documentation**: [Wiki](../../wiki)
 
 ---
 
