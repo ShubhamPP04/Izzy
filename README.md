@@ -41,10 +41,15 @@ A modern macOS music player with a beautiful Spotlight-like interface, featuring
 
 ### Option 1: Download DMG (Recommended)
 1. Download the latest `Izzy.dmg` from the [Releases](../../releases) page
-2. Open the DMG file and drag Izzy to your Applications folder
-3. Launch Izzy from Applications or Spotlight
-4. Grant accessibility permissions when prompted
-5. Press `Option + Space` to start using Izzy!
+2. Open the DMG file 
+3. **Important Security Step**: Remove the quarantine attribute to avoid Gatekeeper warnings:
+   ```bash
+   xattr -rd com.apple.quarantine "/Applications/Izzy.app"
+   ```
+4. Drag Izzy to your Applications folder
+5. Launch Izzy from Applications or Spotlight
+6. Grant accessibility permissions when prompted
+7. Press `Option + Space` to start using Izzy!
 
 ### Option 2: Build from Source
 ```bash
@@ -57,6 +62,21 @@ open Izzy.xcodeproj
 
 # Build and run (⌘+R)
 ```
+
+## 🔒 Security & Privacy Notice
+
+When you download Izzy from the internet, macOS applies a "quarantine" attribute to protect your system. This may cause a warning when you first try to open the app. To resolve this:
+
+### Remove Quarantine Attribute (Required for First Launch)
+After installing Izzy to your Applications folder, run this command in Terminal:
+```bash
+xattr -rd com.apple.quarantine "/Applications/Izzy.app"
+```
+
+This command removes the quarantine attribute and allows macOS to run the app normally. You only need to do this once after installation.
+
+### Why This Happens
+macOS adds the `com.apple.quarantine` extended attribute to files downloaded from the internet as a security measure. While Izzy is safe and properly signed, this attribute triggers Gatekeeper warnings. Removing it tells macOS that you trust this application.
 
 ## Compatibility
 

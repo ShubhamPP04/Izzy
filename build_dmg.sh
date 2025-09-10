@@ -106,6 +106,12 @@ cp -R "$APP_PATH" "$DMG_TEMP_DIR/"
 # Create symbolic link to Applications folder
 ln -s /Applications "$DMG_TEMP_DIR/Applications"
 
+# Copy DMG README if it exists
+if [ -f "DMG_README.md" ]; then
+  cp "DMG_README.md" "$DMG_TEMP_DIR/README.md"
+  echo "📄 Copied DMG README"
+fi
+
 # Create the DMG
 hdiutil create -volname "$APP_NAME" \
                -srcfolder "$DMG_TEMP_DIR" \
