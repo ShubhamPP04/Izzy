@@ -346,6 +346,25 @@ struct SettingsView: View {
                     Text("When enabled, Previous, Play/Pause, and Next buttons will be centered. When disabled, they will be left-aligned.")
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
+                    
+                    // Minimal playback player
+                    HStack {
+                        Text("Minimal Playback Player")
+                            .font(.system(size: 14))
+                        
+                        Spacer()
+                        
+                        Toggle("", isOn: .init(
+                            get: { UserDefaults.standard.bool(forKey: "minimalPlaybackPlayer") },
+                            set: { UserDefaults.standard.set($0, forKey: "minimalPlaybackPlayer") }
+                        ))
+                        .labelsHidden()
+                        .toggleStyle(SwitchToggleStyle())
+                    }
+                    
+                    Text("When enabled, the playback player will have a more elegant and compact design with a refined horizontal layout, subtle visual elements, and integrated controls.")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
                 }
                 .padding()
                 .background(
@@ -472,48 +491,6 @@ struct SettingsView: View {
                                 .foregroundColor(.secondary)
                         }
                     }
-                }
-                .padding()
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color.primary.opacity(0.05))
-                )
-                
-                // Icon-only Mode section
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Image(systemName: "app.badge")
-                            .foregroundColor(.blue)
-                            .font(.system(size: 14, weight: .medium))
-                        
-                        Text("Navigation Style")
-                            .font(.system(size: 14, weight: .medium))
-                        
-                        Spacer()
-                    }
-                    
-                    Text("Choose how navigation tabs are displayed")
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondary)
-                    
-                    // Icon-only mode toggle
-                    HStack {
-                        Text("Icon-only Navigation")
-                            .font(.system(size: 14))
-                        
-                        Spacer()
-                        
-                        Toggle("", isOn: .init(
-                            get: { UserDefaults.standard.bool(forKey: "iconOnlyNavigation") },
-                            set: { UserDefaults.standard.set($0, forKey: "iconOnlyNavigation") }
-                        ))
-                        .labelsHidden()
-                        .toggleStyle(SwitchToggleStyle())
-                    }
-                    
-                    Text("When enabled, navigation tabs will show only icons without text labels")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
                 }
                 .padding()
                 .background(

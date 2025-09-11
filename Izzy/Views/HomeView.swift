@@ -13,12 +13,28 @@ struct HomeView: View {
     @ObservedObject var playlistManager = PlaylistManager.shared
     @Binding var selectedTab: Int
     
+    // Computed property for dynamic greeting based on time of day
+    private var greeting: String {
+        let hour = Calendar.current.component(.hour, from: Date())
+        
+        switch hour {
+        case 5..<12:
+            return "Good morning"
+        case 12..<17:
+            return "Good afternoon"
+        case 17..<21:
+            return "Good evening"
+        default:
+            return "Good night"
+        }
+    }
+    
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 32) {
                 // Welcome section with more minimal design
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Good morning,")
+                    Text("\(greeting),")
                         .font(.largeTitle)
                         .fontWeight(.light)
                         .foregroundColor(.primary)
