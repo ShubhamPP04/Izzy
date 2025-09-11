@@ -34,6 +34,12 @@ struct SearchBar: View {
                     // Force focus when the text field appears
                     isSearchFocused = true
                 }
+                // Keep focus when text changes (including when cleared)
+                .onChange(of: searchState.searchText) { _, _ in
+                    DispatchQueue.main.async {
+                        isSearchFocused = true
+                    }
+                }
             
             // Loading indicator
             if searchState.isSearching {
