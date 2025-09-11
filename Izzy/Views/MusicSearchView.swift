@@ -11,6 +11,7 @@ struct MusicSearchView: View {
     @ObservedObject var searchState: SearchState
     @ObservedObject var windowManager: WindowManager
     @AppStorage("selectedTab") private var selectedTab = 1 // 0 = Home, 1 = Search, 2 = Favorites, 3 = Recently Played, 4 = Settings, 5 = Playlists
+    @AppStorage("iconOnlyNavigation") private var iconOnlyNavigation = false
     
     var body: some View {
         VStack(spacing: 0) {
@@ -23,13 +24,15 @@ struct MusicSearchView: View {
                         selectedTab = 0
                         print("📍 Switched to Home tab (0)")
                     }) {
-                        HStack(spacing: 6) {
+                        HStack(spacing: iconOnlyNavigation ? 0 : 6) {
                             Image(systemName: "house.fill")
                                 .font(.system(size: 14))
-                            Text("Home")
-                                .font(.system(size: 14, weight: .medium))
+                            if !iconOnlyNavigation {
+                                Text("Home")
+                                    .font(.system(size: 14, weight: .medium))
+                            }
                         }
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, iconOnlyNavigation ? 12 : 16)
                         .padding(.vertical, 8)
                     }
                     .buttonStyle(PlainButtonStyle())
@@ -42,13 +45,15 @@ struct MusicSearchView: View {
                         selectedTab = 1
                         print("📍 Switched to Search tab (1)")
                     }) {
-                        HStack(spacing: 6) {
+                        HStack(spacing: iconOnlyNavigation ? 0 : 6) {
                             Image(systemName: "magnifyingglass")
                                 .font(.system(size: 14))
-                            Text("Search")
-                                .font(.system(size: 14, weight: .medium))
+                            if !iconOnlyNavigation {
+                                Text("Search")
+                                    .font(.system(size: 14, weight: .medium))
+                            }
                         }
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, iconOnlyNavigation ? 12 : 16)
                         .padding(.vertical, 8)
                     }
                     .buttonStyle(PlainButtonStyle())
@@ -60,13 +65,15 @@ struct MusicSearchView: View {
                         searchState.playbackManager.savePlaybackState()
                         selectedTab = 2
                     }) {
-                        HStack(spacing: 6) {
+                        HStack(spacing: iconOnlyNavigation ? 0 : 6) {
                             Image(systemName: "heart.fill")
                                 .font(.system(size: 14))
-                            Text("Favorites")
-                                .font(.system(size: 14, weight: .medium))
+                            if !iconOnlyNavigation {
+                                Text("Favorites")
+                                    .font(.system(size: 14, weight: .medium))
+                            }
                         }
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, iconOnlyNavigation ? 12 : 16)
                         .padding(.vertical, 8)
                     }
                     .buttonStyle(PlainButtonStyle())
@@ -78,13 +85,15 @@ struct MusicSearchView: View {
                         searchState.playbackManager.savePlaybackState()
                         selectedTab = 3
                     }) {
-                        HStack(spacing: 6) {
+                        HStack(spacing: iconOnlyNavigation ? 0 : 6) {
                             Image(systemName: "clock.fill")
                                 .font(.system(size: 14))
-                            Text("Recently Played")
-                                .font(.system(size: 14, weight: .medium))
+                            if !iconOnlyNavigation {
+                                Text("Recently Played")
+                                    .font(.system(size: 14, weight: .medium))
+                            }
                         }
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, iconOnlyNavigation ? 12 : 16)
                         .padding(.vertical, 8)
                     }
                     .buttonStyle(PlainButtonStyle())
@@ -96,13 +105,15 @@ struct MusicSearchView: View {
                         searchState.playbackManager.savePlaybackState()
                         selectedTab = 5
                     }) {
-                        HStack(spacing: 6) {
+                        HStack(spacing: iconOnlyNavigation ? 0 : 6) {
                             Image(systemName: "music.note.list")
                                 .font(.system(size: 14))
-                            Text("Playlists")
-                                .font(.system(size: 14, weight: .medium))
+                            if !iconOnlyNavigation {
+                                Text("Playlists")
+                                    .font(.system(size: 14, weight: .medium))
+                            }
                         }
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, iconOnlyNavigation ? 12 : 16)
                         .padding(.vertical, 8)
                     }
                     .buttonStyle(PlainButtonStyle())
@@ -114,13 +125,15 @@ struct MusicSearchView: View {
                         searchState.playbackManager.savePlaybackState()
                         selectedTab = 4
                     }) {
-                        HStack(spacing: 6) {
+                        HStack(spacing: iconOnlyNavigation ? 0 : 6) {
                             Image(systemName: "gear")
                                 .font(.system(size: 14))
-                            Text("Settings")
-                                .font(.system(size: 14, weight: .medium))
+                            if !iconOnlyNavigation {
+                                Text("Settings")
+                                    .font(.system(size: 14, weight: .medium))
+                            }
                         }
-                        .padding(.horizontal, 16)
+                        .padding(.horizontal, iconOnlyNavigation ? 12 : 16)
                         .padding(.vertical, 8)
                     }
                     .buttonStyle(PlainButtonStyle())
@@ -183,7 +196,7 @@ struct MusicSearchView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 // Settings Content
-                SettingsView(searchState: searchState)
+                SettingsView(searchState: searchState, windowManager: windowManager)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             

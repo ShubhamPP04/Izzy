@@ -15,52 +15,49 @@ struct HomeView: View {
     
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 24) {
-                // Welcome section
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Image(systemName: "house.fill")
-                            .font(.title2)
-                            .foregroundColor(.blue)
-                        Text("Welcome to Izzy")
-                            .font(.title2)
-                            .fontWeight(.bold)
-                    }
+            VStack(alignment: .leading, spacing: 32) {
+                // Welcome section with more minimal design
+                VStack(alignment: .leading, spacing: 8) {
+                    Text("Good morning,")
+                        .font(.largeTitle)
+                        .fontWeight(.light)
+                        .foregroundColor(.primary)
                     
-                    Text("Your personal music companion")
-                        .font(.subheadline)
-                        .foregroundColor(.secondary)
+                    Text(UserDefaults.standard.string(forKey: "customHomeName") ?? "Shubham")
+                        .font(.largeTitle)
+                        .fontWeight(.bold)
+                        .foregroundColor(.blue)
                 }
                 .padding(.horizontal, 20)
-                .padding(.top, 20)
+                .padding(.top, 30)
                 
-                // Quick Actions Grid
+                // Quick Actions Grid with more elegant design
                 LazyVGrid(columns: [
-                    GridItem(.flexible(), spacing: 16),
-                    GridItem(.flexible(), spacing: 16)
-                ], spacing: 16) {
+                    GridItem(.flexible(), spacing: 20),
+                    GridItem(.flexible(), spacing: 20)
+                ], spacing: 20) {
                     // Search Quick Action
-                    QuickActionCard(
+                    ElegantQuickActionCard(
                         icon: "magnifyingglass",
                         title: "Search",
-                        subtitle: "Find your favorite music",
+                        subtitle: "Find music",
                         color: .blue
                     ) {
                         selectedTab = 1 // Switch to Search tab
                     }
                     
                     // Favorites Quick Action
-                    QuickActionCard(
+                    ElegantQuickActionCard(
                         icon: "heart.fill",
                         title: "Favorites",
-                        subtitle: "Your liked songs",
+                        subtitle: "Liked songs",
                         color: .red
                     ) {
                         selectedTab = 2 // Switch to Favorites tab
                     }
                     
                     // Recently Played Quick Action
-                    QuickActionCard(
+                    ElegantQuickActionCard(
                         icon: "clock.fill",
                         title: "Recently Played",
                         subtitle: "Continue listening",
@@ -70,35 +67,26 @@ struct HomeView: View {
                     }
                     
                     // Playlists Quick Action
-                    QuickActionCard(
+                    ElegantQuickActionCard(
                         icon: "music.note.list",
                         title: "Playlists",
-                        subtitle: "Your custom playlists",
+                        subtitle: "Your collections",
                         color: .purple
                     ) {
                         selectedTab = 5 // Switch to Playlists tab
                     }
-                    
-                    // Settings Quick Action
-                    QuickActionCard(
-                        icon: "gear",
-                        title: "Settings",
-                        subtitle: "Customize your experience",
-                        color: .gray
-                    ) {
-                        selectedTab = 4 // Switch to Settings tab
-                    }
                 }
                 .padding(.horizontal, 20)
                 
-                // Now Playing Section (if there's a current track)
+                // Now Playing Section (if there's a current track) - more minimal
                 if let currentTrack = searchState.playbackManager.currentTrack {
-                    VStack(alignment: .leading, spacing: 12) {
+                    VStack(alignment: .leading, spacing: 16) {
                         Text("Now Playing")
                             .font(.headline)
                             .fontWeight(.semibold)
+                            .foregroundColor(.primary)
                         
-                        HStack {
+                        HStack(spacing: 16) {
                             // Album Art with AsyncImage
                             AsyncImage(url: URL(string: currentTrack.thumbnailURL ?? "")) { image in
                                 image
@@ -110,28 +98,28 @@ struct HomeView: View {
                                     .overlay(
                                         Image(systemName: "music.note")
                                             .foregroundColor(.secondary)
-                                            .font(.title2)
+                                            .font(.title3)
                                     )
                             }
-                            .frame(width: 60, height: 60)
+                            .frame(width: 70, height: 70)
                             .clipShape(RoundedRectangle(cornerRadius: 8))
-                            .shadow(color: .black.opacity(0.1), radius: 4, x: 0, y: 2)
                             
                             VStack(alignment: .leading, spacing: 4) {
                                 Text(currentTrack.title)
-                                    .font(.subheadline)
-                                    .fontWeight(.medium)
+                                    .font(.body)
+                                    .fontWeight(.semibold)
                                     .lineLimit(1)
+                                    .foregroundColor(.primary)
                                 
                                 Text(currentTrack.artist)
-                                    .font(.caption)
+                                    .font(.subheadline)
                                     .foregroundColor(.secondary)
                                     .lineLimit(1)
                             }
                             
                             Spacer()
                             
-                            // Play/Pause button
+                            // Play/Pause button with more elegant design
                             Button(action: {
                                 if searchState.playbackManager.isPlaying {
                                     searchState.playbackManager.pause()
@@ -140,42 +128,43 @@ struct HomeView: View {
                                 }
                             }) {
                                 Image(systemName: searchState.playbackManager.isPlaying ? "pause.circle.fill" : "play.circle.fill")
-                                    .font(.title2)
+                                    .font(.title)
                                     .foregroundColor(.blue)
                             }
                             .buttonStyle(PlainButtonStyle())
                         }
-                        .padding(16)
+                        .padding(20)
                         .background(
-                            RoundedRectangle(cornerRadius: 12)
+                            RoundedRectangle(cornerRadius: 16)
                                 .fill(.ultraThinMaterial)
                         )
                     }
                     .padding(.horizontal, 20)
                 }
                 
-                // Recent Activity or Stats section
-                VStack(alignment: .leading, spacing: 12) {
-                    Text("Quick Stats")
+                // Stats section with more minimal design
+                VStack(alignment: .leading, spacing: 16) {
+                    Text("Your Music")
                         .font(.headline)
                         .fontWeight(.semibold)
+                        .foregroundColor(.primary)
                     
                     HStack(spacing: 16) {
-                        StatCard(
+                        ElegantStatCard(
                             icon: "heart.fill",
                             value: "\(searchState.favorites.count)",
                             label: "Favorites",
                             color: .red
                         )
                         
-                        StatCard(
+                        ElegantStatCard(
                             icon: "clock.fill",
                             value: "\(searchState.recentlyPlayed.count)",
                             label: "Recent",
                             color: .green
                         )
                         
-                        StatCard(
+                        ElegantStatCard(
                             icon: "music.note.list",
                             value: "\(playlistManager.playlists.count)",
                             label: "Playlists",
@@ -184,14 +173,15 @@ struct HomeView: View {
                     }
                 }
                 .padding(.horizontal, 20)
-                .padding(.bottom, 20)
+                .padding(.bottom, 30)
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }
 
-struct QuickActionCard: View {
+// More elegant quick action card with minimal design
+struct ElegantQuickActionCard: View {
     let icon: String
     let title: String
     let subtitle: String
@@ -200,66 +190,66 @@ struct QuickActionCard: View {
     
     var body: some View {
         Button(action: action) {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack {
-                    Image(systemName: icon)
-                        .font(.title2)
-                        .foregroundColor(color)
-                    Spacer()
+            VStack(alignment: .leading, spacing: 12) {
+                Image(systemName: icon)
+                    .font(.title2)
+                    .foregroundColor(color)
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(title)
+                        .font(.body)
+                        .fontWeight(.semibold)
+                        .foregroundColor(.primary)
+                    
+                    Text(subtitle)
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                        .lineLimit(2)
                 }
                 
-                Text(title)
-                    .font(.headline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(.primary)
-                
-                Text(subtitle)
-                    .font(.caption)
-                    .foregroundColor(.secondary)
-                    .lineLimit(2)
+                Spacer()
             }
-            .padding(16)
+            .padding(20)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .frame(height: 100)
+            .frame(height: 120)
             .background(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: 16)
                     .fill(.ultraThinMaterial)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 12)
-                    .stroke(color.opacity(0.3), lineWidth: 1)
             )
         }
         .buttonStyle(PlainButtonStyle())
         .scaleEffect(1.0)
-        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: false)
     }
 }
 
-struct StatCard: View {
+// More elegant stat card with minimal design
+struct ElegantStatCard: View {
     let icon: String
     let value: String
     let label: String
     let color: Color
     
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 12) {
             Image(systemName: icon)
-                .font(.title2)
+                .font(.title3)
                 .foregroundColor(color)
             
-            Text(value)
-                .font(.title3)
-                .fontWeight(.bold)
-            
-            Text(label)
-                .font(.caption)
-                .foregroundColor(.secondary)
+            VStack(spacing: 4) {
+                Text(value)
+                    .font(.title3)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primary)
+                
+                Text(label)
+                    .font(.caption)
+                    .foregroundColor(.secondary)
+            }
         }
-        .padding(16)
         .frame(maxWidth: .infinity)
+        .padding(20)
         .background(
-            RoundedRectangle(cornerRadius: 12)
+            RoundedRectangle(cornerRadius: 16)
                 .fill(.ultraThinMaterial)
         )
     }

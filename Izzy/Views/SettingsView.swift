@@ -7,12 +7,16 @@
 
 import SwiftUI
 import ServiceManagement
+import AppKit
+import Combine
 
 struct SettingsView: View {
     @ObservedObject var searchState: SearchState
+    let windowManager: WindowManager?
     @AppStorage("launchAtLogin") private var launchAtLogin = false
     @AppStorage("autoUpdateEnabled") private var autoUpdateEnabled = true
     @AppStorage("musicSource") private var musicSource = MusicSource.youtubeMusic.rawValue
+    @AppStorage("customHomeName") private var customHomeName = "Shubham"
     @StateObject private var updateManager = UpdateManager.shared
     
     var body: some View {
@@ -46,6 +50,68 @@ struct SettingsView: View {
                     }
                     
                     Text("Automatically start Izzy when you log in to your Mac")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                }
+                .padding()
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.primary.opacity(0.05))
+                )
+                
+                // Menu Bar Player setting
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Image(systemName: "menubar.dock.rectangle")
+                            .foregroundColor(.blue)
+                            .font(.system(size: 14, weight: .medium))
+                        
+                        Text("Menu Bar Player")
+                            .font(.system(size: 14, weight: .medium))
+                        
+                        Spacer()
+                        
+                        Toggle("", isOn: Binding(
+                            get: { SimpleMenuBarManager.shared.isEnabled },
+                            set: { SimpleMenuBarManager.shared.isEnabled = $0 }
+                        ))
+                        .labelsHidden()
+                        .toggleStyle(SwitchToggleStyle())
+                        .onAppear {
+                            if let windowManager = windowManager {
+                                SimpleMenuBarManager.shared.configure(searchState: searchState, windowManager: windowManager)
+                            }
+                        }
+                    }
+                    
+                    Text("Show a compact music player in the menu bar with playback controls")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                }
+                .padding()
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.primary.opacity(0.05))
+                )
+                
+                // Custom Home Name setting
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Image(systemName: "person.fill")
+                            .foregroundColor(.blue)
+                            .font(.system(size: 14, weight: .medium))
+                        
+                        Text("Your Name")
+                            .font(.system(size: 14, weight: .medium))
+                        
+                        Spacer()
+                    }
+                    
+                    TextField("Enter your name", text: $customHomeName)
+                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .frame(maxWidth: 200)
+                    
+                    Text("This name will appear on the home screen")
                         .font(.system(size: 12))
                         .foregroundColor(.secondary)
                 }
@@ -111,6 +177,48 @@ struct SettingsView: View {
                                 .foregroundColor(.secondary)
                         }
                     }
+                }
+                .padding()
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.primary.opacity(0.05))
+                )
+                
+                // Icon-only Mode section
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Image(systemName: "app.badge")
+                            .foregroundColor(.blue)
+                            .font(.system(size: 14, weight: .medium))
+                        
+                        Text("Navigation Style")
+                            .font(.system(size: 14, weight: .medium))
+                        
+                        Spacer()
+                    }
+                    
+                    Text("Choose how navigation tabs are displayed")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                    
+                    // Icon-only mode toggle
+                    HStack {
+                        Text("Icon-only Navigation")
+                            .font(.system(size: 14))
+                        
+                        Spacer()
+                        
+                        Toggle("", isOn: .init(
+                            get: { UserDefaults.standard.bool(forKey: "iconOnlyNavigation") },
+                            set: { UserDefaults.standard.set($0, forKey: "iconOnlyNavigation") }
+                        ))
+                        .labelsHidden()
+                        .toggleStyle(SwitchToggleStyle())
+                    }
+                    
+                    Text("When enabled, navigation tabs will show only icons without text labels")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
                 }
                 .padding()
                 .background(
@@ -371,6 +479,48 @@ struct SettingsView: View {
                         .fill(Color.primary.opacity(0.05))
                 )
                 
+                // Icon-only Mode section
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Image(systemName: "app.badge")
+                            .foregroundColor(.blue)
+                            .font(.system(size: 14, weight: .medium))
+                        
+                        Text("Navigation Style")
+                            .font(.system(size: 14, weight: .medium))
+                        
+                        Spacer()
+                    }
+                    
+                    Text("Choose how navigation tabs are displayed")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                    
+                    // Icon-only mode toggle
+                    HStack {
+                        Text("Icon-only Navigation")
+                            .font(.system(size: 14))
+                        
+                        Spacer()
+                        
+                        Toggle("", isOn: .init(
+                            get: { UserDefaults.standard.bool(forKey: "iconOnlyNavigation") },
+                            set: { UserDefaults.standard.set($0, forKey: "iconOnlyNavigation") }
+                        ))
+                        .labelsHidden()
+                        .toggleStyle(SwitchToggleStyle())
+                    }
+                    
+                    Text("When enabled, navigation tabs will show only icons without text labels")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
+                .padding()
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.primary.opacity(0.05))
+                )
+                
                 Spacer()
             }
             .padding(.horizontal, 16)
@@ -417,7 +567,7 @@ struct SettingsView: View {
 }
 
 #Preview {
-    SettingsView(searchState: SearchState())
+    SettingsView(searchState: SearchState(), windowManager: nil)
         .frame(width: 600, height: 400)
         .padding()
         .background(Color.black.opacity(0.1))

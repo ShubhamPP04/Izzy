@@ -7,6 +7,7 @@
 
 import SwiftUI
 import AppKit
+import Combine
 
 class AppCoordinator: ObservableObject {
     private let searchState = SearchState()
@@ -14,17 +15,35 @@ class AppCoordinator: ObservableObject {
     private let hotkeyManager = GlobalHotkeyManager()
     private var appIsActive = false
     private var updateCheckTimer: Timer?
+    private var cancellables = Set<AnyCancellable>()
     
     init() {
         setupCoordination()
         setupAppActivityObserver()
         startPeriodicUpdateChecks()
+        // Initialize menu bar on app start
+        initializeMenuBar()
     }
     
     private func setupCoordination() {
         // Connect managers
         hotkeyManager.windowManager = windowManager
         windowManager.searchState = searchState
+        
+        // Note: MenuBarManager integration is handled in SettingsView when toggled
+    }
+    
+    // Initialize menu bar on app start if enabled
+    private func initializeMenuBar() {
+        // Configure the menu bar manager with search state and window manager
+        SimpleMenuBarManager.shared.configure(searchState: searchState, windowManager: windowManager)
+        
+        // Ensure menu bar appears if enabled
+        if UserDefaults.standard.bool(forKey: "menuBarPlayerEnabled") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                SimpleMenuBarManager.shared.updateMenuBar()
+            }
+        }
     }
     
     // 🔋 BATTERY EFFICIENCY: Save playback state when app becomes active
@@ -73,7 +92,14 @@ class AppCoordinator: ObservableObject {
     func setupWindow(_ window: NSWindow) {
         // Hide the main SwiftUI window since we use FloatingPanel instead
         window.orderOut(nil)
-        windowManager.setupWindow(window)
+        window.alphaValue = 0
+        window.level = NSWindow.Level(rawValue: -1000) // Put it way below everything
+        window.ignoresMouseEvents = true
+        
+        // Make sure it never appears
+        window.collectionBehavior = [.ignoresCycle, .stationary]
+        
+        print("🔒 Main SwiftUI window hidden and disabled")
     }
     
     func initializeApp() {
@@ -113,6 +139,7 @@ class AppCoordinator: ObservableObject {
     deinit {
         NotificationCenter.default.removeObserver(self)
         updateCheckTimer?.invalidate()
+        cancellables.removeAll()
     }
 }
 
