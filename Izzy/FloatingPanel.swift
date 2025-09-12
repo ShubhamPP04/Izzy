@@ -46,7 +46,8 @@ final class FloatingPanel: NSPanel {
         titleVisibility = .hidden
         titlebarAppearsTransparent = true
         isMovableByWindowBackground = false
-        hidesOnDeactivate = true
+        // Remove hidesOnDeactivate to prevent automatic hiding when losing focus
+        // hidesOnDeactivate = true
         
         // Hide all traffic light buttons
         standardWindowButton(.closeButton)?.isHidden = true
@@ -64,7 +65,8 @@ final class FloatingPanel: NSPanel {
         ignoresMouseEvents = false
     }
     
-    // Close automatically when out of focus, e.g. outside click
+    // Remove the resignKey method to prevent automatic closing when losing focus
+    /*
     override func resignKey() {
         super.resignKey()
         
@@ -79,6 +81,7 @@ final class FloatingPanel: NSPanel {
         
         close()
     }
+    */
     
     // Close and toggle presentation, so that it matches the current state of the panel
     override func close() {

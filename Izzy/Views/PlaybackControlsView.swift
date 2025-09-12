@@ -9,6 +9,7 @@ import SwiftUI
 
 struct PlaybackControlsView: View {
     @ObservedObject var playbackManager: PlaybackManager
+    @State private var isQueuePresented = false  // Add this state
     
     var body: some View {
         Group {
@@ -17,7 +18,7 @@ struct PlaybackControlsView: View {
                 VStack(spacing: 8) {
                     // Track Info
                     if let track = playbackManager.currentTrack {
-                        TrackInfoView(track: track, playbackManager: playbackManager)
+                        TrackInfoView(track: track, playbackManager: playbackManager, isQueuePresented: $isQueuePresented)
                     } else if case .error(let errorMessage) = playbackManager.playbackState {
                         ErrorInfoView(errorMessage: errorMessage)
                     }
@@ -34,7 +35,7 @@ struct PlaybackControlsView: View {
                 VStack(spacing: UserDefaults.standard.bool(forKey: "minimalPlaybackPlayer") ? 6 : 8) {
                     // Track Info or Error
                     if let track = playbackManager.currentTrack {
-                        TrackInfoView(track: track, playbackManager: playbackManager)
+                        TrackInfoView(track: track, playbackManager: playbackManager, isQueuePresented: $isQueuePresented)
                     } else if case .error(let errorMessage) = playbackManager.playbackState {
                         ErrorInfoView(errorMessage: errorMessage)
                     }
@@ -48,7 +49,9 @@ struct PlaybackControlsView: View {
                     }
                     
                     // Control Buttons
-                    ControlButtonsView(playbackManager: playbackManager)
+                    ControlButtonsView(playbackManager: playbackManager, onQueueButtonTap: {
+                        isQueuePresented.toggle()
+                    })
                 }
                 .padding(.horizontal, UserDefaults.standard.bool(forKey: "minimalPlaybackPlayer") ? 10 : 16)
                 .padding(.vertical, UserDefaults.standard.bool(forKey: "minimalPlaybackPlayer") ? 6 : 12)
@@ -62,12 +65,17 @@ struct PlaybackControlsView: View {
                 )
             }
         }
+        // Show queue when button is tapped
+        .sheet(isPresented: $isQueuePresented) {
+            QueueView(playbackManager: playbackManager, isPresented: $isQueuePresented)
+        }
     }
 }
 
 // Compact version for use in MusicSearchView
 struct CompactPlaybackControlsView: View {
     @ObservedObject var playbackManager: PlaybackManager
+    @State private var isQueuePresented = false  // Add this state
     
     var body: some View {
         Group {
@@ -76,7 +84,7 @@ struct CompactPlaybackControlsView: View {
                 VStack(spacing: 8) {
                     // Track Info
                     if let track = playbackManager.currentTrack {
-                        TrackInfoView(track: track, playbackManager: playbackManager)
+                        TrackInfoView(track: track, playbackManager: playbackManager, isQueuePresented: $isQueuePresented)
                     } else if case .error(let errorMessage) = playbackManager.playbackState {
                         ErrorInfoView(errorMessage: errorMessage)
                     }
@@ -93,7 +101,7 @@ struct CompactPlaybackControlsView: View {
                 VStack(spacing: UserDefaults.standard.bool(forKey: "minimalPlaybackPlayer") ? 5 : 8) {
                     // Track Info or Error
                     if let track = playbackManager.currentTrack {
-                        TrackInfoView(track: track, playbackManager: playbackManager)
+                        TrackInfoView(track: track, playbackManager: playbackManager, isQueuePresented: $isQueuePresented)
                     } else if case .error(let errorMessage) = playbackManager.playbackState {
                         ErrorInfoView(errorMessage: errorMessage)
                     }
@@ -107,7 +115,9 @@ struct CompactPlaybackControlsView: View {
                     }
                     
                     // Control Buttons
-                    ControlButtonsView(playbackManager: playbackManager)
+                    ControlButtonsView(playbackManager: playbackManager, onQueueButtonTap: {
+                        isQueuePresented.toggle()
+                    })
                 }
                 .padding(.horizontal, UserDefaults.standard.bool(forKey: "minimalPlaybackPlayer") ? 8 : 16)
                 .padding(.vertical, UserDefaults.standard.bool(forKey: "minimalPlaybackPlayer") ? 4 : 12)
@@ -120,6 +130,10 @@ struct CompactPlaybackControlsView: View {
                         )
                 )
             }
+        }
+        // Show queue when button is tapped
+        .sheet(isPresented: $isQueuePresented) {
+            QueueView(playbackManager: playbackManager, isPresented: $isQueuePresented)
         }
     }
 }
@@ -183,12 +197,14 @@ struct TrackInfoView: View {
     @State private var isExpanded: Bool
     @State private var isDragging = false
     @State private var dragValue: Double = 0
+    @Binding var isQueuePresented: Bool  // Add this binding
     
-    init(track: Track, playbackManager: PlaybackManager = PlaybackManager.shared) {
+    init(track: Track, playbackManager: PlaybackManager = PlaybackManager.shared, isQueuePresented: Binding<Bool> = .constant(false)) {
         self.track = track
         self.playbackManager = playbackManager
         // Initialize with saved state or false
         self._isExpanded = State(initialValue: UserDefaults.standard.bool(forKey: "albumArtExpanded"))
+        self._isQueuePresented = isQueuePresented
     }
     
     var body: some View {
@@ -276,7 +292,7 @@ struct TrackInfoView: View {
                                     }
                                 }
                                 
-                                // Control buttons
+                                // Control buttons with queue button
                                 HStack(spacing: 16) {
                                     // Shuffle/Repeat button
                                     Button(action: {
@@ -349,6 +365,17 @@ struct TrackInfoView: View {
                                     }
                                     .buttonStyle(PlainButtonStyle())
                                     .disabled(!playbackManager.queue.hasNext)
+                                    
+                                    // Queue button
+                                    Button(action: {
+                                        isQueuePresented.toggle()
+                                    }) {
+                                        Image(systemName: "list.bullet")
+                                            .font(.system(size: 11, weight: .medium))
+                                            .foregroundColor(.primary)
+                                            .frame(width: 20, height: 20)
+                                    }
+                                    .buttonStyle(PlainButtonStyle())
                                 }
                             }
                             
@@ -447,7 +474,7 @@ struct TrackInfoView: View {
                                 }
                             }
                             
-                            // Control buttons (Previous, Play/Pause, Next)
+                            // Control buttons (Previous, Play/Pause, Next) with Queue button
                             HStack(spacing: 8) {
                                 // Shuffle/Repeat button
                                 Button(action: {
@@ -520,6 +547,17 @@ struct TrackInfoView: View {
                                 }
                                 .buttonStyle(PlainButtonStyle())
                                 .disabled(!playbackManager.queue.hasNext)
+                                
+                                // Queue button
+                                Button(action: {
+                                    isQueuePresented.toggle()
+                                }) {
+                                    Image(systemName: "list.bullet")
+                                        .font(.system(size: 11, weight: .medium))
+                                        .foregroundColor(.primary)
+                                        .frame(width: 20, height: 20)
+                                }
+                                .buttonStyle(PlainButtonStyle())
                             }
                         }
                         .padding(.horizontal, 12)
@@ -714,6 +752,7 @@ struct ProgressBarView: View {
 
 struct ControlButtonsView: View {
     @ObservedObject var playbackManager: PlaybackManager
+    var onQueueButtonTap: (() -> Void)? = nil  // Add this callback parameter
     
     var body: some View {
         Group {
@@ -801,14 +840,15 @@ struct ControlButtonsView: View {
                         
                         Spacer()
                         
-                        // Invisible button for balance
-                        Button(action: {}) {
-                            Image(systemName: "repeat")
-                                .font(.system(size: minimalMode ? 10 : 14, weight: .medium))
-                                .foregroundColor(.clear)
+                        // Queue button
+                        if let onQueueButtonTap = onQueueButtonTap {
+                            Button(action: onQueueButtonTap) {
+                                Image(systemName: "list.bullet")
+                                    .font(.system(size: minimalMode ? 10 : 14, weight: .medium))
+                                    .foregroundColor(.primary)
+                            }
+                            .buttonStyle(ControlButtonStyle())
                         }
-                        .buttonStyle(ControlButtonStyle())
-                        .disabled(true)
                     } else {
                         // Left-aligned layout (default) with shuffle button on the left
                         Button(action: {
@@ -878,6 +918,16 @@ struct ControlButtonsView: View {
                         }
                         .buttonStyle(ControlButtonStyle())
                         .disabled(!playbackManager.queue.hasNext)
+                        
+                        // Queue button
+                        if let onQueueButtonTap = onQueueButtonTap {
+                            Button(action: onQueueButtonTap) {
+                                Image(systemName: "list.bullet")
+                                    .font(.system(size: minimalMode ? 10 : 14, weight: .medium))
+                                    .foregroundColor(.primary)
+                            }
+                            .buttonStyle(ControlButtonStyle())
+                        }
                         
                         Spacer()
                     }
