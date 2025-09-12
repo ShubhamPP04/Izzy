@@ -180,13 +180,15 @@ struct ErrorMessageView: View {
 struct TrackInfoView: View {
     let track: Track
     @ObservedObject var playbackManager: PlaybackManager
-    @State private var isExpanded = false
+    @State private var isExpanded: Bool
     @State private var isDragging = false
     @State private var dragValue: Double = 0
     
     init(track: Track, playbackManager: PlaybackManager = PlaybackManager.shared) {
         self.track = track
         self.playbackManager = playbackManager
+        // Initialize with saved state or false
+        self._isExpanded = State(initialValue: UserDefaults.standard.bool(forKey: "albumArtExpanded"))
     }
     
     var body: some View {
@@ -217,6 +219,8 @@ struct TrackInfoView: View {
                             .onTapGesture {
                                 withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                                     isExpanded.toggle()
+                                    // Save the state
+                                    UserDefaults.standard.set(isExpanded, forKey: "albumArtExpanded")
                                 }
                             }
                             
@@ -274,6 +278,19 @@ struct TrackInfoView: View {
                                 
                                 // Control buttons
                                 HStack(spacing: 16) {
+                                    // Shuffle/Repeat button
+                                    Button(action: {
+                                        // 🔋 BATTERY EFFICIENCY: Save state when shuffle/repeat mode changes
+                                        playbackManager.savePlaybackState()
+                                        toggleShuffleRepeatMode()
+                                    }) {
+                                        Image(systemName: shuffleRepeatModeImage())
+                                            .font(.system(size: 12, weight: .medium))
+                                            .foregroundColor(shuffleRepeatModeColor())
+                                            .frame(width: 24, height: 24)
+                                    }
+                                    .buttonStyle(PlainButtonStyle())
+                                    
                                     // Previous button
                                     Button(action: {
                                         // 🔋 BATTERY EFFICIENCY: Save state before skipping tracks
@@ -370,6 +387,8 @@ struct TrackInfoView: View {
                             .onTapGesture {
                                 withAnimation(.spring(response: 0.3, dampingFraction: 0.7)) {
                                     isExpanded.toggle()
+                                    // Save the state
+                                    UserDefaults.standard.set(isExpanded, forKey: "albumArtExpanded")
                                 }
                             }
                             
@@ -430,6 +449,19 @@ struct TrackInfoView: View {
                             
                             // Control buttons (Previous, Play/Pause, Next)
                             HStack(spacing: 8) {
+                                // Shuffle/Repeat button
+                                Button(action: {
+                                    // 🔋 BATTERY EFFICIENCY: Save state when shuffle/repeat mode changes
+                                    playbackManager.savePlaybackState()
+                                    toggleShuffleRepeatMode()
+                                }) {
+                                    Image(systemName: shuffleRepeatModeImage())
+                                        .font(.system(size: 11, weight: .medium))
+                                        .foregroundColor(shuffleRepeatModeColor())
+                                        .frame(width: 20, height: 20)
+                                }
+                                .buttonStyle(PlainButtonStyle())
+                                
                                 // Previous button
                                 Button(action: {
                                     // 🔋 BATTERY EFFICIENCY: Save state before skipping tracks
@@ -525,6 +557,8 @@ struct TrackInfoView: View {
                     .onTapGesture {
                         withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                             isExpanded.toggle()
+                            // Save the state
+                            UserDefaults.standard.set(isExpanded, forKey: "albumArtExpanded")
                         }
                     }
                     .zIndex(isExpanded ? 1 : 0)
@@ -571,9 +605,57 @@ struct TrackInfoView: View {
                     // Double tap to toggle expansion
                     withAnimation(.spring(response: 0.4, dampingFraction: 0.8)) {
                         isExpanded.toggle()
+                        // Save the state
+                        UserDefaults.standard.set(isExpanded, forKey: "albumArtExpanded")
                     }
                 }
             }
+        }
+    }
+    
+    // Toggle shuffle mode
+    private func toggleShuffleMode() {
+        playbackManager.queue.toggleShuffle()
+    }
+    
+    // Toggle through shuffle/repeat modes as requested by user:
+    // Off -> On (auto-play next) -> Repeat (repeat current song) -> Off
+    private func toggleShuffleRepeatMode() {
+        switch playbackManager.queue.repeatMode {
+        case .none:
+            // Off -> On (auto-play next)
+            playbackManager.queue.repeatMode = .all
+            playbackManager.queue.shuffleEnabled = false
+        case .all:
+            // On -> Repeat (repeat current song)
+            playbackManager.queue.repeatMode = .single
+            playbackManager.queue.shuffleEnabled = false
+        case .single:
+            // Repeat -> Off
+            playbackManager.queue.repeatMode = .none
+            playbackManager.queue.shuffleEnabled = false
+        }
+    }
+    
+    // Return appropriate image based on current mode
+    private func shuffleRepeatModeImage() -> String {
+        switch playbackManager.queue.repeatMode {
+        case .none:
+            return "repeat"
+        case .all:
+            return "repeat"
+        case .single:
+            return "repeat.1"
+        }
+    }
+    
+    // Return appropriate color based on current mode
+    private func shuffleRepeatModeColor() -> Color {
+        switch playbackManager.queue.repeatMode {
+        case .none:
+            return .secondary
+        case .all, .single:
+            return .blue
         }
     }
 }
