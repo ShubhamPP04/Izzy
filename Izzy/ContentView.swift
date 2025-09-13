@@ -16,6 +16,23 @@ struct ContentView: View {
             Text("Hello, world!")
         }
         .padding()
+        .modifier(ContentViewBackgroundModifier())
+    }
+}
+
+// Conditional background modifier for ContentView
+struct ContentViewBackgroundModifier: ViewModifier {
+    @ObservedObject private var liquidGlassSettings = LiquidGlassSettings.shared
+    
+    func body(content: Content) -> some View {
+        if liquidGlassSettings.isEnabled {
+            content
+                .liquidGlassContainer()
+                .liquidGlass(isInteractive: false, cornerRadius: 15, intensity: 0.2)
+        } else {
+            content
+                // Keep original ContentView appearance when liquid glass is off
+        }
     }
 }
 

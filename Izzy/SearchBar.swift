@@ -49,11 +49,7 @@ struct SearchBar: View {
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 16)
-        .background {
-            RoundedRectangle(cornerRadius: 25)
-                .fill(.ultraThinMaterial)
-        }
-        .shadow(color: .black.opacity(0.2), radius: 6, x: 0, y: 2)
+        .modifier(SearchBarBackgroundModifier())
         .onChange(of: windowManager.isVisible) { _, isVisible in
             if isVisible {
                 // Focus immediately when window becomes visible
@@ -92,6 +88,26 @@ struct SearchBarBackground: ViewModifier {
                 RoundedRectangle(cornerRadius: 25)
                     .fill(.ultraThinMaterial)
             }
+    }
+}
+
+// Conditional background modifier for liquid glass
+struct SearchBarBackgroundModifier: ViewModifier {
+    @ObservedObject private var liquidGlassSettings = LiquidGlassSettings.shared
+    
+    func body(content: Content) -> some View {
+        if liquidGlassSettings.isEnabled {
+            content
+                .liquidGlass(isInteractive: true, cornerRadius: 25, intensity: 0.3)
+                .shadow(color: .black.opacity(0.1), radius: 3, x: 0, y: 1)
+        } else {
+            content
+                .background {
+                    RoundedRectangle(cornerRadius: 25)
+                        .fill(.ultraThinMaterial)
+                }
+                .shadow(color: .black.opacity(0.2), radius: 6, x: 0, y: 2)
+        }
     }
 }
 

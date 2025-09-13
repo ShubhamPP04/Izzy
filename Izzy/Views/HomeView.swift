@@ -228,10 +228,7 @@ struct ElegantQuickActionCard: View {
             .padding(20)
             .frame(maxWidth: .infinity, alignment: .leading)
             .frame(height: 120)
-            .background(
-                RoundedRectangle(cornerRadius: 16)
-                    .fill(.ultraThinMaterial)
-            )
+            .modifier(QuickActionCardBackgroundModifier())
         }
         .buttonStyle(PlainButtonStyle())
         .scaleEffect(1.0)
@@ -264,10 +261,7 @@ struct ElegantStatCard: View {
         }
         .frame(maxWidth: .infinity)
         .padding(20)
-        .background(
-            RoundedRectangle(cornerRadius: 16)
-                .fill(.ultraThinMaterial)
-        )
+        .modifier(StatCardBackgroundModifier())
     }
 }
 
@@ -279,4 +273,48 @@ struct ElegantStatCard: View {
     )
     .frame(width: 600, height: 650)
     .background(Color.black.opacity(0.3))
+}
+
+// Conditional background modifier for quick action cards
+struct QuickActionCardBackgroundModifier: ViewModifier {
+    @ObservedObject private var liquidGlassSettings = LiquidGlassSettings.shared
+    
+    func body(content: Content) -> some View {
+        if liquidGlassSettings.isEnabled {
+            content
+                .background(
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(.clear)
+                )
+                .liquidGlass(isInteractive: true, cornerRadius: 16, intensity: 0.25)
+        } else {
+            content
+                .background(
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(.ultraThinMaterial)
+                )
+        }
+    }
+}
+
+// Conditional background modifier for stat cards
+struct StatCardBackgroundModifier: ViewModifier {
+    @ObservedObject private var liquidGlassSettings = LiquidGlassSettings.shared
+    
+    func body(content: Content) -> some View {
+        if liquidGlassSettings.isEnabled {
+            content
+                .background(
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(.clear)
+                )
+                .liquidGlass(isInteractive: false, cornerRadius: 16, intensity: 0.2)
+        } else {
+            content
+                .background(
+                    RoundedRectangle(cornerRadius: 16)
+                        .fill(.ultraThinMaterial)
+                )
+        }
+    }
 }

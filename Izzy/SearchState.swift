@@ -34,15 +34,19 @@ class SearchState: ObservableObject {
     // Persistent state that survives window hide/show
     private var persistentSearchText: String = ""
     private var persistentResults: MusicSearchResults = MusicSearchResults()
-    private var persistentSelectedTab: Int = 1 // Default to Search tab
+    internal var persistentSelectedTab: Int = 1 // Default to Search tab - accessible for MusicSearchView
     private var searchCancellable: AnyCancellable?
     private var cancellables = Set<AnyCancellable>()
     private var isRestoringState: Bool = false
     
+    private let selectedTabKey = "IzzySelectedTab"
     private let favoritesKey = "IzzyFavorites"
-    private let recentlyPlayedKey = "IzzyRecentlyPlayed" // Add this line for persistence
+    private let recentlyPlayedKey = "IzzyRecentlyPlayed"
     
     init() {
+        // Load persisted selected tab and apply startup tab logic
+        persistentSelectedTab = getPersistedSelectedTab()
+        
         setupSearchObserver()
         setupMusicSearchObserver()
         setupPlaybackObserver() // Add this line to observe playback changes
@@ -274,11 +278,49 @@ class SearchState: ObservableObject {
     
     func saveSelectedTab(_ tabIndex: Int) {
         persistentSelectedTab = tabIndex
+        UserDefaults.standard.set(tabIndex, forKey: selectedTabKey)
         print("💾 Saved selected tab: \(tabIndex)")
     }
     
     func getPersistedSelectedTab() -> Int {
-        return persistentSelectedTab
+        // Check if this is the first app launch or if we should use startup tab setting
+        let isFirstLaunch = !UserDefaults.standard.bool(forKey: "appHasBeenLaunched")
+        
+        print("🔍 Debug - isFirstLaunch: \(isFirstLaunch)")
+        print("🔍 Debug - appHasBeenLaunched exists: \(UserDefaults.standard.object(forKey: "appHasBeenLaunched") != nil)")
+        
+        if isFirstLaunch {
+            // First launch - use startup tab setting and mark app as launched
+            UserDefaults.standard.set(true, forKey: "appHasBeenLaunched")
+            
+            // Get startup tab setting with proper default value (1 = Search)
+            let startupTab: Int
+            if UserDefaults.standard.object(forKey: "startupTab") != nil {
+                startupTab = UserDefaults.standard.integer(forKey: "startupTab")
+                print("🔍 Debug - found startupTab setting: \(startupTab)")
+            } else {
+                startupTab = 1 // Default to Search tab if no setting exists
+                print("🔍 Debug - no startupTab setting found, using default: \(startupTab)")
+            }
+            
+            persistentSelectedTab = startupTab
+            print("🚀 First launch - using startup tab: \(startupTab)")
+            return startupTab
+        } else {
+            // Subsequent launches - use persisted tab selection
+            let savedTab = UserDefaults.standard.integer(forKey: selectedTabKey)
+            // Check if the key exists by seeing if it's different from the default integer value
+            if UserDefaults.standard.object(forKey: selectedTabKey) != nil {
+                persistentSelectedTab = savedTab
+                print("🔄 Using persisted tab: \(savedTab)")
+                return persistentSelectedTab
+            } else {
+                // Fallback to Search tab if no saved preference
+                persistentSelectedTab = 1
+                print("🔄 No persisted tab, using default: 1")
+                return persistentSelectedTab
+            }
+        }
     }
     
     func restoreState() {

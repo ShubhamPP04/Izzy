@@ -17,6 +17,7 @@ struct SettingsView: View {
     @AppStorage("autoUpdateEnabled") private var autoUpdateEnabled = true
     @AppStorage("musicSource") private var musicSource = MusicSource.youtubeMusic.rawValue
     @AppStorage("customHomeName") private var customHomeName = "Shubham"
+    @AppStorage("startupTab") private var startupTab = 1 // 0 = Home, 1 = Search, 2 = Favorites, 3 = Recently Played, 4 = Settings, 5 = Playlists
     @StateObject private var updateManager = UpdateManager.shared
     
     var body: some View {
@@ -94,6 +95,36 @@ struct SettingsView: View {
                         .fill(Color.primary.opacity(0.05))
                 )
                 
+                // Liquid Glass setting
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Image(systemName: "drop.triangle")
+                            .foregroundColor(.blue)
+                            .font(.system(size: 14, weight: .medium))
+                        
+                        Text("Liquid Glass Effect")
+                            .font(.system(size: 14, weight: .medium))
+                        
+                        Spacer()
+                        
+                        Toggle("", isOn: Binding(
+                            get: { LiquidGlassSettings.shared.isEnabled },
+                            set: { LiquidGlassSettings.shared.isEnabled = $0 }
+                        ))
+                        .labelsHidden()
+                        .toggleStyle(SwitchToggleStyle())
+                    }
+                    
+                    Text("Transform the app with a stunning liquid glass aesthetic with full transparency and dark mode")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                }
+                .padding()
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.primary.opacity(0.05))
+                )
+                
                 // Custom Home Name setting
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {
@@ -108,7 +139,7 @@ struct SettingsView: View {
                     }
                     
                     TextField("Enter your name", text: $customHomeName)
-                        .textFieldStyle(RoundedBorderTextFieldStyle())
+                        .liquidGlassTextField()
                         .frame(maxWidth: 200)
                     
                     Text("This name will appear on the home screen")
@@ -217,6 +248,92 @@ struct SettingsView: View {
                     }
                     
                     Text("When enabled, navigation tabs will show only icons without text labels")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
+                .padding()
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.primary.opacity(0.05))
+                )
+                
+                // Startup Tab section
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Image(systemName: "cursorarrow.click")
+                            .foregroundColor(.blue)
+                            .font(.system(size: 14, weight: .medium))
+                        
+                        Text("Startup Tab")
+                            .font(.system(size: 14, weight: .medium))
+                        
+                        Spacer()
+                    }
+                    
+                    Text("Choose which tab opens when you launch Izzy")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                    
+                    // Startup tab picker
+                    Picker("Startup Tab", selection: $startupTab) {
+                        HStack {
+                            Image(systemName: "house.fill")
+                                .foregroundColor(.blue)
+                                .font(.system(size: 12))
+                            Text("Home")
+                                .font(.system(size: 14))
+                        }
+                        .tag(0)
+                        
+                        HStack {
+                            Image(systemName: "magnifyingglass")
+                                .foregroundColor(.blue)
+                                .font(.system(size: 12))
+                            Text("Search")
+                                .font(.system(size: 14))
+                        }
+                        .tag(1)
+                        
+                        HStack {
+                            Image(systemName: "heart.fill")
+                                .foregroundColor(.blue)
+                                .font(.system(size: 12))
+                            Text("Favorites")
+                                .font(.system(size: 14))
+                        }
+                        .tag(2)
+                        
+                        HStack {
+                            Image(systemName: "clock.fill")
+                                .foregroundColor(.blue)
+                                .font(.system(size: 12))
+                            Text("Recently Played")
+                                .font(.system(size: 14))
+                        }
+                        .tag(3)
+                        
+                        HStack {
+                            Image(systemName: "music.note.list")
+                                .foregroundColor(.blue)
+                                .font(.system(size: 12))
+                            Text("Playlists")
+                                .font(.system(size: 14))
+                        }
+                        .tag(5)
+                        
+                        HStack {
+                            Image(systemName: "gear")
+                                .foregroundColor(.blue)
+                                .font(.system(size: 12))
+                            Text("Settings")
+                                .font(.system(size: 14))
+                        }
+                        .tag(4)
+                    }
+                    .pickerStyle(MenuPickerStyle())
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    
+                    Text("This tab will be selected when Izzy opens")
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
                 }
@@ -496,6 +613,36 @@ struct SettingsView: View {
                 .background(
                     RoundedRectangle(cornerRadius: 8)
                         .fill(Color.primary.opacity(0.05))
+                )
+                
+                // Debug section (hidden, for testing startup tab functionality)
+                VStack(alignment: .leading, spacing: 12) {
+                    HStack {
+                        Image(systemName: "wrench.fill")
+                            .foregroundColor(.orange)
+                            .font(.system(size: 14, weight: .medium))
+                        
+                        Text("Debug Options")
+                            .font(.system(size: 14, weight: .medium))
+                        
+                        Spacer()
+                    }
+                    
+                    Text("For testing startup tab functionality")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                    
+                    Button("Reset First Launch Flag") {
+                        UserDefaults.standard.removeObject(forKey: "appHasBeenLaunched")
+                        print("🔄 First launch flag reset - next app start will use startup tab setting")
+                    }
+                    .buttonStyle(.bordered)
+                    .controlSize(.small)
+                }
+                .padding()
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.orange.opacity(0.05))
                 )
                 
                 Spacer()

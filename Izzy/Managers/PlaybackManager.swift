@@ -133,6 +133,14 @@ class PlaybackManager: ObservableObject {
         return queueManager
     }
     
+    func addToQueueNext(track: Track) {
+        queueManager.addToQueueNext(track)
+    }
+    
+    func addToQueueNext(tracks: [Track]) {
+        queueManager.addToQueueNext(tracks)
+    }
+    
     // MARK: - Playback Control
     
     func play(track: Track, fromQueue: [Track] = []) async {
@@ -882,6 +890,24 @@ class QueueManager: ObservableObject {
     
     func addToQueue(_ tracks: [Track]) {
         currentQueue.append(contentsOf: tracks)
+    }
+    
+    func addToQueueNext(_ track: Track) {
+        let insertIndex = currentIndex + 1
+        if insertIndex <= currentQueue.count {
+            currentQueue.insert(track, at: insertIndex)
+        } else {
+            currentQueue.append(track)
+        }
+    }
+    
+    func addToQueueNext(_ tracks: [Track]) {
+        let insertIndex = currentIndex + 1
+        if insertIndex <= currentQueue.count {
+            currentQueue.insert(contentsOf: tracks, at: insertIndex)
+        } else {
+            currentQueue.append(contentsOf: tracks)
+        }
     }
     
     func removeFromQueue(at index: Int) {

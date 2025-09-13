@@ -81,12 +81,17 @@ class AppCoordinator: ObservableObject {
     }
     
     func createSearchView() -> some View {
-        // Return the music search view
-        MusicSearchView(
-            searchState: searchState,
-            windowManager: windowManager
-        )
-        .frame(width: 600)
+        // Return the music search view with liquid glass background
+        ZStack {
+            LiquidGlassWindowBackground()
+                .ignoresSafeArea()
+            
+            MusicSearchView(
+                searchState: searchState,
+                windowManager: windowManager
+            )
+            .frame(width: 600)
+        }
     }
     
     func setupWindow(_ window: NSWindow) {

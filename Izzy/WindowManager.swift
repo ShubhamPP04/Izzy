@@ -30,22 +30,34 @@ class WindowManager: ObservableObject {
     }
     
     func showWindow() {
-        // Prevent multiple rapid calls
-        guard !isVisible else { return }
+        print("🔍 showWindow called - current isVisible: \(isVisible)")
         
         // 🔋 BATTERY EFFICIENCY: Save playback state before showing window
         searchState?.playbackManager.savePlaybackState()
         
-        // If panel already exists, just show it
+        // If panel already exists and is not visible, just show it
         if let panel = floatingPanel {
-            isVisible = true
-            // Only activate when explicitly showing the panel (via hotkey)
-            NSApp.activate(ignoringOtherApps: true)
-            panel.orderFront(nil)
-            panel.makeKey()
-            panel.center()
+            if !isVisible {
+                print("📱 Showing existing panel")
+                isVisible = true
+                
+                // Immediate activation sequence for better responsiveness
+                NSApp.activate(ignoringOtherApps: true)
+                panel.orderFront(nil)
+                panel.makeKeyAndOrderFront(nil)
+                panel.center()
+                
+                // Ensure focus
+                DispatchQueue.main.async {
+                    panel.makeKey()
+                }
+            } else {
+                print("⚠️ Panel already visible")
+            }
             return
         }
+        
+        print("🆕 Creating new floating panel")
         
         // Create new floating panel
         let panel = FloatingPanel(
@@ -58,41 +70,46 @@ class WindowManager: ObservableObject {
             },
             contentRect: NSRect(x: 0, y: 0, width: 600, height: 750),
             didClose: {
+                print("🔚 Panel closed callback")
                 self.floatingPanel = nil
                 self.isVisible = false
-            }
+            },
+            windowManager: self
         )
         
         // Restore search state before showing
         searchState?.restoreState()
         
-        // Update visibility state
+        // Update visibility state immediately
         isVisible = true
         
-        // Activate app and show panel with proper sequence
+        // Optimized activation sequence
         NSApp.activate(ignoringOtherApps: true)
-        panel.orderFront(nil)
-        panel.makeKey()
+        panel.makeKeyAndOrderFront(nil)
         panel.center()
-        
-        // Enable remote control events for this window
-        panel.becomeFirstResponder()
         
         // Store reference
         floatingPanel = panel
+        
+        print("✅ Panel created and shown successfully")
     }
     
     func hideWindow() {
-        guard let panel = floatingPanel else { return }
-        
-        // Prevent multiple rapid calls
-        guard isVisible else { return }
+        print("🙈 hideWindow called - current isVisible: \(isVisible)")
+        guard let panel = floatingPanel, isVisible else { 
+            print("⚠️ No panel to hide or already hidden")
+            return 
+        }
         
         // Save current state before hiding
         searchState?.saveState()
         
         // 🔋 BATTERY EFFICIENCY: Save playback state when hiding window
         searchState?.playbackManager.savePlaybackState()
+        
+        // Update state immediately for better responsiveness
+        isVisible = false
+        print("🔒 Panel marked as hidden")
         
         // Close the panel
         panel.close()
@@ -109,13 +126,27 @@ class WindowManager: ObservableObject {
                 NSApp.deactivate()
             }
         }
+        
+        print("✅ Panel hidden successfully")
     }
     
     func toggleVisibility() {
+        print("🔄 Toggle visibility called - current state: \(isVisible)")
         if isVisible {
+            print("🔄 Hiding window...")
             hideWindow()
         } else {
+            print("🔄 Showing window...")
             showWindow()
+        }
+    }
+    
+    // MARK: - Window State Synchronization
+    func syncVisibilityState(_ visible: Bool) {
+        print("🔄 Syncing visibility state: \(visible) (was: \(isVisible))")
+        if isVisible != visible {
+            isVisible = visible
+            print("✅ Visibility state synchronized to: \(visible)")
         }
     }
     

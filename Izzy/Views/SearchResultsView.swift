@@ -501,6 +501,34 @@ struct SearchResultRow: View {
             // Action buttons (only for songs and videos)
             if (category == .song || category == .video) && searchState != nil {
                 HStack(spacing: 8) {
+                    // Play Next button
+                    Button(action: {
+                        let track = Track(from: result)
+                        searchState?.playbackManager.addToQueueNext(track: track)
+                        print("🎵 Added to play next: \(result.title)")
+                    }) {
+                        Image(systemName: "text.insert")
+                            .foregroundColor(.secondary)
+                            .font(.system(size: 14, weight: .medium))
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                    .opacity(isHovered ? 1.0 : 0.0)
+                    .help("Play next")
+                    
+                    // Add to Queue button
+                    Button(action: {
+                        let track = Track(from: result)
+                        searchState?.playbackManager.queue.addToQueue(track)
+                        print("🎵 Added to queue: \(result.title)")
+                    }) {
+                        Image(systemName: "plus")
+                            .foregroundColor(.secondary)
+                            .font(.system(size: 14, weight: .medium))
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                    .opacity(isHovered ? 1.0 : 0.0)
+                    .help("Add to queue")
+                    
                     // Add to Playlist button
                     Button(action: {
                         showingAddToPlaylist = true

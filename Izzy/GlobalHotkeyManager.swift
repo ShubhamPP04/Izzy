@@ -13,6 +13,8 @@ class GlobalHotkeyManager: ObservableObject {
     private var hotKeyRef: EventHotKeyRef?
     private let hotkeyID = EventHotKeyID(signature: OSType(0x497A7A79), id: 1) // 'Izzy'
     private var eventHandler: EventHandlerRef?
+    private var lastHotkeyTime: Date = Date(timeIntervalSince1970: 0) // Initialize to epoch to prevent initial blocking
+    private let hotkeyDebounceInterval: TimeInterval = 0.1 // 100ms debounce (reduced from 200ms)
     
     weak var windowManager: WindowManager?
     
@@ -54,6 +56,9 @@ class GlobalHotkeyManager: ObservableObject {
     }
     
     private func registerGlobalHotkey() {
+        // Unregister any existing hotkey first
+        unregisterGlobalHotkey()
+        
         // Option + Space
         let keyCode = UInt32(kVK_Space)
         let modifiers = UInt32(optionKey)
@@ -61,19 +66,40 @@ class GlobalHotkeyManager: ObservableObject {
         let status = RegisterEventHotKey(keyCode, modifiers, hotkeyID, 
                                        GetApplicationEventTarget(), 0, &hotKeyRef)
         
-        if status != noErr {
-            print("Failed to register global hotkey: \(status)")
+        if status == noErr {
+            print("✅ Global hotkey registered successfully (Option + Space)")
+        } else {
+            print("❌ Failed to register global hotkey: \(status)")
         }
     }
     
     private func unregisterGlobalHotkey() {
         if let hotKeyRef = hotKeyRef {
-            UnregisterEventHotKey(hotKeyRef)
+            let status = UnregisterEventHotKey(hotKeyRef)
+            if status == noErr {
+                print("✅ Global hotkey unregistered successfully")
+            } else {
+                print("⚠️ Failed to unregister global hotkey: \(status)")
+            }
             self.hotKeyRef = nil
         }
     }
     
     private func handleHotkeyPress() {
-        windowManager?.toggleVisibility()
+        let currentTime = Date()
+        
+        // More lenient debounce - only prevent rapid successive presses
+        guard currentTime.timeIntervalSince(lastHotkeyTime) > hotkeyDebounceInterval else {
+            print("🚫 Hotkey press ignored (debounced) - too rapid")
+            return
+        }
+        
+        lastHotkeyTime = currentTime
+        print("⌨️ Global hotkey pressed (Option + Space) at \(currentTime)")
+        
+        // Ensure we're on the main thread and call toggle immediately
+        DispatchQueue.main.async { [weak self] in
+            self?.windowManager?.toggleVisibility()
+        }
     }
 }

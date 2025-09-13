@@ -929,6 +929,17 @@ struct ControlButtonsView: View {
                             .buttonStyle(ControlButtonStyle())
                         }
                         
+                        // Up Next button
+                        Button(action: {
+                            // Up Next functionality temporarily disabled due to state mutation issues
+                            // TODO: Implement proper state management for tab switching
+                        }) {
+                            Image(systemName: "list.bullet.rectangle")
+                                .font(.system(size: minimalMode ? 10 : 14, weight: .medium))
+                                .foregroundColor(.primary)
+                        }
+                        .buttonStyle(ControlButtonStyle())
+                        
                         Spacer()
                     }
                 }
