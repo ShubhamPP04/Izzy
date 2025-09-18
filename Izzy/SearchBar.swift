@@ -11,6 +11,7 @@ struct SearchBar: View {
     @ObservedObject var searchState: SearchState
     @ObservedObject var windowManager: WindowManager
     @FocusState private var isSearchFocused: Bool
+    @Binding var isSearchBarFocused: Bool
     
     var body: some View {
         HStack(spacing: 12) {
@@ -39,6 +40,10 @@ struct SearchBar: View {
                     DispatchQueue.main.async {
                         isSearchFocused = true
                     }
+                }
+                // Sync focus state with binding
+                .onChange(of: isSearchFocused) { _, newValue in
+                    isSearchBarFocused = newValue
                 }
             
             // Loading indicator
@@ -114,7 +119,8 @@ struct SearchBarBackgroundModifier: ViewModifier {
 #Preview {
     SearchBar(
         searchState: SearchState(),
-        windowManager: WindowManager()
+        windowManager: WindowManager(),
+        isSearchBarFocused: .constant(false)
     )
     .frame(width: 600, height: 50)
     .padding()

@@ -515,11 +515,23 @@ class PlaybackManager: ObservableObject {
                 
                 // Reset seeking flag after a brief delay to allow player to stabilize
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
-                    self.isSeeking = false
+                    self.setSeekingState(false)  // Use centralized seeking state management
                 }
                 
                 print("🚀 Perfect seek completed to: \(Int(time))s with zero latency")
             }
+        }
+    }
+    
+    // MARK: - Seeking State Management
+    
+    // 🔋 BATTERY EFFICIENCY: External seeking state control for robust slider behavior
+    func setSeekingState(_ seeking: Bool) {
+        isSeeking = seeking
+        if seeking {
+            print("🎯 Seeking state: STARTED - time observer suppressed")
+        } else {
+            print("🎯 Seeking state: ENDED - time observer resumed")
         }
     }
     
@@ -836,7 +848,7 @@ class QueueManager: ObservableObject {
     @Published var currentQueue: [Track] = []
     @Published var currentIndex: Int = 0
     @Published var shuffleEnabled: Bool = false
-    @Published var repeatMode: RepeatMode = .none
+    @Published var repeatMode: RepeatMode = .all  // Default to auto-play next for all new users
     
     var currentTrack: Track? {
         guard currentIndex < currentQueue.count else { return nil }

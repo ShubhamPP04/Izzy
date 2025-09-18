@@ -156,7 +156,8 @@ struct SearchView: View {
         VStack {
             SearchBar(
                 searchState: searchState,
-                windowManager: windowManager
+                windowManager: windowManager,
+                isSearchBarFocused: .constant(false)
             )
             .frame(width: 600, height: 50)
         }

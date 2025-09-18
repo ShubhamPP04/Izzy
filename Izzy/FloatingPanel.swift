@@ -90,7 +90,15 @@ final class FloatingPanel: NSPanel, NSWindowDelegate {
             return
         }
         
-        // Handle keyboard shortcuts when window is active
+        // Check if a text field is currently focused (search bar)
+        if let firstResponder = self.firstResponder,
+           firstResponder.isKind(of: NSTextView.self) || firstResponder.isKind(of: NSTextField.self) {
+            print("🔍 NSPanel ignoring keyboard shortcut - text field is focused")
+            super.keyDown(with: event)
+            return
+        }
+        
+        // Handle keyboard shortcuts when window is active and search bar is not focused
         switch event.keyCode {
         case 49: // Space key
             handlePlayPauseToggle(playbackManager)

@@ -11,6 +11,7 @@ struct MusicSearchView: View {
     @ObservedObject var searchState: SearchState
     @ObservedObject var windowManager: WindowManager
     @State private var selectedTab: Int
+    @State private var isSearchBarFocused: Bool = false
     
     // Scroll position tracking for each tab using CGFloat values
     @State private var homeScrollOffset: CGFloat = 0
@@ -62,7 +63,8 @@ struct MusicSearchView: View {
                     SearchBarView(
                         searchState: searchState,
                         windowManager: windowManager,
-                        selectedTab: selectedTab
+                        selectedTab: selectedTab,
+                        isSearchBarFocused: $isSearchBarFocused
                     )
                     
                     // Search Results
@@ -184,6 +186,12 @@ struct MusicSearchView: View {
     // Removed UserDefaults scroll position save/restore to allow natural persistence
     
     private func handleGlobalKeyPress(_ keyPress: KeyPress) -> KeyPress.Result {
+        // Don't handle keyboard shortcuts if search bar is focused
+        if isSearchBarFocused {
+            print("🔍 Ignoring keyboard shortcut - search bar is focused")
+            return .ignored
+        }
+        
         switch keyPress.key {
         case .space:
             // Handle play/pause with spacebar
@@ -265,6 +273,7 @@ struct SearchBarView: View {
     @ObservedObject var searchState: SearchState
     @ObservedObject var windowManager: WindowManager
     var selectedTab: Int
+    @Binding var isSearchBarFocused: Bool
     @FocusState private var isSearchFocused: Bool
     
     var body: some View {
@@ -288,6 +297,11 @@ struct SearchBarView: View {
                 }
                 .onChange(of: searchState.searchText) { _, newValue in
                     print("🔤 Search text changed to: '\(newValue)'")
+                }
+                // Sync focus state with binding
+                .onChange(of: isSearchFocused) { _, newValue in
+                    isSearchBarFocused = newValue
+                    print("🔍 Search bar focus changed: \(newValue)")
                 }
             
             // Loading indicator or clear button

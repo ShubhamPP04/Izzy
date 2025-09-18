@@ -197,7 +197,10 @@ struct TrackInfoView: View {
     @State private var isExpanded: Bool
     @State private var isDragging = false
     @State private var dragValue: Double = 0
+    @State private var lastDragUpdate: TimeInterval = 0  // Battery efficient: throttle drag updates
     @Binding var isQueuePresented: Bool  // Add this binding
+    
+    private let dragUpdateThrottle: TimeInterval = 0.05  // 20 FPS max for battery efficiency
     
     init(track: Track, playbackManager: PlaybackManager = PlaybackManager.shared, isQueuePresented: Binding<Bool> = .constant(false)) {
         self.track = track
@@ -259,24 +262,35 @@ struct TrackInfoView: View {
                                         in: 0...1,
                                         onEditingChanged: { editing in
                                             if editing {
-                                                // Started dragging - initialize dragValue with current progress
+                                                // Started dragging - initialize dragValue with current progress and set seeking flag
                                                 isDragging = true
                                                 dragValue = playbackManager.progress
+                                                playbackManager.setSeekingState(true)  // Prevent time observer interference
                                             } else {
                                                 // Finished dragging - seek to the new position
                                                 isDragging = false
                                                 let newTime = dragValue * playbackManager.duration
                                                 playbackManager.seek(to: newTime)
+                                                // Note: setSeekingState(false) will be called by seek completion
                                             }
                                         }
                                     )
+                                    .onChange(of: dragValue) { value in
+                                        // Battery efficient: throttle drag updates during dragging
+                                        if isDragging {
+                                            let currentTime = CFAbsoluteTimeGetCurrent()
+                                            if currentTime - lastDragUpdate >= dragUpdateThrottle {
+                                                lastDragUpdate = currentTime
+                                            }
+                                        }
+                                    }
                                     .accentColor(.blue)
                                     .frame(height: 16)
                                     .scaleEffect(y: 1.0, anchor: .center)
                                     
                                     // Time info
                                     HStack(spacing: 4) {
-                                        Text(playbackManager.currentTime.formattedDuration)
+                                        Text((isDragging ? dragValue * playbackManager.duration : playbackManager.currentTime).formattedDuration)
                                             .font(.system(size: 10, weight: .medium))
                                             .foregroundColor(.secondary)
                                             .monospacedDigit()
@@ -441,24 +455,35 @@ struct TrackInfoView: View {
                                     in: 0...1,
                                     onEditingChanged: { editing in
                                         if editing {
-                                            // Started dragging - initialize dragValue with current progress
+                                            // Started dragging - initialize dragValue with current progress and set seeking flag
                                             isDragging = true
                                             dragValue = playbackManager.progress
+                                            playbackManager.setSeekingState(true)  // Prevent time observer interference
                                         } else {
                                             // Finished dragging - seek to the new position
                                             isDragging = false
                                             let newTime = dragValue * playbackManager.duration
                                             playbackManager.seek(to: newTime)
+                                            // Note: setSeekingState(false) will be called by seek completion
                                         }
                                     }
                                 )
+                                .onChange(of: dragValue) { value in
+                                    // Battery efficient: throttle drag updates during dragging
+                                    if isDragging {
+                                        let currentTime = CFAbsoluteTimeGetCurrent()
+                                        if currentTime - lastDragUpdate >= dragUpdateThrottle {
+                                            lastDragUpdate = currentTime
+                                        }
+                                    }
+                                }
                                 .accentColor(.blue)
                                 .frame(width: 80)
                                 .scaleEffect(y: 0.8, anchor: .center)
                                 
                                 // Time info in small format
                                 HStack(spacing: 4) {
-                                    Text(playbackManager.currentTime.formattedDuration)
+                                    Text((isDragging ? dragValue * playbackManager.duration : playbackManager.currentTime).formattedDuration)
                                         .font(.system(size: 9, weight: .medium))
                                         .foregroundColor(.secondary)
                                         .monospacedDigit()
@@ -702,6 +727,9 @@ struct ProgressBarView: View {
     @ObservedObject var playbackManager: PlaybackManager
     @State private var isDragging = false
     @State private var dragValue: Double = 0
+    @State private var lastDragUpdate: TimeInterval = 0  // Battery efficient: throttle drag updates
+    
+    private let dragUpdateThrottle: TimeInterval = 0.05  // 20 FPS max for battery efficiency
     
     var body: some View {
         Group {
@@ -712,7 +740,7 @@ struct ProgressBarView: View {
                 // Original style
                 HStack(spacing: UserDefaults.standard.bool(forKey: "minimalPlaybackPlayer") ? 4 : 8) {
                     // Current time
-                    Text(playbackManager.currentTime.formattedDuration)
+                    Text((isDragging ? dragValue * playbackManager.duration : playbackManager.currentTime).formattedDuration)
                         .font(.system(size: UserDefaults.standard.bool(forKey: "minimalPlaybackPlayer") ? 5 : 8, weight: .medium))
                         .foregroundColor(.secondary)
                         .monospacedDigit()
@@ -724,17 +752,28 @@ struct ProgressBarView: View {
                         in: 0...1,
                         onEditingChanged: { editing in
                             if editing {
-                                // Started dragging - initialize dragValue with current progress
+                                // Started dragging - initialize dragValue with current progress and set seeking flag
                                 isDragging = true
                                 dragValue = playbackManager.progress
+                                playbackManager.setSeekingState(true)  // Prevent time observer interference
                             } else {
                                 // Finished dragging - seek to the new position
                                 isDragging = false
                                 let newTime = dragValue * playbackManager.duration
                                 playbackManager.seek(to: newTime)
+                                // Note: setSeekingState(false) will be called by seek completion
                             }
                         }
                     )
+                    .onChange(of: dragValue) { value in
+                        // Battery efficient: throttle drag updates during dragging
+                        if isDragging {
+                            let currentTime = CFAbsoluteTimeGetCurrent()
+                            if currentTime - lastDragUpdate >= dragUpdateThrottle {
+                                lastDragUpdate = currentTime
+                            }
+                        }
+                    }
                     .accentColor(.blue)
                     .frame(height: UserDefaults.standard.bool(forKey: "minimalPlaybackPlayer") ? 12 : nil)
                     
@@ -803,7 +842,14 @@ struct ControlButtonsView: View {
                             if playbackManager.isPlaying {
                                 playbackManager.pause()
                             } else {
-                                playbackManager.resume()
+                                // Check if we need to resume from a saved position
+                                if playbackManager.playbackState == .stopped && playbackManager.currentTime > 0 {
+                                    Task {
+                                        await playbackManager.resumeFromSavedPosition()
+                                    }
+                                } else {
+                                    playbackManager.resume()
+                                }
                             }
                         }) {
                             Group {
@@ -884,7 +930,14 @@ struct ControlButtonsView: View {
                             if playbackManager.isPlaying {
                                 playbackManager.pause()
                             } else {
-                                playbackManager.resume()
+                                // Check if we need to resume from a saved position
+                                if playbackManager.playbackState == .stopped && playbackManager.currentTime > 0 {
+                                    Task {
+                                        await playbackManager.resumeFromSavedPosition()
+                                    }
+                                } else {
+                                    playbackManager.resume()
+                                }
                             }
                         }) {
                             Group {
