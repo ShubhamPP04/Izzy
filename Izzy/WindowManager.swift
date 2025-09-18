@@ -74,7 +74,8 @@ class WindowManager: ObservableObject {
                 self.floatingPanel = nil
                 self.isVisible = false
             },
-            windowManager: self
+            windowManager: self,
+            playbackManager: self.searchState?.playbackManager
         )
         
         // Restore search state before showing
@@ -91,6 +92,8 @@ class WindowManager: ObservableObject {
         // Store reference
         floatingPanel = panel
         
+        // Removed scroll position restoration notification to allow natural persistence
+        
         print("✅ Panel created and shown successfully")
     }
     
@@ -106,6 +109,8 @@ class WindowManager: ObservableObject {
         
         // 🔋 BATTERY EFFICIENCY: Save playback state when hiding window
         searchState?.playbackManager.savePlaybackState()
+        
+        // Removed scroll position save notification - letting views handle their own state
         
         // Update state immediately for better responsiveness
         isVisible = false

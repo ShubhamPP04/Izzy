@@ -20,6 +20,7 @@ struct SearchResultsView: View {
     @ObservedObject var playbackManager: PlaybackManager
     @ObservedObject var windowManager: WindowManager
     var searchState: SearchState? // Add this to access favorites functionality
+    @Binding var scrollOffset: CGFloat
     
     @State private var expandedAlbums: Set<String> = []
     @State private var expandedPlaylists: Set<String> = []
@@ -32,7 +33,8 @@ struct SearchResultsView: View {
     private let maxResultsToShow = 8
     
     var body: some View {
-        ScrollView {
+        ScrollViewReader { scrollReader in
+            ScrollView {
             LazyVStack(alignment: .leading, spacing: 12) {
                 ForEach(musicSearchManager.getResultsForDisplay(), id: \.category) { categoryData in
                     let isExpanded = expandedCategories.contains(categoryData.category)
@@ -76,6 +78,8 @@ struct SearchResultsView: View {
         }
         .frame(maxHeight: 600)
         .background(Color.clear)
+        // Removed onAppear scroll-to-top to maintain scroll position persistence
+        }
     }
     
     private func handleResultSelection(_ result: SearchResult, context: PlaybackContext = .general) {
@@ -501,27 +505,13 @@ struct SearchResultRow: View {
             // Action buttons (only for songs and videos)
             if (category == .song || category == .video) && searchState != nil {
                 HStack(spacing: 8) {
-                    // Play Next button
-                    Button(action: {
-                        let track = Track(from: result)
-                        searchState?.playbackManager.addToQueueNext(track: track)
-                        print("🎵 Added to play next: \(result.title)")
-                    }) {
-                        Image(systemName: "text.insert")
-                            .foregroundColor(.secondary)
-                            .font(.system(size: 14, weight: .medium))
-                    }
-                    .buttonStyle(PlainButtonStyle())
-                    .opacity(isHovered ? 1.0 : 0.0)
-                    .help("Play next")
-                    
                     // Add to Queue button
                     Button(action: {
                         let track = Track(from: result)
                         searchState?.playbackManager.queue.addToQueue(track)
                         print("🎵 Added to queue: \(result.title)")
                     }) {
-                        Image(systemName: "plus")
+                        Image(systemName: "text.insert")
                             .foregroundColor(.secondary)
                             .font(.system(size: 14, weight: .medium))
                     }
@@ -679,7 +669,9 @@ struct SearchStateIndicator: View {
     SearchResultsView(
         musicSearchManager: MusicSearchManager(),
         playbackManager: PlaybackManager.shared,
-        windowManager: WindowManager()
+        windowManager: WindowManager(),
+        searchState: SearchState(),
+        scrollOffset: Binding.constant(0)
     )
     .frame(width: 600, height: 400)
     .background(Color.black.opacity(0.1))

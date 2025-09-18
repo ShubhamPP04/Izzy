@@ -6,6 +6,30 @@
     <description>Most recent changes with links to updates.</description>
     <language>en</language>
     
+    <!-- Version 1.1.1 -->
+    <item>
+      <title>Version 1.1.1</title>
+      <description>
+        <![CDATA[
+          <ul>
+            <li>Fixed scroll position persistence across tab switches</li>
+            <li>Improved queue management with "Add to Queue" for favorites and recently played</li>
+            <li>Standardized button icons and removed unused add icons</li>
+            <li>Enhanced UI stability and performance</li>
+            <li>Better tab switching experience with preserved view states</li>
+          </ul>
+        ]]>
+      </description>
+      <pubDate>Wed, 18 Sep 2025 12:00:00 +0000</pubDate>
+      <sparkle:version>11</sparkle:version>
+      <sparkle:shortVersionString>1.1.1</sparkle:shortVersionString>
+      <enclosure url="https://yourwebsite.com/izzy/Izzy.dmg"
+                 sparkle:version="11"
+                 sparkle:shortVersionString="1.1.1"
+                 length="16839788"
+                 type="application/octet-stream" />
+    </item>
+    
     <!-- Version 1.0.7 -->
     <item>
       <title>Version 1.0.7</title>

@@ -70,6 +70,15 @@ class SearchState: ObservableObject {
                 }
             }
             .store(in: &cancellables)
+        
+        // Subscribe to queue manager updates to trigger UI refresh
+        playbackManager.queue.objectWillChange
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in
+                print("🔄 SearchState: Queue changed, triggering UI update")
+                self?.objectWillChange.send()
+            }
+            .store(in: &cancellables)
     }
     
     // Add this function to add songs to recently played

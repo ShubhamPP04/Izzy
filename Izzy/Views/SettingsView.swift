@@ -13,15 +13,17 @@ import Combine
 struct SettingsView: View {
     @ObservedObject var searchState: SearchState
     let windowManager: WindowManager?
+    @Binding var scrollOffset: CGFloat
     @AppStorage("launchAtLogin") private var launchAtLogin = false
     @AppStorage("autoUpdateEnabled") private var autoUpdateEnabled = true
     @AppStorage("musicSource") private var musicSource = MusicSource.youtubeMusic.rawValue
-    @AppStorage("customHomeName") private var customHomeName = "Shubham"
+    @AppStorage("customHomeName") private var customHomeName = "User"
     @AppStorage("startupTab") private var startupTab = 1 // 0 = Home, 1 = Search, 2 = Favorites, 3 = Recently Played, 4 = Settings, 5 = Playlists
     @StateObject private var updateManager = UpdateManager.shared
     
     var body: some View {
-        ScrollView {
+        ScrollViewReader { scrollReader in
+            ScrollView {
             VStack(alignment: .leading, spacing: 20) {
                 // Header
                 HStack {
@@ -208,48 +210,6 @@ struct SettingsView: View {
                                 .foregroundColor(.secondary)
                         }
                     }
-                }
-                .padding()
-                .background(
-                    RoundedRectangle(cornerRadius: 8)
-                        .fill(Color.primary.opacity(0.05))
-                )
-                
-                // Icon-only Mode section
-                VStack(alignment: .leading, spacing: 12) {
-                    HStack {
-                        Image(systemName: "app.badge")
-                            .foregroundColor(.blue)
-                            .font(.system(size: 14, weight: .medium))
-                        
-                        Text("Navigation Style")
-                            .font(.system(size: 14, weight: .medium))
-                        
-                        Spacer()
-                    }
-                    
-                    Text("Choose how navigation tabs are displayed")
-                        .font(.system(size: 12))
-                        .foregroundColor(.secondary)
-                    
-                    // Icon-only mode toggle
-                    HStack {
-                        Text("Icon-only Navigation")
-                            .font(.system(size: 14))
-                        
-                        Spacer()
-                        
-                        Toggle("", isOn: .init(
-                            get: { UserDefaults.standard.bool(forKey: "iconOnlyNavigation") },
-                            set: { UserDefaults.standard.set($0, forKey: "iconOnlyNavigation") }
-                        ))
-                        .labelsHidden()
-                        .toggleStyle(SwitchToggleStyle())
-                    }
-                    
-                    Text("When enabled, navigation tabs will show only icons without text labels")
-                        .font(.system(size: 11))
-                        .foregroundColor(.secondary)
                 }
                 .padding()
                 .background(
@@ -649,6 +609,8 @@ struct SettingsView: View {
             }
             .padding(.horizontal, 16)
             .padding(.vertical, 8)
+            // Removed onAppear scroll-to-top to maintain scroll position persistence
+        }
         }
         .onChange(of: launchAtLogin) { _, newValue in
             setLaunchAtLogin(newValue)
@@ -691,7 +653,7 @@ struct SettingsView: View {
 }
 
 #Preview {
-    SettingsView(searchState: SearchState(), windowManager: nil)
+    SettingsView(searchState: SearchState(), windowManager: nil, scrollOffset: Binding.constant(0))
         .frame(width: 600, height: 400)
         .padding()
         .background(Color.black.opacity(0.1))

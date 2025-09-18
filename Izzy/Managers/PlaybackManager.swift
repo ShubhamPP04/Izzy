@@ -924,6 +924,7 @@ class QueueManager: ObservableObject {
     func clearQueue() {
         currentQueue.removeAll()
         currentIndex = 0
+        print("🧹 QueueManager: Cleared queue, count: \(currentQueue.count)")
     }
     
     // MARK: - Navigation

@@ -12,6 +12,15 @@ struct MusicSearchView: View {
     @ObservedObject var windowManager: WindowManager
     @State private var selectedTab: Int
     
+    // Scroll position tracking for each tab using CGFloat values
+    @State private var homeScrollOffset: CGFloat = 0
+    @State private var searchScrollOffset: CGFloat = 0
+    @State private var favoritesScrollOffset: CGFloat = 0
+    @State private var recentlyPlayedScrollOffset: CGFloat = 0
+    @State private var upNextScrollOffset: CGFloat = 0
+    @State private var playlistsScrollOffset: CGFloat = 0
+    @State private var settingsScrollOffset: CGFloat = 0
+    
     init(searchState: SearchState, windowManager: WindowManager) {
         self.searchState = searchState
         self.windowManager = windowManager
@@ -24,166 +33,30 @@ struct MusicSearchView: View {
     @AppStorage("appHasBeenInitialized") private var appHasBeenInitialized = false
     
     var body: some View {
-        VStack(spacing: 0) {
-            // Tab selector with horizontal scrolling
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 12) {
-                    Button(action: {
-                        // 🔋 BATTERY EFFICIENCY: Save playback state when switching tabs
+        ZStack {
+            VStack(spacing: 0) {
+                // Animated Tab Navigation
+                AnimatedTabNavigation(
+                    selectedTab: $selectedTab,
+                    onTabChange: { newTab in
                         searchState.playbackManager.savePlaybackState()
-                        selectedTab = 0
-                        print("📍 Switched to Home tab (0)")
-                    }) {
-                        HStack(spacing: iconOnlyNavigation ? 0 : 6) {
-                            Image(systemName: "house.fill")
-                                .font(.system(size: 14))
-                            if !iconOnlyNavigation {
-                                Text("Home")
-                                    .font(.system(size: 14, weight: .medium))
-                            }
-                        }
-                        .padding(.horizontal, iconOnlyNavigation ? 12 : 16)
-                        .padding(.vertical, 8)
+                        selectedTab = newTab
+                        print("📍 Switched to tab \(newTab)")
                     }
-                    .buttonStyle(PlainButtonStyle())
-                    .background(selectedTab == 0 ? Color.blue.opacity(0.2) : Color.clear)
-                    .cornerRadius(8)
-                    
-                    Button(action: {
-                        // 🔋 BATTERY EFFICIENCY: Save playback state when switching tabs
-                        searchState.playbackManager.savePlaybackState()
-                        selectedTab = 1
-                        print("📍 Switched to Search tab (1)")
-                    }) {
-                        HStack(spacing: iconOnlyNavigation ? 0 : 6) {
-                            Image(systemName: "magnifyingglass")
-                                .font(.system(size: 14))
-                            if !iconOnlyNavigation {
-                                Text("Search")
-                                    .font(.system(size: 14, weight: .medium))
-                            }
-                        }
-                        .padding(.horizontal, iconOnlyNavigation ? 12 : 16)
-                        .padding(.vertical, 8)
-                    }
-                    .buttonStyle(PlainButtonStyle())
-                    .background(selectedTab == 1 ? Color.blue.opacity(0.2) : Color.clear)
-                    .cornerRadius(8)
-                    
-                    Button(action: {
-                        // 🔋 BATTERY EFFICIENCY: Save playback state when switching tabs
-                        searchState.playbackManager.savePlaybackState()
-                        selectedTab = 2
-                    }) {
-                        HStack(spacing: iconOnlyNavigation ? 0 : 6) {
-                            Image(systemName: "heart.fill")
-                                .font(.system(size: 14))
-                            if !iconOnlyNavigation {
-                                Text("Favorites")
-                                    .font(.system(size: 14, weight: .medium))
-                            }
-                        }
-                        .padding(.horizontal, iconOnlyNavigation ? 12 : 16)
-                        .padding(.vertical, 8)
-                    }
-                    .buttonStyle(PlainButtonStyle())
-                    .background(selectedTab == 2 ? Color.blue.opacity(0.2) : Color.clear)
-                    .cornerRadius(8)
-                    
-                    Button(action: {
-                        // 🔋 BATTERY EFFICIENCY: Save playback state when switching tabs
-                        searchState.playbackManager.savePlaybackState()
-                        selectedTab = 3
-                    }) {
-                        HStack(spacing: iconOnlyNavigation ? 0 : 6) {
-                            Image(systemName: "clock.fill")
-                                .font(.system(size: 14))
-                            if !iconOnlyNavigation {
-                                Text("Recently Played")
-                                    .font(.system(size: 14, weight: .medium))
-                            }
-                        }
-                        .padding(.horizontal, iconOnlyNavigation ? 12 : 16)
-                        .padding(.vertical, 8)
-                    }
-                    .buttonStyle(PlainButtonStyle())
-                    .background(selectedTab == 3 ? Color.blue.opacity(0.2) : Color.clear)
-                    .cornerRadius(8)
-                    
-                    Button(action: {
-                        // 🔋 BATTERY EFFICIENCY: Save playback state when switching tabs
-                        searchState.playbackManager.savePlaybackState()
-                        selectedTab = 5
-                    }) {
-                        HStack(spacing: iconOnlyNavigation ? 0 : 6) {
-                            Image(systemName: "music.note.list")
-                                .font(.system(size: 14))
-                            if !iconOnlyNavigation {
-                                Text("Playlists")
-                                    .font(.system(size: 14, weight: .medium))
-                            }
-                        }
-                        .padding(.horizontal, iconOnlyNavigation ? 12 : 16)
-                        .padding(.vertical, 8)
-                    }
-                    .buttonStyle(PlainButtonStyle())
-                    .background(selectedTab == 5 ? Color.blue.opacity(0.2) : Color.clear)
-                    .cornerRadius(8)
-                    
-                    Button(action: {
-                        // 🔋 BATTERY EFFICIENCY: Save playback state when switching tabs
-                        searchState.playbackManager.savePlaybackState()
-                        selectedTab = 6
-                    }) {
-                        HStack(spacing: iconOnlyNavigation ? 0 : 6) {
-                            Image(systemName: "list.bullet")
-                                .font(.system(size: 14))
-                            if !iconOnlyNavigation {
-                                Text("Up Next")
-                                    .font(.system(size: 14, weight: .medium))
-                            }
-                        }
-                        .padding(.horizontal, iconOnlyNavigation ? 12 : 16)
-                        .padding(.vertical, 8)
-                    }
-                    .buttonStyle(PlainButtonStyle())
-                    .background(selectedTab == 6 ? Color.blue.opacity(0.2) : Color.clear)
-                    .cornerRadius(8)
-                    
-                    Button(action: {
-                        // 🔋 BATTERY EFFICIENCY: Save playback state when switching tabs
-                        searchState.playbackManager.savePlaybackState()
-                        selectedTab = 4
-                    }) {
-                        HStack(spacing: iconOnlyNavigation ? 0 : 6) {
-                            Image(systemName: "gear")
-                                .font(.system(size: 14))
-                            if !iconOnlyNavigation {
-                                Text("Settings")
-                                    .font(.system(size: 14, weight: .medium))
-                            }
-                        }
-                        .padding(.horizontal, iconOnlyNavigation ? 12 : 16)
-                        .padding(.vertical, 8)
-                    }
-                    .buttonStyle(PlainButtonStyle())
-                    .background(selectedTab == 4 ? Color.blue.opacity(0.2) : Color.clear)
-                    .cornerRadius(8)
-                }
-                .padding(.horizontal, 20)
-            }
-            .padding(.top, 16)
+                )
             
-            // Content based on selected tab
-            if selectedTab == 0 {
+            // Content based on selected tab - Using opacity-based switching to preserve scroll positions
+            ZStack {
                 // Home Content
                 HomeView(
                     searchState: searchState,
                     windowManager: windowManager,
-                    selectedTab: $selectedTab
+                    selectedTab: $selectedTab,
+                    scrollOffset: $homeScrollOffset
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if selectedTab == 1 {
+                .opacity(selectedTab == 0 ? 1 : 0)
+                
                 // Search Content
                 VStack(spacing: 0) {
                     SearchBarView(
@@ -198,7 +71,8 @@ struct MusicSearchView: View {
                             musicSearchManager: searchState.musicSearchManager,
                             playbackManager: searchState.playbackManager,
                             windowManager: windowManager,
-                            searchState: searchState
+                            searchState: searchState,
+                            scrollOffset: $searchScrollOffset
                         )
                         .transition(.opacity.combined(with: .move(edge: .top)))
                         .onAppear {
@@ -213,26 +87,32 @@ struct MusicSearchView: View {
                             }
                     }
                 }
-            } else if selectedTab == 2 {
+                .opacity(selectedTab == 1 ? 1 : 0)
+                
                 // Favorites Content
-                FavoritesView(searchState: searchState)
+                FavoritesView(searchState: searchState, scrollOffset: $favoritesScrollOffset)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if selectedTab == 3 {
+                    .opacity(selectedTab == 2 ? 1 : 0)
+                
                 // Recently Played Content
-                RecentlyPlayedView(searchState: searchState)
+                RecentlyPlayedView(searchState: searchState, scrollOffset: $recentlyPlayedScrollOffset)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if selectedTab == 5 {
+                    .opacity(selectedTab == 3 ? 1 : 0)
+                
                 // Playlists Content
-                PlaylistView(searchState: searchState)
+                PlaylistView(searchState: searchState, scrollOffset: $playlistsScrollOffset)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if selectedTab == 6 {
+                    .opacity(selectedTab == 5 ? 1 : 0)
+                
                 // Up Next Content
-                UpNextView(searchState: searchState)
+                UpNextView(searchState: searchState, scrollOffset: $upNextScrollOffset)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
+                    .opacity(selectedTab == 6 ? 1 : 0)
+                
                 // Settings Content
-                SettingsView(searchState: searchState, windowManager: windowManager)
+                SettingsView(searchState: searchState, windowManager: windowManager, scrollOffset: $settingsScrollOffset)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .opacity(selectedTab == 4 ? 1 : 0)
             }
             
             // Playback Controls (show when there's a current track OR when there's a playback error OR when buffering)
@@ -245,12 +125,37 @@ struct MusicSearchView: View {
                 .transition(.move(edge: .bottom).combined(with: .opacity))
             }
         }
+        
+        // Quit Button - Top Right Corner
+        VStack {
+            HStack {
+                Spacer()
+                Button(action: {
+                    NSApplication.shared.terminate(nil)
+                }) {
+                    Image(systemName: "xmark.circle.fill")
+                        .font(.system(size: 16, weight: .medium))
+                        .foregroundColor(.secondary)
+                        .background(
+                            Circle()
+                                .fill(.ultraThinMaterial)
+                                .frame(width: 20, height: 20)
+                        )
+                }
+                .buttonStyle(PlainButtonStyle())
+                .help("Quit Izzy")
+            }
+            .padding(.top, 8)
+            .padding(.trailing, 8)
+            Spacer()
+        }
+    }
         .modifier(MusicSearchViewBackgroundModifier())
         .padding(.horizontal, 20)
         .padding(.vertical, 16)
         .animation(.spring(response: 0.4, dampingFraction: 0.8), value: searchState.showResults)
         .animation(.spring(response: 0.3, dampingFraction: 0.9), value: searchState.playbackManager.currentTrack != nil)
-        .animation(.spring(response: 0.3, dampingFraction: 0.9), value: selectedTab)
+        // Removed selectedTab animation to prevent view recreation and maintain scroll positions
         .onReceive(searchState.playbackManager.$currentTrack) { currentTrack in
             // Force UI update when currentTrack changes
             print("🎮 PlaybackManager currentTrack changed: \(currentTrack?.title ?? "nil")")
@@ -272,10 +177,26 @@ struct MusicSearchView: View {
         .onKeyPress { keyPress in
             handleGlobalKeyPress(keyPress)
         }
+        // Removed scroll position save/restore notifications to allow natural persistence
     }
+    
+    // MARK: - Scroll Position Persistence
+    // Removed UserDefaults scroll position save/restore to allow natural persistence
     
     private func handleGlobalKeyPress(_ keyPress: KeyPress) -> KeyPress.Result {
         switch keyPress.key {
+        case .space:
+            // Handle play/pause with spacebar
+            handlePlayPauseToggle()
+            return .handled
+        case .leftArrow:
+            // Seek backward 10 seconds with left arrow
+            handleSeekBackward()
+            return .handled
+        case .rightArrow:
+            // Seek forward 10 seconds with right arrow
+            handleSeekForward()
+            return .handled
         case .tab:
             // Cycle through tabs with Tab key
             let nextTab = (selectedTab + 1) % 6
@@ -289,6 +210,54 @@ struct MusicSearchView: View {
         default:
             return .ignored
         }
+    }
+    
+    // MARK: - Playback Keyboard Shortcuts
+    
+    private func handlePlayPauseToggle() {
+        let playbackManager = searchState.playbackManager
+        switch playbackManager.playbackState {
+        case .playing:
+            playbackManager.pause()
+            print("🎵 SwiftUI Keyboard shortcut: Paused")
+        case .paused:
+            playbackManager.resume()
+            print("🎵 SwiftUI Keyboard shortcut: Resumed")
+        case .stopped:
+            // If stopped, try to resume from saved position or start current track
+            if playbackManager.currentTrack != nil {
+                Task {
+                    await playbackManager.resumeFromSavedPosition()
+                    print("🎵 SwiftUI Keyboard shortcut: Resumed from saved position")
+                }
+            }
+        case .buffering:
+            // For buffering state, try to pause/resume anyway
+            playbackManager.pause()
+            print("🎵 SwiftUI Keyboard shortcut: Paused (was buffering)")
+        case .error:
+            // For error state, try to resume from saved position
+            if playbackManager.currentTrack != nil {
+                Task {
+                    await playbackManager.resumeFromSavedPosition()
+                    print("🎵 SwiftUI Keyboard shortcut: Resumed from error state")
+                }
+            }
+        }
+    }
+    
+    private func handleSeekBackward() {
+        let playbackManager = searchState.playbackManager
+        let newTime = max(0, playbackManager.currentTime - 10.0) // Seek back 10 seconds
+        playbackManager.seek(to: newTime)
+        print("🎵 SwiftUI Keyboard shortcut: Seeked backward to \(Int(newTime))s")
+    }
+    
+    private func handleSeekForward() {
+        let playbackManager = searchState.playbackManager
+        let newTime = min(playbackManager.duration, playbackManager.currentTime + 10.0) // Seek forward 10 seconds
+        playbackManager.seek(to: newTime)
+        print("🎵 SwiftUI Keyboard shortcut: Seeked forward to \(Int(newTime))s")
     }
 }
 
@@ -414,7 +383,77 @@ struct MusicSearchViewBackgroundModifier: ViewModifier {
     }
 }
 
+// MARK: - Animated Tab Navigation Component
+struct AnimatedTabNavigation: View {
+    @Binding var selectedTab: Int
+    let onTabChange: (Int) -> Void
+    
+    let tabs: [(icon: String, title: String, tag: Int)] = [
+        ("house.fill", "Home", 0),
+        ("magnifyingglass", "Search", 1),
+        ("heart.fill", "Favorites", 2),
+        ("clock.fill", "Recently Played", 3),
+        ("music.note.list", "Playlists", 5),
+        ("list.bullet", "Up Next", 6),
+        ("gear", "Settings", 4)
+    ]
+    
+    var body: some View {
+        HStack(spacing: 8) {
+            ForEach(tabs, id: \.tag) { tab in
+                AnimatedTabButton(
+                    icon: tab.icon,
+                    title: tab.title,
+                    isSelected: selectedTab == tab.tag,
+                    action: { onTabChange(tab.tag) }
+                )
+            }
+        }
+        .padding(.horizontal, 20)
+        .padding(.vertical, 16)
+    }
+}
 
+struct AnimatedTabButton: View {
+    let icon: String
+    let title: String
+    let isSelected: Bool
+    let action: () -> Void
+    @State private var isHovered = false
+    
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 6) {
+                Image(systemName: icon)
+                    .font(.system(size: 14, weight: .medium))
+                    .foregroundColor(isSelected ? .white : .primary)
+                
+                if isHovered {
+                    Text(title)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(isSelected ? .white : .primary)
+                        .transition(.asymmetric(
+                            insertion: .opacity.combined(with: .move(edge: .leading)),
+                            removal: .opacity.combined(with: .move(edge: .leading))
+                        ))
+                }
+            }
+            .padding(.horizontal, isHovered ? 16 : 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isSelected ? Color.blue : Color.clear)
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.25)) {
+                isHovered = hovering
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: isSelected)
+    }
+}
 
 #Preview {
     MusicSearchView(

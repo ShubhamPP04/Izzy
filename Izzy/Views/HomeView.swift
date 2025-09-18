@@ -12,6 +12,7 @@ struct HomeView: View {
     @ObservedObject var windowManager: WindowManager
     @ObservedObject var playlistManager = PlaylistManager.shared
     @Binding var selectedTab: Int
+    @Binding var scrollOffset: CGFloat
     
     // Computed property for dynamic greeting based on time of day
     private var greeting: String {
@@ -30,7 +31,8 @@ struct HomeView: View {
     }
     
     var body: some View {
-        ScrollView {
+        ScrollViewReader { scrollReader in
+            ScrollView {
             VStack(alignment: .leading, spacing: 32) {
                 // Welcome section with more minimal design
                 VStack(alignment: .leading, spacing: 8) {
@@ -39,7 +41,7 @@ struct HomeView: View {
                         .fontWeight(.light)
                         .foregroundColor(.primary)
                     
-                    Text(UserDefaults.standard.string(forKey: "customHomeName") ?? "Shubham")
+                    Text(UserDefaults.standard.string(forKey: "customHomeName") ?? "User")
                         .font(.largeTitle)
                         .fontWeight(.bold)
                         .foregroundColor(.blue)
@@ -193,6 +195,17 @@ struct HomeView: View {
             }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // Removed onAppear scroll-to-top to maintain scroll position persistence
+        .background(
+            GeometryReader { geometry in
+                Color.clear
+                    .onAppear {
+                        // Track scroll position changes
+                        // This is a simplified tracking approach for iOS 14
+                    }
+            }
+        )
+        }
     }
 }
 
@@ -269,7 +282,8 @@ struct ElegantStatCard: View {
     HomeView(
         searchState: SearchState(),
         windowManager: WindowManager(),
-        selectedTab: Binding.constant(0)
+        selectedTab: Binding.constant(0),
+        scrollOffset: Binding.constant(0)
     )
     .frame(width: 600, height: 650)
     .background(Color.black.opacity(0.3))

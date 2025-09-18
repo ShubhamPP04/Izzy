@@ -63,6 +63,27 @@ struct FavoriteItemView: View {
             
             // Action buttons - show on hover or in edit mode
             HStack(spacing: 8) {
+                // Add to Queue button
+                Button(action: {
+                    // Convert FavoriteSong to Track and add to queue
+                    let track = Track(
+                        id: favorite.id,
+                        title: favorite.title,
+                        artist: favorite.artist ?? "Unknown Artist",
+                        thumbnailURL: favorite.thumbnailURL,
+                        duration: favorite.duration ?? 0.0,
+                        videoId: favorite.videoId
+                    )
+                    searchState.playbackManager.queue.addToQueue(track)
+                    print("🎵 Added to queue: \(favorite.title)")
+                }) {
+                    Image(systemName: "text.insert")
+                        .foregroundColor(.secondary)
+                        .font(.system(size: 12, weight: .medium))
+                }
+                .buttonStyle(PlainButtonStyle())
+                .help("Add to queue")
+                
                 // Add to Playlist button
                 Button(action: {
                     showingAddToPlaylist = true
@@ -184,6 +205,7 @@ struct FavoriteItemView: View {
 struct FavoritesView: View {
     @ObservedObject var searchState: SearchState
     @State private var editMode = false
+    @Binding var scrollOffset: CGFloat
     
     var body: some View {
         VStack(spacing: 0) {
@@ -286,7 +308,8 @@ struct FavoritesView: View {
                     .padding(.horizontal, 16)
                 } else {
                     // Normal view mode with grid layout
-                    ScrollView {
+                    ScrollViewReader { scrollReader in
+                        ScrollView {
                         LazyVGrid(columns: [
                             GridItem(.flexible(), spacing: 12),
                             GridItem(.flexible(), spacing: 12)
@@ -301,6 +324,8 @@ struct FavoritesView: View {
                         }
                         .padding(.horizontal, 20)
                         .padding(.vertical, 12)
+                        // Removed onAppear scroll-to-top to maintain scroll position persistence
+                    }
                     }
                 }
             }

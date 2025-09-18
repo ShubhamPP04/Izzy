@@ -9,6 +9,7 @@ import SwiftUI
 
 struct UpNextView: View {
     @ObservedObject var searchState: SearchState
+    @Binding var scrollOffset: CGFloat
     
     var body: some View {
         VStack(spacing: 0) {
@@ -21,9 +22,34 @@ struct UpNextView: View {
                 Spacer()
                 
                 if !searchState.playbackManager.queue.currentQueue.isEmpty {
-                    Text("\(searchState.playbackManager.queue.queueSize) songs")
-                        .font(.caption)
-                        .foregroundColor(.secondary)
+                    HStack(spacing: 12) {
+                        Text("\(searchState.playbackManager.queue.queueSize) songs")
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                        
+                        // Clear All button
+                        Button(action: {
+                            print("🧹 UpNext: Clear All button pressed")
+                            withAnimation(.easeInOut(duration: 0.3)) {
+                                searchState.playbackManager.queue.clearQueue()
+                            }
+                            print("🧹 UpNext: Clear All completed, queue count: \(searchState.playbackManager.queue.currentQueue.count)")
+                        }) {
+                            HStack(spacing: 4) {
+                                Image(systemName: "trash")
+                                    .font(.system(size: 11))
+                                Text("Clear All")
+                                    .font(.system(size: 11, weight: .medium))
+                            }
+                            .foregroundColor(.red)
+                            .padding(.horizontal, 8)
+                            .padding(.vertical, 4)
+                            .background(Color.red.opacity(0.1))
+                            .clipShape(RoundedRectangle(cornerRadius: 6))
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                        .help("Clear all songs from queue")
+                    }
                 }
             }
             .padding(.horizontal, 20)
@@ -57,7 +83,8 @@ struct UpNextView: View {
                 }
             } else {
                 // Queue list
-                ScrollView {
+                ScrollViewReader { scrollReader in
+                    ScrollView {
                     LazyVStack(spacing: 0) {
                         ForEach(Array(searchState.playbackManager.queue.currentQueue.enumerated()), id: \.element.id) { index, track in
                             UpNextItemView(
@@ -70,6 +97,8 @@ struct UpNextView: View {
                         }
                     }
                     .padding(.vertical, 8)
+                    // Removed onAppear scroll-to-top to maintain scroll position persistence
+                }
                 }
             }
         }
@@ -197,6 +226,6 @@ struct UpNextItemView: View {
 }
 
 #Preview {
-    UpNextView(searchState: SearchState())
+    UpNextView(searchState: SearchState(), scrollOffset: Binding.constant(0))
         .frame(width: 600, height: 400)
 }

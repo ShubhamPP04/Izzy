@@ -15,6 +15,9 @@ class GlobalHotkeyManager: ObservableObject {
     private var eventHandler: EventHandlerRef?
     private var lastHotkeyTime: Date = Date(timeIntervalSince1970: 0) // Initialize to epoch to prevent initial blocking
     private let hotkeyDebounceInterval: TimeInterval = 0.1 // 100ms debounce (reduced from 200ms)
+    private let doublePressInterval: TimeInterval = 0.5 // 500ms window for double press detection
+    private var consecutivePressCount = 0
+    private var doublePressTimer: Timer?
     
     weak var windowManager: WindowManager?
     
@@ -28,6 +31,7 @@ class GlobalHotkeyManager: ObservableObject {
         if let handler = eventHandler {
             RemoveEventHandler(handler)
         }
+        doublePressTimer?.invalidate()
     }
     
     private func setupEventHandler() {

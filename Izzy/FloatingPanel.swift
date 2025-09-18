@@ -7,19 +7,23 @@
 
 import SwiftUI
 import AppKit
+import Foundation
 
 final class FloatingPanel: NSPanel, NSWindowDelegate {
     private let didClose: () -> Void
     private var windowManager: WindowManager?
+    private var playbackManager: PlaybackManager?
     
     init(
         view: () -> some View,
         contentRect: NSRect,
         didClose: @escaping () -> Void,
-        windowManager: WindowManager? = nil
+        windowManager: WindowManager? = nil,
+        playbackManager: PlaybackManager? = nil
     ) {
         self.didClose = didClose
         self.windowManager = windowManager
+        self.playbackManager = playbackManager
         
         super.init(
             contentRect: contentRect,
@@ -76,6 +80,73 @@ final class FloatingPanel: NSPanel, NSWindowDelegate {
         // Make sure window accepts first responder
         acceptsMouseMovedEvents = true
         ignoresMouseEvents = false
+    }
+    
+    // MARK: - Keyboard Shortcuts for Playback Control
+    
+    override func keyDown(with event: NSEvent) {
+        guard let playbackManager = playbackManager else {
+            super.keyDown(with: event)
+            return
+        }
+        
+        // Handle keyboard shortcuts when window is active
+        switch event.keyCode {
+        case 49: // Space key
+            handlePlayPauseToggle(playbackManager)
+            return
+        case 123: // Left arrow key
+            handleSeekBackward(playbackManager)
+            return
+        case 124: // Right arrow key
+            handleSeekForward(playbackManager)
+            return
+        default:
+            super.keyDown(with: event)
+        }
+    }
+    
+    private func handlePlayPauseToggle(_ playbackManager: PlaybackManager) {
+        switch playbackManager.playbackState {
+        case .playing:
+            playbackManager.pause()
+            print("🎵 Keyboard shortcut: Paused")
+        case .paused:
+            playbackManager.resume()
+            print("🎵 Keyboard shortcut: Resumed")
+        case .stopped:
+            // If stopped, try to resume from saved position or start current track
+            if playbackManager.currentTrack != nil {
+                Task {
+                    await playbackManager.resumeFromSavedPosition()
+                    print("🎵 Keyboard shortcut: Resumed from saved position")
+                }
+            }
+        case .buffering:
+            // For buffering state, try to pause/resume anyway
+            playbackManager.pause()
+            print("🎵 Keyboard shortcut: Paused (was buffering)")
+        case .error:
+            // For error state, try to resume from saved position
+            if playbackManager.currentTrack != nil {
+                Task {
+                    await playbackManager.resumeFromSavedPosition()
+                    print("🎵 Keyboard shortcut: Resumed from error state")
+                }
+            }
+        }
+    }
+    
+    private func handleSeekBackward(_ playbackManager: PlaybackManager) {
+        let newTime = max(0, playbackManager.currentTime - 10.0) // Seek back 10 seconds
+        playbackManager.seek(to: newTime)
+        print("🎵 Keyboard shortcut: Seeked backward to \(Int(newTime))s")
+    }
+    
+    private func handleSeekForward(_ playbackManager: PlaybackManager) {
+        let newTime = min(playbackManager.duration, playbackManager.currentTime + 10.0) // Seek forward 10 seconds
+        playbackManager.seek(to: newTime)
+        print("🎵 Keyboard shortcut: Seeked forward to \(Int(newTime))s")
     }
     
     // Remove the resignKey method to prevent automatic closing when losing focus

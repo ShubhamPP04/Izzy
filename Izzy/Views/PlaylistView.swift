@@ -13,6 +13,7 @@ struct PlaylistView: View {
     @State private var showingCreatePlaylist = false
     @State private var selectedPlaylist: Playlist? = nil
     @State private var newPlaylistName = ""
+    @Binding var scrollOffset: CGFloat
     
     var body: some View {
         VStack(spacing: 0) {
@@ -94,7 +95,8 @@ struct PlaylistView: View {
                     PlaylistSongsView(playlist: playlist, searchState: searchState)
                 } else {
                     // Show list of playlists
-                    ScrollView {
+                    ScrollViewReader { scrollReader in
+                        ScrollView {
                         LazyVStack(spacing: 8) {
                             ForEach(playlistManager.playlists) { playlist in
                                 PlaylistItemView(
@@ -107,6 +109,8 @@ struct PlaylistView: View {
                         }
                         .padding(.horizontal, 16)
                         .padding(.vertical, 8)
+                        // Removed onAppear scroll-to-top to maintain scroll position persistence
+                    }
                     }
                 }
             }
@@ -262,9 +266,9 @@ struct PlaylistSongsView: View {
     
     var body: some View {
         VStack(spacing: 0) {
-            // Playlist header with artwork
+            // Playlist header with artwork - compact version
             HStack(spacing: 16) {
-                // Playlist artwork - use first song's artwork if playlist doesn't have one
+                // Playlist artwork - medium size for better visibility
                 AsyncImage(url: URL(string: playlistCoverURL)) { image in
                     image
                         .resizable()
@@ -278,15 +282,16 @@ struct PlaylistSongsView: View {
                                 .font(.title2)
                         )
                 }
-                .frame(width: 100, height: 100)
+                .frame(width: 75, height: 75)
                 .clipShape(RoundedRectangle(cornerRadius: 8))
                 
-                VStack(alignment: .leading, spacing: 8) {
-                    // Make the playlist name tappable to play the playlist
+                VStack(alignment: .leading, spacing: 5) {
+                    // Playlist name - medium font
                     Text(displayedPlaylist?.name ?? playlist.name)
-                        .font(.title2)
-                        .fontWeight(.bold)
-                        .lineLimit(2)
+                        .font(.title3)
+                        .fontWeight(.semibold)
+                        .lineLimit(1)
+                        .foregroundColor(.primary)
                         .onTapGesture {
                             playPlaylist()
                         }
@@ -295,85 +300,93 @@ struct PlaylistSongsView: View {
                         Text(description)
                             .font(.subheadline)
                             .foregroundColor(.secondary)
-                            .lineLimit(2)
+                            .lineLimit(1)
                     }
                     
-                    HStack {
+                    HStack(spacing: 4) {
                         Text("\((displayedPlaylist ?? playlist).songCount) songs")
-                            .font(.subheadline)
+                            .font(.caption)
                             .foregroundColor(.secondary)
                         
                         if (displayedPlaylist ?? playlist).songCount > 0 {
                             Text("•")
-                                .font(.subheadline)
+                                .font(.caption)
                                 .foregroundColor(.secondary)
                             
                             Text((displayedPlaylist ?? playlist).totalDuration.formattedDuration)
-                                .font(.subheadline)
+                                .font(.caption)
                                 .foregroundColor(.secondary)
-                        }
-                    }
-                    
-                    Spacer()
-                    
-                    HStack {
-                        Button(action: {
-                            // Play entire playlist
-                            playPlaylist()
-                        }) {
-                            HStack {
-                                Image(systemName: "play.fill")
-                                Text("Play")
-                            }
-                            .padding(.horizontal, 16)
-                            .padding(.vertical, 8)
-                        }
-                        .buttonStyle(.borderedProminent)
-                        
-                        if !(displayedPlaylist ?? playlist).songs.isEmpty {
-                            Button(action: {
-                                let wasInEditMode = editMode
-                                editMode.toggle()
-                                
-                                // When exiting edit mode, refresh the playlist data
-                                if wasInEditMode && !editMode {
-                                    // Get the updated playlist from the manager
-                                    if let updatedPlaylist = playlistManager.getPlaylist(by: playlist.id) {
-                                        // Update the displayed playlist and local songs array
-                                        displayedPlaylist = updatedPlaylist
-                                        currentSongs = updatedPlaylist.songs
-                                    }
-                                }
-                                // When entering edit mode, initialize the songs array
-                                else if !wasInEditMode && editMode {
-                                    // Use the displayed playlist if available, otherwise use the original
-                                    let playlistToUse = displayedPlaylist ?? playlist
-                                    if let updatedPlaylist = playlistManager.getPlaylist(by: playlistToUse.id) {
-                                        currentSongs = updatedPlaylist.songs
-                                    } else {
-                                        currentSongs = playlistToUse.songs
-                                    }
-                                }
-                            }) {
-                                Text(editMode ? "Done" : "Edit")
-                                    .padding(.horizontal, 16)
-                                    .padding(.vertical, 8)
-                            }
-                            .buttonStyle(.bordered)
                         }
                     }
                 }
                 
                 Spacer()
+                
+                // Compact buttons
+                HStack(spacing: 10) {
+                    Button(action: {
+                        // Play entire playlist
+                        playPlaylist()
+                    }) {
+                        HStack(spacing: 5) {
+                            Image(systemName: "play.fill")
+                                .font(.system(size: 13))
+                            Text("Play")
+                                .font(.system(size: 13, weight: .medium))
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 14)
+                        .padding(.vertical, 8)
+                        .background(Color.blue)
+                        .clipShape(RoundedRectangle(cornerRadius: 12))
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                    
+                    if !(displayedPlaylist ?? playlist).songs.isEmpty {
+                        Button(action: {
+                            let wasInEditMode = editMode
+                            editMode.toggle()
+                            
+                            // When exiting edit mode, refresh the playlist data
+                            if wasInEditMode && !editMode {
+                                // Get the updated playlist from the manager
+                                if let updatedPlaylist = playlistManager.getPlaylist(by: playlist.id) {
+                                    // Update the displayed playlist and local songs array
+                                    displayedPlaylist = updatedPlaylist
+                                    currentSongs = updatedPlaylist.songs
+                                }
+                            }
+                            // When entering edit mode, initialize the songs array
+                            else if !wasInEditMode && editMode {
+                                // Use the displayed playlist if available, otherwise use the original
+                                let playlistToUse = displayedPlaylist ?? playlist
+                                if let updatedPlaylist = playlistManager.getPlaylist(by: playlistToUse.id) {
+                                    currentSongs = updatedPlaylist.songs
+                                } else {
+                                    currentSongs = playlistToUse.songs
+                                }
+                            }
+                        }) {
+                            Text(editMode ? "Done" : "Edit")
+                                .font(.system(size: 13, weight: .medium))
+                                .foregroundColor(.blue)
+                                .padding(.horizontal, 14)
+                                .padding(.vertical, 8)
+                                .background(Color.blue.opacity(0.1))
+                                .clipShape(RoundedRectangle(cornerRadius: 12))
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                    }
+                }
             }
-            .padding(.horizontal, 20)
-            .padding(.vertical, 16)
+            .padding(.horizontal, 16)
+            .padding(.vertical, 15)
             
             Divider()
             
             // Songs list
             if (editMode ? currentSongs : (displayedPlaylist ?? playlist).songs).isEmpty {
-                VStack(spacing: 16) {
+                VStack(spacing: 20) {
                     Image(systemName: "music.note")
                         .font(.system(size: 48))
                         .foregroundColor(.secondary)
@@ -386,20 +399,20 @@ struct PlaylistSongsView: View {
                         .font(.subheadline)
                         .foregroundColor(.secondary)
                         .multilineTextAlignment(.center)
+                        .padding(.horizontal)
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .padding()
+                .padding(.vertical, 40)
             } else {
                 if editMode {
                     // Edit mode with drag and drop reordering
                     List {
                         ForEach($currentSongs, id: \.videoId) { $song in
-                            HStack {
+                            HStack(spacing: 12) {
                                 // Drag handle in edit mode
                                 Image(systemName: "line.horizontal.3")
                                     .foregroundColor(.secondary)
                                     .font(.system(size: 16, weight: .medium))
-                                    .padding(.trailing, 8)
                                 
                                 // Song item
                                 PlaylistSongItemView(
@@ -415,10 +428,10 @@ struct PlaylistSongsView: View {
                                         }
                                     }
                                 )
-                                
-                                Spacer()
                             }
-                            .padding(.vertical, 4)
+                            .padding(.vertical, 6)
+                            .listRowInsets(EdgeInsets(top: 0, leading: 16, bottom: 0, trailing: 16))
+                            .listRowSeparator(.hidden)
                         }
                         .onMove { indices, newOffset in
                             // Move the songs in the local array
@@ -433,11 +446,11 @@ struct PlaylistSongsView: View {
                         }
                     }
                     .listStyle(PlainListStyle())
-                    .padding(.horizontal, 16)
+                    .scrollContentBackground(.hidden)
                 } else {
                     // Normal view mode
                     ScrollView {
-                        LazyVStack(spacing: 0) {
+                        LazyVStack(spacing: 4) {
                             ForEach(Array((displayedPlaylist ?? playlist).songs.enumerated()), id: \.element.videoId) { index, song in
                                 PlaylistSongItemView(
                                     song: song,
@@ -446,11 +459,12 @@ struct PlaylistSongsView: View {
                                     searchState: searchState,
                                     editMode: $editMode
                                 )
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 4)
+                                .padding(.horizontal, 20)
+                                .padding(.vertical, 6)
                             }
                         }
-                        .padding(.vertical, 8)
+                        .padding(.top, 12)
+                        .padding(.bottom, 20)
                     }
                 }
             }
@@ -516,9 +530,9 @@ struct PlaylistSongItemView: View {
             // Track number (only shown when not in edit mode)
             if !editMode {
                 Text("\(index + 1)")
-                    .font(.system(size: 14, weight: .medium))
+                    .font(.system(size: 13, weight: .medium))
                     .foregroundColor(.secondary)
-                    .frame(width: 20, alignment: .center)
+                    .frame(width: 24, alignment: .trailing)
             }
             
             // Song thumbnail
@@ -527,7 +541,7 @@ struct PlaylistSongItemView: View {
                     .resizable()
                     .aspectRatio(contentMode: .fill)
             } placeholder: {
-                RoundedRectangle(cornerRadius: 4)
+                RoundedRectangle(cornerRadius: 6)
                     .fill(Color.gray.opacity(0.3))
                     .overlay {
                         Image(systemName: "music.note")
@@ -535,11 +549,11 @@ struct PlaylistSongItemView: View {
                             .font(.system(size: 16))
                     }
             }
-            .frame(width: 40, height: 40)
-            .clipShape(RoundedRectangle(cornerRadius: 4))
+            .frame(width: 44, height: 44)
+            .clipShape(RoundedRectangle(cornerRadius: 6))
             
             // Song info
-            VStack(alignment: .leading, spacing: 2) {
+            VStack(alignment: .leading, spacing: 3) {
                 Text(song.title)
                     .font(.system(size: 14, weight: .medium))
                     .foregroundColor(.primary)
@@ -558,8 +572,9 @@ struct PlaylistSongItemView: View {
             // Duration
             if let duration = song.duration {
                 Text(duration.formattedDuration)
-                    .font(.system(size: 12))
+                    .font(.system(size: 12, weight: .medium))
                     .foregroundColor(.secondary)
+                    .monospacedDigit()
             }
             
             if editMode {
@@ -572,17 +587,22 @@ struct PlaylistSongItemView: View {
                 }) {
                     Image(systemName: "minus.circle.fill")
                         .foregroundColor(.red)
-                        .font(.system(size: 16))
+                    .font(.system(size: 18))
                 }
                 .buttonStyle(PlainButtonStyle())
             }
         }
-        .padding(.horizontal, 8)
-        .padding(.vertical, 6)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 8)
         .background(
-            RoundedRectangle(cornerRadius: 8)
+            RoundedRectangle(cornerRadius: 10)
                 .fill(searchState.playbackManager.currentTrack?.videoId == song.videoId ? 
-                      Color.blue.opacity(0.3) : Color.clear)
+                      Color.blue.opacity(0.15) : Color.clear)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: 10)
+                .stroke(searchState.playbackManager.currentTrack?.videoId == song.videoId ? 
+                        Color.blue.opacity(0.3) : Color.clear, lineWidth: 1)
         )
         .onTapGesture {
             guard !editMode else { return }
@@ -683,7 +703,7 @@ struct PlaylistOptionsView: View {
                     print("➕ Add to Queue: \(playlist.name)")
                 }) {
                     HStack {
-                        Image(systemName: "plus.rectangle.on.rectangle")
+                        Image(systemName: "text.insert")
                             .font(.system(size: 14))
                         Text("Add to Queue")
                         Spacer()
@@ -868,6 +888,6 @@ struct CreatePlaylistViewInApp: View {
 }
 
 #Preview {
-    PlaylistView(searchState: SearchState())
+    PlaylistView(searchState: SearchState(), scrollOffset: Binding.constant(0))
         .frame(width: 600, height: 650)
 }
