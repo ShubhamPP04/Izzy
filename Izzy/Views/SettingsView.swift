@@ -97,6 +97,39 @@ struct SettingsView: View {
                         .fill(Color.primary.opacity(0.05))
                 )
                 
+                // Mini Player setting
+                VStack(alignment: .leading, spacing: 8) {
+                    HStack {
+                        Image(systemName: "pip")
+                            .foregroundColor(.blue)
+                            .font(.system(size: 14, weight: .medium))
+                        
+                        Text("Mini Player")
+                            .font(.system(size: 14, weight: .medium))
+                        
+                        Spacer()
+                        
+                        Toggle("", isOn: Binding(
+                            get: { MiniPlayerManager.shared.isEnabled },
+                            set: { MiniPlayerManager.shared.isEnabled = $0 }
+                        ))
+                        .labelsHidden()
+                        .toggleStyle(SwitchToggleStyle())
+                        .onAppear {
+                            MiniPlayerManager.shared.configure(searchState: searchState)
+                        }
+                    }
+                    
+                    Text("Show a draggable, resizable mini player window with liquid glass design and full playback controls")
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                }
+                .padding()
+                .background(
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(Color.primary.opacity(0.05))
+                )
+                
                 // Liquid Glass setting
                 VStack(alignment: .leading, spacing: 8) {
                     HStack {

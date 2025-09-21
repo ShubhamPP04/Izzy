@@ -269,10 +269,14 @@ struct SimpleMenuBarView: View {
                         if manager.playbackState.isPlaying {
                             searchState.playbackManager.pause()
                         } else {
-                            if searchState.playbackManager.currentTrack != nil {
+                            // Check if we need to resume from a saved position
+                            if manager.playbackState == .stopped && manager.currentTime > 0 {
+                                Task {
+                                    await searchState.playbackManager.resumeFromSavedPosition()
+                                }
+                            } else if searchState.playbackManager.currentTrack != nil {
                                 searchState.playbackManager.resume()
                             } else {
-                                // If no track, don't do anything or show a message
                                 print("No track to play")
                             }
                         }

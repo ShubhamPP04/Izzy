@@ -38,10 +38,20 @@ class AppCoordinator: ObservableObject {
         // Configure the menu bar manager with search state and window manager
         SimpleMenuBarManager.shared.configure(searchState: searchState, windowManager: windowManager)
         
+        // Configure the mini player manager with search state
+        MiniPlayerManager.shared.configure(searchState: searchState)
+        
         // Ensure menu bar appears if enabled
         if UserDefaults.standard.bool(forKey: "menuBarPlayerEnabled") {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                 SimpleMenuBarManager.shared.updateMenuBar()
+            }
+        }
+        
+        // Ensure mini player appears if enabled
+        if UserDefaults.standard.bool(forKey: "miniPlayerEnabled") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                MiniPlayerManager.shared.updateMiniPlayer()
             }
         }
     }

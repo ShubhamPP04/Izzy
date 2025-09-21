@@ -75,11 +75,18 @@ struct MenuBarView: View {
                     
                     // Play/Pause button
                     Button(action: {
-                        Task {
-                            if searchState.playbackManager.playbackState == .playing {
-                                await searchState.playbackManager.pause()
+                        if searchState.playbackManager.playbackState == .playing {
+                            searchState.playbackManager.pause()
+                        } else {
+                            // Check if we need to resume from a saved position
+                            if searchState.playbackManager.playbackState == .stopped && searchState.playbackManager.currentTime > 0 {
+                                Task {
+                                    await searchState.playbackManager.resumeFromSavedPosition()
+                                }
+                            } else if searchState.playbackManager.currentTrack != nil {
+                                searchState.playbackManager.resume()
                             } else {
-                                await searchState.playbackManager.resume()
+                                print("No track to play")
                             }
                         }
                     }) {
