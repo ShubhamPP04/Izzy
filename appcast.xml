@@ -6,6 +6,30 @@
     <description>Most recent changes with links to updates.</description>
     <language>en</language>
     
+    <!-- Version 1.1.2 -->
+    <item>
+      <title>Version 1.1.2</title>
+      <description>
+        <![CDATA[
+          <ul>
+            <li>Enhanced mini player with smart resume functionality</li>
+            <li>Menu bar player now resumes from last playback position</li>
+            <li>Improved liquid glass design with borderless appearance</li>
+            <li>Fixed mini player resizing and persistence issues</li>
+            <li>Consistent playback resume behavior across all player interfaces</li>
+          </ul>
+        ]]>
+      </description>
+      <pubDate>Sat, 21 Sep 2025 12:00:00 +0000</pubDate>
+      <sparkle:version>12</sparkle:version>
+      <sparkle:shortVersionString>1.1.2</sparkle:shortVersionString>
+      <enclosure url="https://yourwebsite.com/izzy/Izzy.dmg"
+                 sparkle:version="12"
+                 sparkle:shortVersionString="1.1.2"
+                 length="16839788"
+                 type="application/octet-stream" />
+    </item>
+    
     <!-- Version 1.1.1 -->
     <item>
       <title>Version 1.1.1</title>
