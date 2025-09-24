@@ -1112,17 +1112,33 @@ class YTMusicService:
             f"https://www.youtube.com/watch?v={video_id}"
         ]
         
-        # Enhanced yt-dlp options for better audio quality
+        # Enhanced yt-dlp options for better compatibility with YouTube's recent changes
         enhanced_opts = {
+            # Add specific options to handle YouTube's SABR streaming changes
             'format': 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best',
             'quiet': True,
             'no_warnings': True,
-            'extractaudio': True,
-            'audioformat': 'best',
+            'extractaudio': False,
             'noplaylist': True,
             'no_check_certificate': True,
-            'prefer_free_formats': False,  # Prefer higher quality formats
-            'youtube_include_dash_manifest': False,  # Avoid DASH for compatibility
+            'prefer_free_formats': True,
+            'youtube_include_dash_manifest': True,  # Enable DASH to get more formats
+            'extract_flat': False,
+            # Critical: Use specific extractor args for YouTube
+            'extractor_args': {
+                'youtube': {
+                    'player_client': ['android', 'web'],  # Use multiple clients
+                    'player_skip': ['webpage'],  # Skip problematic checks
+                }
+            },
+            # Updated user agent
+            'http_headers': {
+                'User-Agent': 'Mozilla/5.0 (Linux; Android 11; Pixel 5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/119.0.0.0 Mobile Safari/537.36'
+            },
+            # Retry settings
+            'retries': 5,
+            'fragment_retries': 5,
+            'socket_timeout': 30,
         }
         
         last_error = None
@@ -1137,26 +1153,61 @@ class YTMusicService:
                 with YoutubeDL(enhanced_opts) as ydl:
                     info = ydl.extract_info(url, download=False)
                     
-                    # Extract the best audio stream URL
+                    # Extract the best audio stream URL with improved format selection
                     stream_url = info.get('url')
                     if not stream_url:
                         # Try formats if direct URL not available
                         formats = info.get('formats', [])
-                        audio_formats = [f for f in formats if f.get('acodec') != 'none']
+                        
+                        # Filter for audio-only formats
+                        audio_formats = [f for f in formats if f.get('acodec') and f.get('acodec') != 'none']
+                        
+                        if not audio_formats:
+                            # If no audio-only formats, try formats with both audio and video
+                            audio_formats = [f for f in formats if f.get('acodec') and f.get('acodec') != 'none' and f.get('vcodec')]
+                        
                         if audio_formats:
-                            # Get the best quality audio format (prefer m4a, then webm, then others)
+                            # Improved format selection with better priority system
                             def format_priority(fmt):
+                                # Prioritize by audio quality, then format preference
+                                abr = fmt.get('abr', 0) or fmt.get('tbr', 0) or 0
                                 ext = fmt.get('ext', '')
-                                abr = fmt.get('abr', 0)
-                                if ext == 'm4a':
-                                    return (3, abr)
-                                elif ext == 'webm':
-                                    return (2, abr)
-                                else:
-                                    return (1, abr)
+                                acodec = fmt.get('acodec', '')
+                                
+                                # Format preference: opus > m4a > aac > webm > mp4 > others
+                                format_scores = {
+                                    'opus': 100,
+                                    'm4a': 90,
+                                    'aac': 80,
+                                    'webm': 70,
+                                    'mp4': 60
+                                }
+                                
+                                codec_scores = {
+                                    'opus': 100,
+                                    'aac': 90,
+                                    'mp4a': 85,
+                                    'vorbis': 70
+                                }
+                                
+                                format_score = format_scores.get(ext, 50)
+                                codec_score = max([codec_scores.get(codec, 50) for codec in [acodec] if codec])
+                                
+                                # Combine scores: bitrate (most important), format, codec
+                                return (abr, format_score, codec_score)
                             
                             best_format = max(audio_formats, key=format_priority)
                             stream_url = best_format.get('url')
+                            
+                            print(f"Selected format: {best_format.get('ext')} with {best_format.get('acodec')} codec, bitrate: {best_format.get('abr')}", file=sys.stderr)
+                        else:
+                            # Last resort: try any format with audio
+                            all_formats = info.get('formats', [])
+                            for fmt in all_formats:
+                                if fmt.get('url') and (fmt.get('acodec') or fmt.get('audio_ext')):
+                                    stream_url = fmt.get('url')
+                                    print(f"Using fallback format: {fmt.get('format_id', 'unknown')}", file=sys.stderr)
+                                    break
                     
                     if not stream_url:
                         raise Exception("No valid stream URL found")
