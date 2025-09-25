@@ -8,6 +8,7 @@ import sys
 import json
 import asyncio
 import logging
+import time
 import traceback  # Add traceback for better error reporting
 from typing import Dict, List, Any, Optional
 from ytmusicapi import YTMusic
@@ -734,11 +735,15 @@ class YTMusicService:
                 self.yt = YTMusic()
             else:
                 self.yt = None
+
+            # Cache for previously resolved stream URLs to avoid redundant extraction
+            self._stream_cache: Dict[str, Dict[str, Any]] = {}
+            self._stream_cache_ttl = 300  # seconds
             
             # 🔋 BATTERY OPTIMIZATION: Configure yt-dlp for minimal resource usage
             if HAS_YTDLP:
                 self.ydl_opts = {
-                    'format': 'bestaudio/best',
+                    'format': 'bestaudio[ext=m4a][abr<=160]/bestaudio[abr<=160]/bestaudio[ext=m4a]/bestaudio',
                     'quiet': True,
                     'no_warnings': True,
                     'extractaudio': True,
@@ -753,6 +758,8 @@ class YTMusicService:
                     'writeinfojson': False,  # Don't write metadata files
                     'writesubtitles': False,  # Don't download subtitles
                     'writeautomaticsub': False,  # Don't download auto-generated subs
+                    'cachedir': False,
+                    'prefer_free_formats': True,
                 }
             
         except Exception as e:
@@ -1081,15 +1088,55 @@ class YTMusicService:
             pass
         
         return None
+
+    def _get_cached_stream(self, video_id: str) -> Optional[Dict[str, Any]]:
+        cached_entry = self._stream_cache.get(video_id)
+        if not cached_entry:
+            return None
+        if time.time() - cached_entry['timestamp'] > self._stream_cache_ttl:
+            self._stream_cache.pop(video_id, None)
+            return None
+        return cached_entry['data']
+
+    def _set_cached_stream(self, video_id: str, payload: Dict[str, Any]) -> None:
+        self._stream_cache[video_id] = {
+            'timestamp': time.time(),
+            'data': payload
+        }
+        if len(self._stream_cache) > 64:
+            self._cleanup_stream_cache()
+
+    def _cleanup_stream_cache(self) -> None:
+        now = time.time()
+        expired_keys = [key for key, entry in self._stream_cache.items()
+                        if now - entry['timestamp'] > self._stream_cache_ttl]
+        for key in expired_keys:
+            self._stream_cache.pop(key, None)
     
     def get_stream_info(self, video_id: str) -> Dict[str, Any]:
         """
         Extract stream URL and metadata for a video ID using yt-dlp or fallback
         """
         try:
+            cached = self._get_cached_stream(video_id)
+            if cached:
+                print(f"Using cached stream info for {video_id}", file=sys.stderr)
+                return {
+                    'success': True,
+                    'data': cached
+                }
+
+            fast_stream = self._get_stream_via_ytmusicapi(video_id)
+            if fast_stream and fast_stream.get('success'):
+                self._set_cached_stream(video_id, fast_stream['data'])
+                return fast_stream
+
             if HAS_YTDLP:
                 print(f"Using yt-dlp for stream extraction: {video_id}", file=sys.stderr)
-                return self._get_stream_with_ytdlp(video_id)
+                result = self._get_stream_with_ytdlp(video_id)
+                if result.get('success'):
+                    self._set_cached_stream(video_id, result['data'])
+                return result
             else:
                 print(f"yt-dlp not available, using fallback for: {video_id}", file=sys.stderr)
                 return self._get_stream_fallback(video_id)
@@ -1100,6 +1147,58 @@ class YTMusicService:
                 'success': False,
                 'error': f"Stream extraction failed: {str(e)}"
             }
+
+    def _get_stream_via_ytmusicapi(self, video_id: str) -> Optional[Dict[str, Any]]:
+        """Attempt to retrieve a fast-start audio stream directly from ytmusicapi."""
+        if not HAS_YTMUSICAPI or not self.yt:
+            return None
+
+        try:
+            song_data = self.yt.get_song(video_id)
+            streaming_data = (song_data or {}).get('streamingData') or {}
+            video_details = (song_data or {}).get('videoDetails') or {}
+
+            adaptive_formats = streaming_data.get('adaptiveFormats') or []
+            progressive_formats = streaming_data.get('formats') or []
+
+            candidates: List[Dict[str, Any]] = []
+            for fmt in adaptive_formats + progressive_formats:
+                if not isinstance(fmt, dict):
+                    continue
+                url = fmt.get('url')
+                mime_type = fmt.get('mimeType', '')
+                if not url or 'audio' not in mime_type.lower():
+                    continue
+                candidates.append(fmt)
+
+            if not candidates:
+                return None
+
+            def sort_key(fmt: Dict[str, Any]):
+                bitrate = fmt.get('bitrate') or fmt.get('averageBitrate') or 0
+                mime_type = fmt.get('mimeType', '')
+                ext_preference = 0 if 'audio/mp4' in mime_type or 'm4a' in mime_type else 1
+                return (bitrate, ext_preference)
+
+            selected = sorted(candidates, key=sort_key)[0]
+
+            bitrate = selected.get('bitrate') or selected.get('averageBitrate')
+            duration_raw = video_details.get('lengthSeconds')
+            duration = float(duration_raw) if duration_raw else streaming_data.get('duration')
+
+            return {
+                'success': True,
+                'data': {
+                    'url': selected.get('url'),
+                    'title': video_details.get('title', ''),
+                    'duration': duration or 0,
+                    'quality': str(int(bitrate / 1000)) if bitrate else 'unknown'
+                }
+            }
+
+        except Exception as err:
+            logger.debug(f"ytmusicapi fast stream lookup failed for {video_id}: {err}")
+            return None
     
     def _get_stream_with_ytdlp(self, video_id: str) -> Dict[str, Any]:
         """
@@ -1115,7 +1214,7 @@ class YTMusicService:
         # Enhanced yt-dlp options for better compatibility with YouTube's recent changes
         enhanced_opts = {
             # Add specific options to handle YouTube's SABR streaming changes
-            'format': 'bestaudio[ext=m4a]/bestaudio[ext=webm]/bestaudio/best',
+            'format': 'bestaudio[ext=m4a][abr<=160]/bestaudio[abr<=160]/bestaudio[ext=m4a]/bestaudio',
             'quiet': True,
             'no_warnings': True,
             'extractaudio': False,
