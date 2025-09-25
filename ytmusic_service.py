@@ -1214,7 +1214,6 @@ class YTMusicService:
         # Enhanced yt-dlp options for better compatibility with YouTube's recent changes
         enhanced_opts = {
             # Add specific options to handle YouTube's SABR streaming changes
-            'format': 'bestaudio[ext=m4a][abr<=160]/bestaudio[abr<=160]/bestaudio[ext=m4a]/bestaudio',
             'quiet': True,
             'no_warnings': True,
             'extractaudio': False,
@@ -1239,90 +1238,123 @@ class YTMusicService:
             'fragment_retries': 5,
             'socket_timeout': 30,
         }
-        
+
+        # Try progressively more permissive format selectors before giving up entirely
+        format_fallbacks = [
+            'bestaudio[ext=m4a][abr<=160]/bestaudio[abr<=160]/bestaudio[ext=m4a]/bestaudio',
+            'bestaudio[ext=m4a]/bestaudio',
+            'bestaudio/best',
+            'best'
+        ]
+
         last_error = None
-        
+
         for url in urls_to_try:
-            try:
-                print(f"Trying to extract stream from: {url}", file=sys.stderr)
-                
-                if not HAS_YTDLP or YoutubeDL is None:
-                    raise Exception("yt-dlp is not available")
-                
-                with YoutubeDL(enhanced_opts) as ydl:
-                    info = ydl.extract_info(url, download=False)
-                    
+            if not HAS_YTDLP or YoutubeDL is None:
+                raise Exception("yt-dlp is not available")
+
+            for format_selector in format_fallbacks:
+                opts = dict(enhanced_opts)
+                opts['format'] = format_selector
+
+                try:
+                    print(
+                        f"Trying to extract stream from: {url} with format '{format_selector}'",
+                        file=sys.stderr
+                    )
+
+                    with YoutubeDL(opts) as ydl:
+                        info = ydl.extract_info(url, download=False)
+
                     # Extract the best audio stream URL with improved format selection
                     stream_url = info.get('url')
-                    if not stream_url:
-                        # Try formats if direct URL not available
-                        formats = info.get('formats', [])
-                        
-                        # Filter for audio-only formats
-                        audio_formats = [f for f in formats if f.get('acodec') and f.get('acodec') != 'none']
-                        
-                        if not audio_formats:
-                            # If no audio-only formats, try formats with both audio and video
-                            audio_formats = [f for f in formats if f.get('acodec') and f.get('acodec') != 'none' and f.get('vcodec')]
-                        
-                        if audio_formats:
-                            # Improved format selection with better priority system
-                            def format_priority(fmt):
-                                # Prioritize by audio quality, then format preference
-                                abr = fmt.get('abr', 0) or fmt.get('tbr', 0) or 0
-                                ext = fmt.get('ext', '')
-                                acodec = fmt.get('acodec', '')
-                                
-                                # Format preference: opus > m4a > aac > webm > mp4 > others
-                                format_scores = {
-                                    'opus': 100,
-                                    'm4a': 90,
-                                    'aac': 80,
-                                    'webm': 70,
-                                    'mp4': 60
-                                }
-                                
-                                codec_scores = {
-                                    'opus': 100,
-                                    'aac': 90,
-                                    'mp4a': 85,
-                                    'vorbis': 70
-                                }
-                                
-                                format_score = format_scores.get(ext, 50)
-                                codec_score = max([codec_scores.get(codec, 50) for codec in [acodec] if codec])
-                                
-                                # Combine scores: bitrate (most important), format, codec
-                                return (abr, format_score, codec_score)
-                            
-                            best_format = max(audio_formats, key=format_priority)
-                            stream_url = best_format.get('url')
-                            
-                            print(f"Selected format: {best_format.get('ext')} with {best_format.get('acodec')} codec, bitrate: {best_format.get('abr')}", file=sys.stderr)
-                        else:
-                            # Last resort: try any format with audio
-                            all_formats = info.get('formats', [])
-                            for fmt in all_formats:
-                                if fmt.get('url') and (fmt.get('acodec') or fmt.get('audio_ext')):
-                                    stream_url = fmt.get('url')
-                                    print(f"Using fallback format: {fmt.get('format_id', 'unknown')}", file=sys.stderr)
-                                    break
-                    
+
+                    raw_formats: List[Dict[str, Any]] = []
+                    formats_field = info.get('formats')
+                    if isinstance(formats_field, list):
+                        raw_formats.extend([f for f in formats_field if isinstance(f, dict)])
+
+                    requested_formats = info.get('requested_formats')
+                    if isinstance(requested_formats, list):
+                        raw_formats.extend([f for f in requested_formats if isinstance(f, dict)])
+
+                    audio_formats = [
+                        f for f in raw_formats
+                        if (f.get('acodec') and f.get('acodec') != 'none') or f.get('audio_ext')
+                    ]
+
+                    if not stream_url and audio_formats:
+                        # Improved format selection with better priority system
+                        def format_priority(fmt):
+                            abr = fmt.get('abr') or fmt.get('tbr') or 0
+                            ext = fmt.get('ext', '')
+                            acodec = fmt.get('acodec', '')
+
+                            format_scores = {
+                                'm4a': 100,
+                                'mp4': 95,
+                                'aac': 90,
+                                'opus': 85,
+                                'webm': 80
+                            }
+
+                            codec_scores = {
+                                'mp4a': 100,
+                                'aac': 95,
+                                'opus': 90,
+                                'vorbis': 80,
+                            }
+
+                            abr_penalty = -abs((abr or 0) - 160)
+                            format_score = format_scores.get(ext, 70)
+                            codec_score = codec_scores.get(acodec, 70)
+
+                            return (format_score + codec_score, abr_penalty, abr)
+
+                        best_format = max(audio_formats, key=format_priority)
+                        stream_url = best_format.get('url')
+
+                        print(
+                            f"Selected format via manual pick: {best_format.get('format_id')} "
+                            f"({best_format.get('ext')}, {best_format.get('acodec')}, abr={best_format.get('abr')})",
+                            file=sys.stderr
+                        )
+
+                    if not stream_url and raw_formats:
+                        for fmt in raw_formats:
+                            if fmt.get('url') and (fmt.get('acodec') or fmt.get('audio_ext')):
+                                stream_url = fmt.get('url')
+                                print(
+                                    f"Using fallback format: {fmt.get('format_id', 'unknown')}",
+                                    file=sys.stderr
+                                )
+                                break
+
                     if not stream_url:
                         raise Exception("No valid stream URL found")
-                    
-                    # Convert quality to string to match Swift expectations
-                    quality = info.get('abr')
+
+                    chosen_format = None
+                    if audio_formats:
+                        chosen_format = max(
+                            audio_formats,
+                            key=lambda f: (f.get('url') == stream_url, f.get('abr') or 0)
+                        )
+
+                    quality = None
+                    if chosen_format:
+                        quality = chosen_format.get('abr') or chosen_format.get('tbr')
                     if quality is None:
-                        # Try to get quality from format
-                        formats = info.get('formats', [])
-                        if formats:
-                            quality = formats[0].get('abr')
-                    
-                    quality_str = str(quality) if quality is not None else 'unknown'
-                    
-                    print(f"Successfully extracted stream: quality={quality_str}, duration={info.get('duration', 0)}", file=sys.stderr)
-                    
+                        quality = info.get('abr')
+
+                    quality_str = (
+                        str(int(quality)) if isinstance(quality, (int, float)) else quality or 'unknown'
+                    )
+
+                    print(
+                        f"Successfully extracted stream: quality={quality_str}, duration={info.get('duration', 0)}",
+                        file=sys.stderr
+                    )
+
                     return {
                         'success': True,
                         'data': {
@@ -1332,12 +1364,19 @@ class YTMusicService:
                             'quality': quality_str
                         }
                     }
-                    
-            except Exception as e:
-                last_error = e
-                print(f"Failed to extract from {url}: {e}", file=sys.stderr)
-                continue
-        
+
+                except Exception as format_error:
+                    last_error = format_error
+                    print(
+                        f"Failed to extract from {url} with format '{format_selector}': {format_error}",
+                        file=sys.stderr
+                    )
+                    # Try the next format selector for this URL
+                    continue
+
+            # If all format selectors failed for this URL, try the next URL variant
+            continue
+
         # If we get here, all URLs failed
         raise Exception(f"Stream extraction failed for all URLs. Last error: {last_error}")
     
