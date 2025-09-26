@@ -12,10 +12,12 @@ struct MusicSearchView: View {
     @ObservedObject var windowManager: WindowManager
     @State private var selectedTab: Int
     @State private var isSearchBarFocused: Bool = false
+    @State private var isAISearchPromptFocused: Bool = false
     
     // Scroll position tracking for each tab using CGFloat values
     @State private var homeScrollOffset: CGFloat = 0
     @State private var searchScrollOffset: CGFloat = 0
+    @State private var aiSearchScrollOffset: CGFloat = 0
     @State private var favoritesScrollOffset: CGFloat = 0
     @State private var recentlyPlayedScrollOffset: CGFloat = 0
     @State private var upNextScrollOffset: CGFloat = 0
@@ -90,6 +92,16 @@ struct MusicSearchView: View {
                     }
                 }
                 .opacity(selectedTab == 1 ? 1 : 0)
+
+                AISearchView(
+                    searchState: searchState,
+                    windowManager: windowManager,
+                    selectedTab: $selectedTab,
+                    scrollOffset: $aiSearchScrollOffset,
+                    isPromptFocused: $isAISearchPromptFocused
+                )
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .opacity(selectedTab == 7 ? 1 : 0)
                 
                 // Favorites Content
                 FavoritesView(searchState: searchState, scrollOffset: $favoritesScrollOffset)
@@ -175,6 +187,9 @@ struct MusicSearchView: View {
             // Save selected tab whenever it changes
             searchState.saveSelectedTab(newTab)
             print("💾 Tab changed to: \(newTab)")
+            if newTab != 7 {
+                isAISearchPromptFocused = false
+            }
         }
         .onKeyPress { keyPress in
             handleGlobalKeyPress(keyPress)
@@ -185,9 +200,13 @@ struct MusicSearchView: View {
     // MARK: - Scroll Position Persistence
     // Removed UserDefaults scroll position save/restore to allow natural persistence
     
+    private var keyboardTabSequence: [Int] {
+        AnimatedTabNavigation.keyboardNavigableTags
+    }
+    
     private func handleGlobalKeyPress(_ keyPress: KeyPress) -> KeyPress.Result {
         // Don't handle keyboard shortcuts if search bar is focused
-        if isSearchBarFocused {
+        if isSearchBarFocused || isAISearchPromptFocused {
             print("🔍 Ignoring keyboard shortcut - search bar is focused")
             return .ignored
         }
@@ -206,9 +225,12 @@ struct MusicSearchView: View {
             handleSeekForward()
             return .handled
         case .tab:
-            // Cycle through tabs with Tab key
-            let nextTab = (selectedTab + 1) % 6
-            selectedTab = nextTab == 4 ? 0 : nextTab // Skip Settings (4) and wrap around
+            if let currentIndex = keyboardTabSequence.firstIndex(of: selectedTab) {
+                let nextIndex = (currentIndex + 1) % keyboardTabSequence.count
+                selectedTab = keyboardTabSequence[nextIndex]
+            } else if let fallback = keyboardTabSequence.first {
+                selectedTab = fallback
+            }
             print("🔄 Tab switched to: \(selectedTab)")
             return .handled
         case .escape:
@@ -399,22 +421,36 @@ struct MusicSearchViewBackgroundModifier: ViewModifier {
 
 // MARK: - Animated Tab Navigation Component
 struct AnimatedTabNavigation: View {
+    struct TabItem: Identifiable {
+        let icon: String
+        let title: String
+        let tag: Int
+        var id: Int { tag }
+    }
+    
+    static let tabItems: [TabItem] = [
+        TabItem(icon: "house.fill", title: "Home", tag: 0),
+        TabItem(icon: "magnifyingglass", title: "Search", tag: 1),
+        TabItem(icon: "sparkle.magnifyingglass", title: "AI Search", tag: 7),
+        TabItem(icon: "heart.fill", title: "Favorites", tag: 2),
+        TabItem(icon: "clock.fill", title: "Recently Played", tag: 3),
+        TabItem(icon: "music.note.list", title: "Playlists", tag: 5),
+        TabItem(icon: "list.bullet", title: "Up Next", tag: 6),
+        TabItem(icon: "gear", title: "Settings", tag: 4)
+    ]
+    
+    static let keyboardNavigableTags: [Int] = tabItems
+        .map(\.tag)
+        .filter { $0 != 4 }
+    
     @Binding var selectedTab: Int
     let onTabChange: (Int) -> Void
     
-    let tabs: [(icon: String, title: String, tag: Int)] = [
-        ("house.fill", "Home", 0),
-        ("magnifyingglass", "Search", 1),
-        ("heart.fill", "Favorites", 2),
-        ("clock.fill", "Recently Played", 3),
-        ("music.note.list", "Playlists", 5),
-        ("list.bullet", "Up Next", 6),
-        ("gear", "Settings", 4)
-    ]
+    private let tabs = AnimatedTabNavigation.tabItems
     
     var body: some View {
         HStack(spacing: 8) {
-            ForEach(tabs, id: \.tag) { tab in
+            ForEach(tabs) { tab in
                 AnimatedTabButton(
                     icon: tab.icon,
                     title: tab.title,

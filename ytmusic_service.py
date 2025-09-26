@@ -70,6 +70,10 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+GEMINI_MODEL_NAME = "gemini-2.5-flash-lite"
+GEMINI_API_URL_TEMPLATE = "https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent"
+GEMINI_TIMEOUT_SECONDS = 20
+
 def decode_html_entities(text: str) -> str:
     """Safely decode HTML entities"""
     try:
@@ -873,6 +877,103 @@ class YTMusicService:
         except Exception as e:
             logger.error(f"Fallback search failed: {e}")
             raise Exception(f"Fallback search failed: {str(e)}")
+
+    def ai_search(self, query: str, limit: int = 15, gemini_api_key: Optional[str] = None) -> Dict[str, Any]:
+        """Provide AI-assisted search insights and curated results powered by Gemini."""
+        try:
+            stripped_query = (query or "").strip()
+            if not stripped_query:
+                return {
+                    'success': False,
+                    'error': 'Query is required for AI search'
+                }
+
+            suggestions: List[str] = []
+            if HAS_YTMUSICAPI and self.yt:
+                try:
+                    raw_suggestions = self.yt.get_search_suggestions(stripped_query) or []
+                    cleaned: List[str] = []
+                    for suggestion in raw_suggestions:
+                        if isinstance(suggestion, str):
+                            cleaned.append(suggestion)
+                        elif isinstance(suggestion, dict):
+                            text_value = suggestion.get('text') or suggestion.get('query')
+                            if text_value:
+                                cleaned.append(text_value)
+                    suggestions = cleaned[:8]
+                except Exception as suggestion_error:
+                    logger.warning(f"Failed to load ai suggestions: {suggestion_error}")
+                    suggestions = []
+
+            if HAS_YTMUSICAPI and self.yt:
+                aggregated_results = self._search_with_ytmusicapi(stripped_query, limit)
+            else:
+                aggregated_results = self._search_fallback(stripped_query, limit)
+
+            songs = aggregated_results.get('songs', []) or []
+            curated = songs[: min(len(songs), 6)]
+
+            insights: List[str] = []
+            if curated:
+                primary = curated[0]
+                title = primary.get('title', 'Top match')
+                artist = primary.get('artist')
+                insight = f"Top match: {title}"
+                if artist:
+                    insight += f" • {artist}"
+                insights.append(insight)
+
+            artists = aggregated_results.get('artists', []) or []
+            if artists:
+                artist_name = artists[0].get('title') or artists[0].get('artist')
+                if artist_name:
+                    insights.append(f"Featured artist: {artist_name}")
+
+            playlists = aggregated_results.get('playlists', []) or []
+            if playlists:
+                playlist_title = playlists[0].get('title')
+                if playlist_title:
+                    insights.append(f"Curated playlist: {playlist_title}")
+
+            gemini_enrichment = self._generate_gemini_enrichment(
+                stripped_query,
+                curated,
+                suggestions,
+                gemini_api_key
+            ) if gemini_api_key else None
+
+            if gemini_enrichment:
+                suggestions = self._merge_unique_strings(
+                    suggestions,
+                    gemini_enrichment.get('suggestions', []),
+                    limit=10
+                )
+                insights = self._merge_unique_strings(
+                    insights,
+                    gemini_enrichment.get('insights', []),
+                    limit=6
+                )
+
+            response_payload = {
+                'query': stripped_query,
+                'suggestions': suggestions,
+                'topResults': curated,
+                'results': aggregated_results,
+                'insights': insights
+            }
+
+            return {
+                'success': True,
+                'data': response_payload
+            }
+
+        except Exception as error:
+            logger.error(f"AI search failed: {error}")
+            logger.error(traceback.format_exc())
+            return {
+                'success': False,
+                'error': str(error)
+            }
     
     def _format_search_results(self, raw_results: List[Dict], category: str) -> List[Dict]:
         """
@@ -895,6 +996,144 @@ class YTMusicService:
                 continue
         
         return formatted_results
+
+    def _generate_gemini_enrichment(
+        self,
+        query: str,
+        curated: List[Dict[str, Any]],
+        existing_suggestions: List[str],
+        api_key: Optional[str]
+    ) -> Optional[Dict[str, List[str]]]:
+        if not api_key or not HAS_REQUESTS:
+            return None
+
+        try:
+            top_lines: List[str] = []
+            for index, item in enumerate(curated[:4], start=1):
+                title = item.get('title') or 'Unknown title'
+                artist = item.get('artist') or 'Unknown artist'
+                duration = item.get('duration')
+                duration_str = ''
+                if isinstance(duration, (int, float)) and duration:
+                    mins = int(duration) // 60
+                    secs = int(duration) % 60
+                    duration_str = f" ({mins}:{secs:02d})"
+                top_lines.append(f"{index}. {title} — {artist}{duration_str}")
+
+            prompt = "You are a music curation assistant."
+            prompt += "\nQuery: " + query
+            if top_lines:
+                prompt += "\nTop candidates:\n" + "\n".join(top_lines)
+            if existing_suggestions:
+                prompt += "\nExisting quick suggestions: " + ", ".join(existing_suggestions[:5])
+            prompt += (
+                "\n\nReturn strictly JSON with two keys:"
+                "\n  \"suggestions\": an array of up to 4 refined search prompts (strings)"
+                "\n  \"insights\": an array of up to 4 short bullet insights highlighting themes or artists"
+                "\nDo not include any additional text outside the JSON object."
+            )
+
+            payload = {
+                "contents": [
+                    {
+                        "role": "user",
+                        "parts": [
+                            {
+                                "text": prompt
+                            }
+                        ]
+                    }
+                ],
+                "generationConfig": {
+                    "temperature": 0.4,
+                    "topP": 0.9,
+                    "maxOutputTokens": 512,
+                    "responseMimeType": "application/json"
+                }
+            }
+
+            url = GEMINI_API_URL_TEMPLATE.format(model=GEMINI_MODEL_NAME)
+            response = requests.post(
+                url,
+                params={'key': api_key},
+                json=payload,
+                timeout=GEMINI_TIMEOUT_SECONDS
+            )
+            response.raise_for_status()
+            data = response.json()
+
+            candidates = data.get('candidates') or []
+            for candidate in candidates:
+                parts = candidate.get('content', {}).get('parts', [])
+                combined = "".join(
+                    part.get('text', '')
+                    for part in parts
+                    if isinstance(part, dict)
+                ).strip()
+                parsed = self._parse_gemini_json(combined)
+                if parsed:
+                    return parsed
+
+            return None
+        except Exception as exc:
+            logger.warning(f"Gemini enrichment failed: {exc}")
+            print(f"Gemini enrichment failed: {exc}", file=sys.stderr)
+            return None
+
+    @staticmethod
+    def _parse_gemini_json(raw_text: str) -> Optional[Dict[str, List[str]]]:
+        if not raw_text:
+            return None
+
+        try:
+            parsed = json.loads(raw_text)
+        except json.JSONDecodeError:
+            if not HAS_REQUESTS:
+                return None
+            match = re.search(r'\{.*\}', raw_text, re.DOTALL)
+            if not match:
+                return None
+            try:
+                parsed = json.loads(match.group(0))
+            except json.JSONDecodeError:
+                return None
+
+        suggestions = [
+            str(item).strip()
+            for item in parsed.get('suggestions', [])
+            if isinstance(item, str) and item.strip()
+        ]
+        insights = [
+            str(item).strip()
+            for item in parsed.get('insights', [])
+            if isinstance(item, str) and item.strip()
+        ]
+
+        return {
+            'suggestions': suggestions,
+            'insights': insights
+        }
+
+    @staticmethod
+    def _merge_unique_strings(primary: List[str], extras: List[str], limit: int) -> List[str]:
+        result: List[str] = []
+        seen = set()
+
+        for value in primary + extras:
+            if not isinstance(value, str):
+                continue
+            trimmed = value.strip()
+            if not trimmed:
+                continue
+            key = trimmed.casefold()
+            if key in seen:
+                continue
+            seen.add(key)
+            result.append(trimmed)
+            if len(result) >= limit:
+                break
+
+        return result
     
     def _format_single_result(self, item: Dict, category: str) -> Optional[Dict]:
         """
@@ -1761,6 +2000,30 @@ def handle_request(request_data: Dict[str, Any]) -> Dict[str, Any]:
         elif action == 'song_suggestions':
             video_id = request_data.get('videoId', '')
             return service.get_song_suggestions(video_id)
+
+        elif action == 'ai_search':
+            query = request_data.get('query', '')
+            limit = request_data.get('limit', 20)
+            if isinstance(service, YTMusicService):
+                return service.ai_search(query, limit)
+            else:
+                # Fallback for services without AI enrichment
+                base_response = service.search_all(query, limit)
+                if not base_response.get('success'):
+                    return base_response
+                base_data = base_response.get('data', {}) or {}
+                songs = base_data.get('songs', []) or []
+                curated = songs[: min(len(songs), 6)]
+                return {
+                    'success': True,
+                    'data': {
+                        'query': query,
+                        'suggestions': [],
+                        'topResults': curated,
+                        'results': base_data,
+                        'insights': []
+                    }
+                }
             
         elif action == 'lyrics':
             video_id = request_data.get('videoId', '')

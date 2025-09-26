@@ -46,8 +46,16 @@ struct ServiceRequest: Codable {
     let playlistId: String?
     let limit: Int?
     let musicSource: String?
+    let aiApiKey: String?
     
-    init(action: String, query: String? = nil, videoId: String? = nil, browseId: String? = nil, playlistId: String? = nil, limit: Int? = nil, musicSource: String? = nil) {
+    init(action: String,
+         query: String? = nil,
+         videoId: String? = nil,
+         browseId: String? = nil,
+         playlistId: String? = nil,
+         limit: Int? = nil,
+         musicSource: String? = nil,
+         aiApiKey: String? = nil) {
         self.action = action
         self.query = query
         self.videoId = videoId
@@ -55,6 +63,7 @@ struct ServiceRequest: Codable {
         self.playlistId = playlistId
         self.limit = limit
         self.musicSource = musicSource
+        self.aiApiKey = aiApiKey
     }
 }
 
@@ -70,6 +79,14 @@ class PythonServiceManager: ObservableObject {
     private let serviceQueue = DispatchQueue(label: "python-service", qos: .userInitiated)
     private let timeout: TimeInterval = 45.0
     private var lastRequestTime = Date()  // 🔋 BATTERY EFFICIENCY: Track last request time
+    private var storedGeminiAPIKey: String? {
+        let key = UserDefaults.standard.string(forKey: "geminiApiKey")?.trimmingCharacters(in: .whitespacesAndNewlines)
+        return key?.isEmpty == true ? nil : key
+    }
+    
+    var hasGeminiAPIKey: Bool {
+        storedGeminiAPIKey != nil
+    }
     
     private init() {}
     
@@ -494,6 +511,21 @@ extension PythonServiceManager {
         
         let request = ServiceRequest(action: "search", query: query, limit: limit, musicSource: currentSource)
         return try await sendRequest(request, responseType: MusicSearchResults.self)
+    }
+
+    func performAISearch(query: String, limit: Int = 20) async throws -> AISearchResponse {
+        if !isServiceRunning {
+            try ensureServiceRunning()
+        }
+        let currentSource = UserDefaults.standard.string(forKey: "musicSource") ?? "youtube_music"
+        let request = ServiceRequest(
+            action: "ai_search",
+            query: query,
+            limit: limit,
+            musicSource: currentSource,
+            aiApiKey: storedGeminiAPIKey
+        )
+        return try await sendRequest(request, responseType: AISearchResponse.self)
     }
     
     func getStreamInfo(videoId: String) async throws -> StreamInfo {

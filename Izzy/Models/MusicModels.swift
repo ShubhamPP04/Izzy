@@ -134,6 +134,30 @@ struct MusicSearchResults: Codable {
     }
 }
 
+// MARK: - AI Search Models
+
+struct AISearchResponse: Codable {
+    let query: String
+    let suggestions: [String]
+    let topResults: [SearchResult]
+    let insights: [String]?
+    let results: MusicSearchResults
+    
+    static var empty: AISearchResponse {
+        AISearchResponse(
+            query: "",
+            suggestions: [],
+            topResults: [],
+            insights: [],
+            results: MusicSearchResults()
+        )
+    }
+    
+    var hasAnyResults: Bool {
+        !topResults.isEmpty || !results.isEmpty
+    }
+}
+
 // MARK: - Track Model (for playback)
 
 struct Track: Identifiable, Codable {
