@@ -45,6 +45,16 @@ To support me, here is my UPI ID - kumar.shubham.6@superyes
 
 ## 🚀 Quick Start
 
+### Prerequisites
+```bash
+# Install Xcode (from Mac App Store)
+# Install Python dependencies
+pip3 install ytmusicapi yt-dlp
+
+# Verify Python installation
+python3 --version  # Should be 3.8+
+```
+
 ### Option 1: Download DMG (Recommended)
 1. Download the latest `Izzy.dmg` from the [Releases](../../releases) page
 2. Open the DMG file 
