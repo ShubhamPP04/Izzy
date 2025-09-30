@@ -14,6 +14,7 @@ class WindowManager: ObservableObject {
     private var floatingPanel: FloatingPanel?
     private var isConfigured = false
     weak var searchState: SearchState?
+    weak var hotkeyManager: GlobalHotkeyManager?
     
     func setupWindow(_ window: NSWindow) {
         // Completely hide the main SwiftUI window since we only use FloatingPanel
@@ -63,10 +64,16 @@ class WindowManager: ObservableObject {
         let panel = FloatingPanel(
             view: {
                 // Create the music search view with full functionality
-                MusicSearchView(
+                let baseView = MusicSearchView(
                     searchState: self.searchState ?? SearchState(),
                     windowManager: self
                 )
+
+                if let hotkeyManager = self.hotkeyManager {
+                    return AnyView(baseView.environmentObject(hotkeyManager))
+                } else {
+                    return AnyView(baseView)
+                }
             },
             contentRect: NSRect(x: 0, y: 0, width: 600, height: 750),
             didClose: {

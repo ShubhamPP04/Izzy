@@ -28,6 +28,7 @@ class AppCoordinator: ObservableObject {
     private func setupCoordination() {
         // Connect managers
         hotkeyManager.windowManager = windowManager
+        windowManager.hotkeyManager = hotkeyManager
         windowManager.searchState = searchState
         
         // Note: MenuBarManager integration is handled in SettingsView when toggled
@@ -100,6 +101,7 @@ class AppCoordinator: ObservableObject {
                 searchState: searchState,
                 windowManager: windowManager
             )
+            .environmentObject(hotkeyManager)
             .frame(width: 600)
         }
     }
@@ -120,7 +122,7 @@ class AppCoordinator: ObservableObject {
     func initializeApp() {
         // App is now fully initialized and ready to respond to hotkeys
         // The floating panel will be created when the hotkey is pressed
-        print("🚀 Izzy app initialized - ready for hotkey (Option + Space)")
+        print("🚀 Izzy app initialized - ready for hotkey (\(hotkeyManager.currentShortcutDescription))")
     }
     
     func handleAppActivation() {

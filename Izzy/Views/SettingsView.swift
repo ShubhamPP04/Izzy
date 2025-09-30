@@ -14,12 +14,14 @@ struct SettingsView: View {
     @ObservedObject var searchState: SearchState
     let windowManager: WindowManager?
     @Binding var scrollOffset: CGFloat
+    @EnvironmentObject var hotkeyManager: GlobalHotkeyManager
     @AppStorage("launchAtLogin") private var launchAtLogin = false
     @AppStorage("autoUpdateEnabled") private var autoUpdateEnabled = true
     @AppStorage("musicSource") private var musicSource = MusicSource.youtubeMusic.rawValue
     @AppStorage("customHomeName") private var customHomeName = "User"
     @AppStorage("startupTab") private var startupTab = 1 // 0 = Home, 1 = Search, 2 = Favorites, 3 = Recently Played, 4 = Settings, 5 = Playlists
     @AppStorage("geminiApiKey") private var geminiApiKey = ""
+    @AppStorage(GlobalHotkeyManager.hotkeyDefaultsKey) private var storedHotkeyModifierRawValue = HotkeyModifier.option.rawValue
     @StateObject private var updateManager = UpdateManager.shared
     @State private var isGeminiKeyVisible = false
     
@@ -29,6 +31,7 @@ struct SettingsView: View {
                 VStack(alignment: .leading, spacing: 20) {
                     headerSection
                     launchAtLoginCard
+                    hotkeyCard
                     menuBarPlayerCard
                     miniPlayerCard
                     liquidGlassCard
@@ -101,6 +104,78 @@ struct SettingsView: View {
             Text("Automatically start Izzy when you log in to your Mac")
                 .font(.system(size: 12))
                 .foregroundColor(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private var hotkeyCard: some View {
+        let binding = Binding<HotkeyModifier>(
+            get: { HotkeyModifier(rawValue: storedHotkeyModifierRawValue) ?? .option },
+            set: { newValue in
+                storedHotkeyModifierRawValue = newValue.rawValue
+                hotkeyManager.updateHotkey(modifier: newValue)
+            }
+        )
+
+        let currentModifier = binding.wrappedValue
+
+        settingsCard(spacing: 8) {
+            HStack {
+                Image(systemName: "keyboard")
+                    .foregroundColor(.blue)
+                    .font(.system(size: 14, weight: .medium))
+
+                Text("Global Hotkey")
+                    .font(.system(size: 14, weight: .medium))
+
+                Spacer()
+            }
+
+            Text("Choose the modifier key used with Space to show or hide Izzy")
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
+
+            Picker("Hotkey Modifier", selection: binding) {
+                ForEach(HotkeyModifier.allCases) { modifier in
+                    Text("\(modifier.symbol) \(modifier.displayName)")
+                        .font(.system(size: 14))
+                        .tag(modifier)
+                }
+            }
+            .pickerStyle(SegmentedPickerStyle())
+
+            Text("Shortcut: \(currentModifier.symbol) \(currentModifier.displayName) + Space")
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+
+            if currentModifier == .command {
+                HStack(spacing: 6) {
+                    Image(systemName: "exclamationmark.triangle.fill")
+                        .foregroundColor(.orange)
+                        .font(.system(size: 11))
+                    Text("Command + Space is used by Spotlight. You may need to change Spotlight shortcuts in System Settings -> Keyboard -> Keyboard Shortcuts.")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
+                .padding(.top, 4)
+            }
+
+            if let failedModifier = hotkeyManager.lastFailedModifier {
+                HStack(alignment: .top, spacing: 6) {
+                    Image(systemName: "xmark.octagon.fill")
+                        .foregroundColor(.red)
+                        .font(.system(size: 11))
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("We couldn't enable \(failedModifier.symbol) \(failedModifier.displayName) + Space (error \(hotkeyManager.lastRegistrationStatus)).")
+                            .font(.system(size: 11))
+                            .foregroundColor(.red)
+                        Text("macOS may already be using this shortcut. Izzy reverted to \(currentModifier.symbol) \(currentModifier.displayName) + Space.")
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .padding(.top, 4)
+            }
         }
     }
 
@@ -714,6 +789,7 @@ struct SettingsView: View {
 
 #Preview {
     SettingsView(searchState: SearchState(), windowManager: nil, scrollOffset: Binding.constant(0))
+    .environmentObject(GlobalHotkeyManager())
         .frame(width: 600, height: 400)
         .padding()
         .background(Color.black.opacity(0.1))

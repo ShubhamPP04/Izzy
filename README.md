@@ -37,7 +37,7 @@ To support me, here is my UPI ID - kumar.shubham.6@superyes
 - ⌨️ **Keyboard Navigation**: Full keyboard control with intuitive shortcuts
 
 ### ⚡ **Global Features**
-- 🔥 **Global Hotkey**: `Option + Space` to show/hide from anywhere
+- 🔥 **Global Hotkey**: `Option + Space` by default (customizable to Command or Control) to show/hide from anywhere
 - 💾 **Persistent State**: Maintains search context and playback state
 - 🎯 **Auto-Focus**: Search field automatically focused when shown
 - 🔧 **System Integration**: Native macOS notifications and media center integration
@@ -65,7 +65,7 @@ python3 --version  # Should be 3.8+
 4. Drag Izzy to your Applications folder
 5. Launch Izzy from Applications or Spotlight
 6. Grant accessibility permissions when prompted
-7. Press `Option + Space` to start using Izzy!
+7. Press `Option + Space` (default) to start using Izzy! You can switch to Command or Control + Space later from Settings.
 
 ### Option 2: Build from Source
 ```bash
@@ -116,7 +116,7 @@ Izzy is designed to work on modern macOS systems with the following requirements
 ### Keyboard Shortcuts
 | Shortcut | Action |
 |----------|--------|
-| `Option + Space` | Show/Hide Izzy |
+| `Option / Control / Command + Space` | Show/Hide Izzy (Option is default) |
 | `Escape` | Hide Izzy window |
 | `↑ / ↓` | Navigate search results |
 | `Enter` | Play selected track |
