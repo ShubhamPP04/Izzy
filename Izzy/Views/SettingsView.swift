@@ -21,6 +21,7 @@ struct SettingsView: View {
     @AppStorage("customHomeName") private var customHomeName = "User"
     @AppStorage("startupTab") private var startupTab = 1 // 0 = Home, 1 = Search, 2 = Favorites, 3 = Recently Played, 4 = Settings, 5 = Playlists
     @AppStorage("geminiApiKey") private var geminiApiKey = ""
+    @AppStorage("showAISearch") private var showAISearch = true
     @AppStorage(GlobalHotkeyManager.hotkeyDefaultsKey) private var storedHotkeyModifierRawValue = HotkeyModifier.option.rawValue
     @StateObject private var updateManager = UpdateManager.shared
     @State private var isGeminiKeyVisible = false
@@ -375,6 +376,17 @@ struct SettingsView: View {
 
                 Spacer()
             }
+
+            HStack {
+                Text("Show AI Search Tab")
+                    .font(.system(size: 14, weight: .medium))
+
+                Spacer()
+
+                Toggle("", isOn: $showAISearch)
+                    .labelsHidden()
+            }
+            .padding(.bottom, 4)
 
             Text("Connect your Gemini 2.5 Flash key to unlock smarter AI Search recommendations.")
                 .font(.system(size: 12))

@@ -34,6 +34,7 @@ struct MusicSearchView: View {
     @AppStorage("startupTab") private var startupTab = 1
     @AppStorage("hasInitialized") private var hasInitialized = false
     @AppStorage("appHasBeenInitialized") private var appHasBeenInitialized = false
+    @AppStorage("showAISearch") private var showAISearch = true
     
     var body: some View {
         ZStack {
@@ -41,6 +42,7 @@ struct MusicSearchView: View {
                 // Animated Tab Navigation
                 AnimatedTabNavigation(
                     selectedTab: $selectedTab,
+                    showAISearch: showAISearch,
                     onTabChange: { newTab in
                         searchState.playbackManager.savePlaybackState()
                         selectedTab = newTab
@@ -93,15 +95,17 @@ struct MusicSearchView: View {
                 }
                 .opacity(selectedTab == 1 ? 1 : 0)
 
-                AISearchView(
-                    searchState: searchState,
-                    windowManager: windowManager,
-                    selectedTab: $selectedTab,
-                    scrollOffset: $aiSearchScrollOffset,
-                    isPromptFocused: $isAISearchPromptFocused
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .opacity(selectedTab == 7 ? 1 : 0)
+                if showAISearch {
+                    AISearchView(
+                        searchState: searchState,
+                        windowManager: windowManager,
+                        selectedTab: $selectedTab,
+                        scrollOffset: $aiSearchScrollOffset,
+                        isPromptFocused: $isAISearchPromptFocused
+                    )
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .opacity(selectedTab == 7 ? 1 : 0)
+                }
                 
                 // Favorites Content
                 FavoritesView(searchState: searchState, scrollOffset: $favoritesScrollOffset)
@@ -201,7 +205,7 @@ struct MusicSearchView: View {
     // Removed UserDefaults scroll position save/restore to allow natural persistence
     
     private var keyboardTabSequence: [Int] {
-        AnimatedTabNavigation.keyboardNavigableTags
+        AnimatedTabNavigation.keyboardNavigableTags(showAISearch: showAISearch)
     }
     
     private func handleGlobalKeyPress(_ keyPress: KeyPress) -> KeyPress.Result {
@@ -439,14 +443,19 @@ struct AnimatedTabNavigation: View {
         TabItem(icon: "gear", title: "Settings", tag: 4)
     ]
     
-    static let keyboardNavigableTags: [Int] = tabItems
-        .map(\.tag)
-        .filter { $0 != 4 }
+    static func keyboardNavigableTags(showAISearch: Bool) -> [Int] {
+        tabItems
+            .map(\.tag)
+            .filter { $0 != 4 && (showAISearch || $0 != 7) }
+    }
     
     @Binding var selectedTab: Int
+    let showAISearch: Bool
     let onTabChange: (Int) -> Void
     
-    private let tabs = AnimatedTabNavigation.tabItems
+    private var tabs: [TabItem] {
+        AnimatedTabNavigation.tabItems.filter { showAISearch || $0.tag != 7 }
+    }
     
     var body: some View {
         HStack(spacing: 8) {
