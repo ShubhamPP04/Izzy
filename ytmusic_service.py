@@ -12,6 +12,7 @@ import time
 import traceback  # Add traceback for better error reporting
 from typing import Dict, List, Any, Optional
 from ytmusicapi import YTMusic
+from concurrent.futures import ThreadPoolExecutor, as_completed
 
 # Import additional libraries
 try:
@@ -37,30 +38,8 @@ except ImportError as e:
     HAS_YTDLP = False
 
 # Check if ytmusicapi is available
-try:
-    HAS_YTMUSICAPI = True
-    print("✅ Successfully imported ytmusicapi", file=sys.stderr)
-except ImportError as e:
-    HAS_YTMUSICAPI = False
-    print(f"❌ Failed to import ytmusicapi: {e}", file=sys.stderr)
-
-import sys
-import json
-import asyncio
-import logging
-import traceback  # Add traceback for better error reporting
-from typing import Dict, List, Any, Optional
-from ytmusicapi import YTMusic
-
-# Import yt-dlp with error handling
-try:
-    from yt_dlp import YoutubeDL
-    HAS_YTDLP = True
-    print("✅ Successfully imported yt-dlp", file=sys.stderr)
-except ImportError as e:
-    print(f"❌ Failed to import yt-dlp: {e}", file=sys.stderr)
-    YoutubeDL = None
-    HAS_YTDLP = False
+HAS_YTMUSICAPI = True
+print("✅ Successfully imported ytmusicapi", file=sys.stderr)
 
 # 🔋 BATTERY OPTIMIZATION: Configure logging to reduce I/O
 logging.basicConfig(
@@ -95,17 +74,33 @@ def decode_html_entities(text: str) -> str:
 class JioSaavnService:
     """
     JioSaavn music service integration using saavn.dev API
+    🚀 PERFORMANCE: Uses connection pooling for faster HTTP requests
     """
     
     def __init__(self):
         self.base_url = "https://saavn.dev/api"
         
+        # 🚀 PERFORMANCE: Create a session with connection pooling for reuse
+        if HAS_REQUESTS:
+            self.session = requests.Session()
+            # Configure connection pooling
+            adapter = requests.adapters.HTTPAdapter(
+                pool_connections=10,
+                pool_maxsize=20,
+                max_retries=1
+            )
+            self.session.mount('http://', adapter)
+            self.session.mount('https://', adapter)
+        else:
+            self.session = None
+        
     def search_all(self, query: str, limit: int = 20) -> Dict[str, Any]:
         """
         Search across JioSaavn music library using saavn.dev API
+        🚀 PERFORMANCE: Uses parallel requests for faster search
         """
         try:
-            if not HAS_REQUESTS:
+            if not HAS_REQUESTS or not self.session:
                 return {
                     'success': False,
                     'error': 'requests library not available - JioSaavn search not supported'
@@ -119,73 +114,58 @@ class JioSaavnService:
                 'videos': []
             }
             
-            # Search songs
-            try:
-                songs_response = requests.get(f"{self.base_url}/search/songs", params={
-                    'query': query,
-                    'page': 0,
-                    'limit': limit
-                }, timeout=10)
-                if songs_response.status_code == 200:
-                    songs_data = songs_response.json()
-                    if songs_data.get('success') and songs_data.get('data'):
-                        for song in songs_data['data'].get('results', [])[:limit]:
-                            formatted_song = self._format_jiosaavn_song(song)
-                            if formatted_song:
-                                results['songs'].append(formatted_song)
-            except Exception as e:
-                print(f"Error searching songs: {e}", file=sys.stderr)
+            # 🚀 PERFORMANCE: Define search tasks to be executed in parallel
+            search_tasks = [
+                ('songs', f"{self.base_url}/search/songs", {'query': query, 'page': 0, 'limit': limit}),
+                ('albums', f"{self.base_url}/search/albums", {'query': query, 'page': 0, 'limit': limit}),
+                ('artists', f"{self.base_url}/search/artists", {'query': query, 'page': 0, 'limit': limit}),
+                ('playlists', f"{self.base_url}/search/playlists", {'query': query, 'page': 0, 'limit': limit})
+            ]
             
-            # Search albums
-            try:
-                albums_response = requests.get(f"{self.base_url}/search/albums", params={
-                    'query': query,
-                    'page': 0,
-                    'limit': limit
-                }, timeout=10)
-                if albums_response.status_code == 200:
-                    albums_data = albums_response.json()
-                    if albums_data.get('success') and albums_data.get('data'):
-                        for album in albums_data['data'].get('results', [])[:limit]:
-                            formatted_album = self._format_jiosaavn_album(album)
-                            if formatted_album:
-                                results['albums'].append(formatted_album)
-            except Exception as e:
-                print(f"Error searching albums: {e}", file=sys.stderr)
+            # 🚀 PERFORMANCE: Execute all searches in parallel using ThreadPoolExecutor
+            def fetch_category(category: str, url: str, params: dict) -> tuple:
+                try:
+                    response = self.session.get(url, params=params, timeout=10)
+                    if response.status_code == 200:
+                        data = response.json()
+                        if data.get('success') and data.get('data'):
+                            return (category, data['data'].get('results', [])[:limit])
+                except Exception as e:
+                    print(f"Error searching {category}: {e}", file=sys.stderr)
+                return (category, [])
             
-            # Search artists
-            try:
-                artists_response = requests.get(f"{self.base_url}/search/artists", params={
-                    'query': query,
-                    'page': 0,
-                    'limit': limit
-                }, timeout=10)
-                if artists_response.status_code == 200:
-                    artists_data = artists_response.json()
-                    if artists_data.get('success') and artists_data.get('data'):
-                        for artist in artists_data['data'].get('results', [])[:limit]:
-                            formatted_artist = self._format_jiosaavn_artist(artist)
-                            if formatted_artist:
-                                results['artists'].append(formatted_artist)
-            except Exception as e:
-                print(f"Error searching artists: {e}", file=sys.stderr)
-            
-            # Search playlists
-            try:
-                playlists_response = requests.get(f"{self.base_url}/search/playlists", params={
-                    'query': query,
-                    'page': 0,
-                    'limit': limit
-                }, timeout=10)
-                if playlists_response.status_code == 200:
-                    playlists_data = playlists_response.json()
-                    if playlists_data.get('success') and playlists_data.get('data'):
-                        for playlist in playlists_data['data'].get('results', [])[:limit]:
-                            formatted_playlist = self._format_jiosaavn_playlist(playlist)
-                            if formatted_playlist:
-                                results['playlists'].append(formatted_playlist)
-            except Exception as e:
-                print(f"Error searching playlists: {e}", file=sys.stderr)
+            # Use ThreadPoolExecutor for parallel requests (max 4 concurrent)
+            with ThreadPoolExecutor(max_workers=4) as executor:
+                futures = {executor.submit(fetch_category, cat, url, params): cat 
+                          for cat, url, params in search_tasks}
+                
+                for future in as_completed(futures):
+                    try:
+                        category, items = future.result()
+                        
+                        # Format results based on category
+                        if category == 'songs':
+                            for song in items:
+                                formatted_song = self._format_jiosaavn_song(song)
+                                if formatted_song:
+                                    results['songs'].append(formatted_song)
+                        elif category == 'albums':
+                            for album in items:
+                                formatted_album = self._format_jiosaavn_album(album)
+                                if formatted_album:
+                                    results['albums'].append(formatted_album)
+                        elif category == 'artists':
+                            for artist in items:
+                                formatted_artist = self._format_jiosaavn_artist(artist)
+                                if formatted_artist:
+                                    results['artists'].append(formatted_artist)
+                        elif category == 'playlists':
+                            for playlist in items:
+                                formatted_playlist = self._format_jiosaavn_playlist(playlist)
+                                if formatted_playlist:
+                                    results['playlists'].append(formatted_playlist)
+                    except Exception as e:
+                        print(f"Error processing search result: {e}", file=sys.stderr)
             
             return {
                 'success': True,
@@ -333,7 +313,7 @@ class JioSaavnService:
     def get_stream_info(self, video_id: str) -> Dict[str, Any]:
         """Get JioSaavn stream info using saavn.dev API"""
         try:
-            if not HAS_REQUESTS:
+            if not HAS_REQUESTS or not self.session:
                 return {
                     'success': False,
                     'error': 'requests library not available - JioSaavn streaming not supported'
@@ -342,7 +322,7 @@ class JioSaavnService:
             print(f"🎵 Getting stream info for JioSaavn song ID: {video_id}", file=sys.stderr)
             
             # Get song details using the correct endpoint format
-            response = requests.get(f"{self.base_url}/songs", params={
+            response = self.session.get(f"{self.base_url}/songs", params={
                 'ids': video_id  # Use 'ids' instead of 'id'
             }, timeout=10)
             
@@ -351,7 +331,7 @@ class JioSaavnService:
             if response.status_code != 200:
                 # Try alternative endpoint format
                 try:
-                    response = requests.get(f"{self.base_url}/songs/{video_id}", timeout=10)
+                    response = self.session.get(f"{self.base_url}/songs/{video_id}", timeout=10)
                     print(f"🎵 Alternative endpoint response: {response.status_code}", file=sys.stderr)
                 except Exception as e:
                     print(f"🎵 Alternative endpoint failed: {e}", file=sys.stderr)
@@ -471,13 +451,13 @@ class JioSaavnService:
     def get_album_tracks(self, browse_id: str) -> Dict[str, Any]:
         """Get tracks from a JioSaavn album using saavn.dev API"""
         try:
-            if not HAS_REQUESTS:
+            if not HAS_REQUESTS or not self.session:
                 return {
                     'success': False,
                     'error': 'requests library not available'
                 }
             
-            response = requests.get(f"{self.base_url}/albums", params={
+            response = self.session.get(f"{self.base_url}/albums", params={
                 'id': browse_id
             }, timeout=10)
             
@@ -518,13 +498,13 @@ class JioSaavnService:
     def get_playlist_tracks(self, playlist_id: str) -> Dict[str, Any]:
         """Get tracks from a JioSaavn playlist using saavn.dev API"""
         try:
-            if not HAS_REQUESTS:
+            if not HAS_REQUESTS or not self.session:
                 return {
                     'success': False,
                     'error': 'requests library not available'
                 }
             
-            response = requests.get(f"{self.base_url}/playlists", params={
+            response = self.session.get(f"{self.base_url}/playlists", params={
                 'id': playlist_id
             }, timeout=10)
             
@@ -565,13 +545,13 @@ class JioSaavnService:
     def get_artist_songs(self, browse_id: str) -> Dict[str, Any]:
         """Get songs from a JioSaavn artist using saavn.dev API"""
         try:
-            if not HAS_REQUESTS:
+            if not HAS_REQUESTS or not self.session:
                 return {
                     'success': False,
                     'error': 'requests library not available'
                 }
             
-            response = requests.get(f"{self.base_url}/artists", params={
+            response = self.session.get(f"{self.base_url}/artists", params={
                 'id': browse_id
             }, timeout=10)
             
@@ -624,13 +604,13 @@ class JioSaavnService:
     def get_song_suggestions(self, video_id: str) -> Dict[str, Any]:
         """Get song suggestions for JioSaavn using saavn.dev API"""
         try:
-            if not HAS_REQUESTS:
+            if not HAS_REQUESTS or not self.session:
                 return {
                     'success': False,
                     'error': 'requests library not available'
                 }
             
-            response = requests.get(f"{self.base_url}/songs/{video_id}/suggestions", timeout=10)
+            response = self.session.get(f"{self.base_url}/songs/{video_id}/suggestions", timeout=10)
             
             if response.status_code != 200:
                 return {
@@ -666,13 +646,13 @@ class JioSaavnService:
     def get_lyrics(self, video_id: str) -> Dict[str, Any]:
         """Get lyrics for JioSaavn song using saavn.dev API"""
         try:
-            if not HAS_REQUESTS:
+            if not HAS_REQUESTS or not self.session:
                 return {
                     'success': False,
                     'error': 'requests library not available'
                 }
             
-            response = requests.get(f"{self.base_url}/songs", params={
+            response = self.session.get(f"{self.base_url}/songs", params={
                 'id': video_id
             }, timeout=10)
             
@@ -743,6 +723,19 @@ class YTMusicService:
             # Cache recently resolved stream URLs to avoid repeated extractor work
             self._stream_cache: Dict[str, Dict[str, Any]] = {}
             self._stream_cache_ttl = 300  # seconds
+            
+            # 🚀 PERFORMANCE: Create HTTP session for Gemini API requests
+            if HAS_REQUESTS:
+                self.http_session = requests.Session()
+                adapter = requests.adapters.HTTPAdapter(
+                    pool_connections=5,
+                    pool_maxsize=10,
+                    max_retries=1
+                )
+                self.http_session.mount('http://', adapter)
+                self.http_session.mount('https://', adapter)
+            else:
+                self.http_session = None
             
             # 🔋 BATTERY OPTIMIZATION: Configure yt-dlp for minimal resource usage
             if HAS_YTDLP:
@@ -1053,7 +1046,12 @@ class YTMusicService:
             }
 
             url = GEMINI_API_URL_TEMPLATE.format(model=GEMINI_MODEL_NAME)
-            response = requests.post(
+            response = self.http_session.post(
+                url,
+                params={'key': api_key},
+                json=payload,
+                timeout=GEMINI_TIMEOUT_SECONDS
+            ) if self.http_session else requests.post(
                 url,
                 params={'key': api_key},
                 json=payload,
