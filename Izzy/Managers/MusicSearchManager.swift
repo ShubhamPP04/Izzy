@@ -8,6 +8,80 @@
 import Foundation
 import Combine
 
+// MARK: - LRU Cache Implementation
+
+/// 🚀 PERFORMANCE: LRU Cache with automatic eviction for memory efficiency
+class LRUCache<Key: Hashable, Value> {
+    private struct CacheEntry {
+        let value: Value
+        let timestamp: Date
+    }
+    
+    private var cache: [Key: CacheEntry] = [:]
+    private var accessOrder: [Key] = []
+    private let maxSize: Int
+    private let timeout: TimeInterval
+    
+    init(maxSize: Int = 50, timeout: TimeInterval = 600) {
+        self.maxSize = maxSize
+        self.timeout = timeout
+    }
+    
+    func get(_ key: Key) -> Value? {
+        guard let entry = cache[key] else { return nil }
+        
+        // Check if entry has expired
+        if Date().timeIntervalSince(entry.timestamp) > timeout {
+            remove(key)
+            return nil
+        }
+        
+        // Update access order (move to end)
+        if let index = accessOrder.firstIndex(of: key) {
+            accessOrder.remove(at: index)
+        }
+        accessOrder.append(key)
+        
+        return entry.value
+    }
+    
+    func set(_ key: Key, value: Value) {
+        // If cache is full, remove least recently used
+        if cache.count >= maxSize && cache[key] == nil {
+            if let lruKey = accessOrder.first {
+                remove(lruKey)
+            }
+        }
+        
+        cache[key] = CacheEntry(value: value, timestamp: Date())
+        
+        // Update access order
+        if let index = accessOrder.firstIndex(of: key) {
+            accessOrder.remove(at: index)
+        }
+        accessOrder.append(key)
+    }
+    
+    func remove(_ key: Key) {
+        cache.removeValue(forKey: key)
+        if let index = accessOrder.firstIndex(of: key) {
+            accessOrder.remove(at: index)
+        }
+    }
+    
+    func removeAll() {
+        cache.removeAll()
+        accessOrder.removeAll()
+    }
+    
+    /// Clean up expired entries
+    func cleanup() {
+        let now = Date()
+        let expiredKeys = cache.filter { now.timeIntervalSince($0.value.timestamp) > timeout }.map { $0.key }
+        expiredKeys.forEach { remove($0) }
+    }
+}
+
 // MARK: - Search Manager
 
 class MusicSearchManager: ObservableObject {
@@ -21,9 +95,8 @@ class MusicSearchManager: ObservableObject {
     private var searchCancellable: AnyCancellable?
     private let searchDebouncer = Debouncer(delay: 0.3)
     
-    // Cache for recent searches
-    private var searchCache: [String: (results: MusicSearchResults, timestamp: Date)] = [:]
-    private let cacheTimeout: TimeInterval = 600 // 10 minutes
+    // 🚀 PERFORMANCE: LRU Cache for efficient memory management
+    private let searchCache = LRUCache<String, MusicSearchResults>(maxSize: 50, timeout: 600)
     
     init() {
         // Initialize Python service asynchronously to avoid blocking app startup
@@ -61,11 +134,10 @@ class MusicSearchManager: ObservableObject {
         let currentMusicSource = UserDefaults.standard.string(forKey: "musicSource") ?? "youtube_music"
         let cacheKey = "\(trimmedQuery)_\(currentMusicSource)"
         
-        // Check cache first (now includes music source in key)
-        if let cached = searchCache[cacheKey],
-           Date().timeIntervalSince(cached.timestamp) < cacheTimeout {
+        // 🚀 PERFORMANCE: Check LRU cache first
+        if let cached = searchCache.get(cacheKey) {
             await MainActor.run {
-                self.searchResults = cached.results
+                self.searchResults = cached
                 self.isSearching = false
                 self.searchError = nil
                 self.resetSelection()
@@ -88,9 +160,8 @@ class MusicSearchManager: ObservableObject {
                 print("🎵 Song \(index + 1): \(song.title) by \(song.artist ?? "Unknown") - VideoID: \(song.videoId ?? "None")")
             }
             
-            // Cache the results with music source in key
-            searchCache[cacheKey] = (results: results, timestamp: Date())
-            cleanupOldCache()
+            // 🚀 PERFORMANCE: Cache the results with LRU eviction
+            searchCache.set(cacheKey, value: results)
             
             await MainActor.run {
                 self.searchResults = results
@@ -110,11 +181,6 @@ class MusicSearchManager: ObservableObject {
         }
     }
     
-    private func cleanupOldCache() {
-        let cutoffTime = Date().addingTimeInterval(-cacheTimeout)
-        searchCache = searchCache.filter { $0.value.timestamp > cutoffTime }
-    }
-    
     func clearResults() {
         searchResults.clear()
         isSearching = false
@@ -125,7 +191,7 @@ class MusicSearchManager: ObservableObject {
     // MARK: - Music Source Change Handling
     
     func clearCacheForMusicSourceChange() {
-        // Clear all cached results when music source changes
+        // 🚀 PERFORMANCE: Clear LRU cache when music source changes
         searchCache.removeAll()
         print("🗑️ Cleared search cache due to music source change")
     }
