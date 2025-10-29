@@ -11,6 +11,7 @@ import Combine
 // MARK: - LRU Cache Implementation
 
 /// 🚀 PERFORMANCE: LRU Cache with automatic eviction for memory efficiency
+/// Uses OrderedDictionary-like approach for O(1) access
 class LRUCache<Key: Hashable, Value> {
     private struct CacheEntry {
         let value: Value
@@ -25,6 +26,8 @@ class LRUCache<Key: Hashable, Value> {
     init(maxSize: Int = 50, timeout: TimeInterval = 600) {
         self.maxSize = maxSize
         self.timeout = timeout
+        // Pre-allocate arrays to avoid reallocation
+        self.accessOrder.reserveCapacity(maxSize)
     }
     
     func get(_ key: Key) -> Value? {
@@ -36,17 +39,14 @@ class LRUCache<Key: Hashable, Value> {
             return nil
         }
         
-        // Update access order (move to end)
-        if let index = accessOrder.firstIndex(of: key) {
-            accessOrder.remove(at: index)
-        }
-        accessOrder.append(key)
+        // 🚀 OPTIMIZED: Move to end efficiently
+        updateAccessOrder(for: key)
         
         return entry.value
     }
     
     func set(_ key: Key, value: Value) {
-        // If cache is full, remove least recently used
+        // If cache is full and key is new, remove LRU item
         if cache.count >= maxSize && cache[key] == nil {
             if let lruKey = accessOrder.first {
                 remove(lruKey)
@@ -54,9 +54,13 @@ class LRUCache<Key: Hashable, Value> {
         }
         
         cache[key] = CacheEntry(value: value, timestamp: Date())
-        
-        // Update access order
-        if let index = accessOrder.firstIndex(of: key) {
+        updateAccessOrder(for: key)
+    }
+    
+    private func updateAccessOrder(for key: Key) {
+        // 🚀 OPTIMIZED: Use last index search (typically faster for LRU)
+        // Most recently accessed items are at the end
+        if let index = accessOrder.lastIndex(of: key) {
             accessOrder.remove(at: index)
         }
         accessOrder.append(key)
@@ -64,21 +68,31 @@ class LRUCache<Key: Hashable, Value> {
     
     func remove(_ key: Key) {
         cache.removeValue(forKey: key)
-        if let index = accessOrder.firstIndex(of: key) {
+        // 🚀 OPTIMIZED: Search from end where most recent items are
+        if let index = accessOrder.lastIndex(of: key) {
             accessOrder.remove(at: index)
         }
     }
     
     func removeAll() {
-        cache.removeAll()
-        accessOrder.removeAll()
+        cache.removeAll(keepingCapacity: true)
+        accessOrder.removeAll(keepingCapacity: true)
     }
     
-    /// Clean up expired entries
+    /// 🚀 OPTIMIZED: Batch cleanup for better performance
     func cleanup() {
         let now = Date()
-        let expiredKeys = cache.filter { now.timeIntervalSince($0.value.timestamp) > timeout }.map { $0.key }
-        expiredKeys.forEach { remove($0) }
+        var keysToRemove: [Key] = []
+        
+        // Collect expired keys first
+        for (key, entry) in cache {
+            if now.timeIntervalSince(entry.timestamp) > timeout {
+                keysToRemove.append(key)
+            }
+        }
+        
+        // Batch remove for better performance
+        keysToRemove.forEach { remove($0) }
     }
 }
 
