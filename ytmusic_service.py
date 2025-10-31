@@ -98,7 +98,7 @@ class JioSaavnService:
     """
     
     def __init__(self):
-        self.base_url = "https://saavn.dev/api"
+        self.base_url = "https://saavn.sumit.co/api"
         
     def search_all(self, query: str, limit: int = 20) -> Dict[str, Any]:
         """
