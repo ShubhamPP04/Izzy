@@ -73,7 +73,8 @@
 
 1. **Download the latest release** from the [Releases](https://github.com/ShubhamPP04/Izzy/releases) page
 2. **Open the DMG file** and drag Izzy to your Applications folder
-3. **Launch Izzy** from Applications
+3. **Enter this command in terminal** - xattr -rd com.apple.quarantine "/Applications/Izzy.app"
+4. **Launch Izzy** from Applications
 
 ### First Launch
 
