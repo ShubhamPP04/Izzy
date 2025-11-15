@@ -38,6 +38,7 @@ struct SettingsView: View {
                     miniPlayerCard
                     liquidGlassCard
                     customHomeNameCard
+                    windowPositionCard
                     aiServicesCard
                     startupTabCard
                     updatesCard
@@ -298,6 +299,36 @@ struct SettingsView: View {
 
             Text("This name will appear on the home screen")
                 .font(.system(size: 12))
+                .foregroundColor(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private var windowPositionCard: some View {
+        settingsCard(spacing: 8) {
+            HStack {
+                Image(systemName: "arrow.up.left.and.arrow.down.right")
+                    .foregroundColor(.blue)
+                    .font(.system(size: 14, weight: .medium))
+
+                Text("Window Position")
+                    .font(.system(size: 14, weight: .medium))
+
+                Spacer()
+            }
+
+            Text("Control where the app window appears on your screen")
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
+
+            Button("Center Window") {
+                windowManager?.centerWindowPosition()
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+
+            Text("Use the drag handle at the top of the window to reposition it. The app will remember its position when you toggle it with the hotkey.")
+                .font(.system(size: 11))
                 .foregroundColor(.secondary)
         }
     }

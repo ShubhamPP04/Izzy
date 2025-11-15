@@ -56,7 +56,7 @@ final class FloatingPanel: NSPanel, NSWindowDelegate {
             self.appearance = NSAppearance(named: .darkAqua)
         }
         
-        // 🔋 Optimize window behavior for minimal system impact  
+        // 🔋 Optimize window behavior for minimal system impact
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
         isMovableByWindowBackground = false
         // Remove hidesOnDeactivate to prevent automatic hiding when losing focus

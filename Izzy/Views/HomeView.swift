@@ -19,6 +19,9 @@ struct HomeView: View {
     @State private var isLoadingRecommendations = false
     @State private var hasInitiallyLoaded = false
     @AppStorage("musicSource") private var musicSource = MusicSource.youtubeMusic.rawValue
+    @State private var forYouScrollOffset: CGFloat = 0
+    @State private var canScrollLeft = false
+    @State private var canScrollRight = false
 
     // Computed property for dynamic greeting based on time of day
     private var greeting: String {
@@ -49,8 +52,13 @@ struct HomeView: View {
         let recentlyPlayed = searchState.recentlyPlayed
         let currentSource = UserDefaults.standard.string(forKey: "musicSource") ?? "youtube_music"
 
+        print("🎵 FOR YOU: Getting recommendations for \(currentSource)")
+        print("🎵 FOR YOU: Total recently played: \(recentlyPlayed.count)")
+
         // Filter by current source only
         let filteredSongs = recentlyPlayed.filter { $0.musicSource == currentSource }
+
+        print("🎵 FOR YOU: Filtered to \(filteredSongs.count) songs from \(currentSource)")
 
         guard !filteredSongs.isEmpty else {
             // No recently played songs available
@@ -85,9 +93,19 @@ struct HomeView: View {
 
                 let aiResponse = try await pythonService.performAISearch(query: aiQuery, limit: 12)
 
+                print("🤖 AI returned \(aiResponse.topResults.count) results")
+
                 // Convert AI results to FavoriteSong and filter out already shown
                 for result in aiResponse.topResults {
                     guard let videoId = result.videoId else { continue }
+
+                    // STRICT: Only accept if musicSource matches OR if not set (then we set it)
+                    if let resultSource = result.musicSource {
+                        if resultSource != currentSource {
+                            print("⚠️ AI: Skipping \(result.title) - wrong source: \(resultSource) != \(currentSource)")
+                            continue
+                        }
+                    }
 
                     // Skip if already shown or already in recently played
                     if shownSongIds.contains(videoId) ||
@@ -96,7 +114,8 @@ struct HomeView: View {
                         continue
                     }
 
-                    let favoriteSong = FavoriteSong(from: result)
+                    let favoriteSong = FavoriteSong(from: result, musicSource: currentSource)
+                    print("✅ AI: Added \(favoriteSong.title) from \(favoriteSong.musicSource ?? "unknown")")
                     newRecommendations.append(favoriteSong)
 
                     if newRecommendations.count >= 10 {
@@ -122,10 +141,20 @@ struct HomeView: View {
                         do {
                             let suggestions = try await pythonService.getSongSuggestions(videoId: videoId)
 
+                            print("💡 Suggestions: Got \(suggestions.count) results for videoId \(videoId)")
+
                             // Convert and filter suggestions
                             var results: [FavoriteSong] = []
                             for suggestion in suggestions.prefix(20) {
                                 guard let suggestionVideoId = suggestion.videoId else { continue }
+
+                                // STRICT: Only accept if musicSource matches OR if not set (then we set it)
+                                if let resultSource = suggestion.musicSource {
+                                    if resultSource != currentSource {
+                                        print("⚠️ Suggestions: Skipping \(suggestion.title) - wrong source: \(resultSource) != \(currentSource)")
+                                        continue
+                                    }
+                                }
 
                                 // Skip if already shown or in recently played
                                 if shownSongIds.contains(suggestionVideoId) ||
@@ -133,7 +162,9 @@ struct HomeView: View {
                                     continue
                                 }
 
-                                results.append(FavoriteSong(from: suggestion))
+                                let favSong = FavoriteSong(from: suggestion, musicSource: currentSource)
+                                print("✅ Suggestions: Added \(favSong.title) from \(favSong.musicSource ?? "unknown")")
+                                results.append(favSong)
 
                                 if results.count >= 15 {
                                     break
@@ -180,6 +211,9 @@ struct HomeView: View {
             newRecommendations.append(contentsOf: unshownRecent.shuffled().prefix(remainingNeeded))
         }
 
+        // Final safety check: Filter to ensure only songs from current source
+        newRecommendations = newRecommendations.filter { $0.musicSource == currentSource }
+
         // Update shown song IDs
         for song in newRecommendations {
             let videoId = song.videoId
@@ -199,8 +233,15 @@ struct HomeView: View {
             await MainActor.run {
                 withAnimation(.easeInOut(duration: 0.3)) {
                     forYouSongs = newRecommendations
+                    // Reset scroll position and update button states
+                    forYouScrollOffset = 0
+                    canScrollLeft = false
+                    canScrollRight = newRecommendations.count > 3
                 }
             }
+            print("✅ Updated For You with \(newRecommendations.count) songs from \(currentSource)")
+        } else {
+            print("⚠️ No recommendations found for \(currentSource)")
         }
     }
 
@@ -331,18 +372,92 @@ struct HomeView: View {
                                 .padding(.horizontal, 20)
                             }
                         } else if !forYouSongs.isEmpty {
-                            ScrollView(.horizontal, showsIndicators: false) {
-                                HStack(spacing: 12) {
-                                    ForEach(forYouSongs, id: \.id) { song in
-                                        ForYouSongCard(
-                                            song: song,
-                                            searchState: searchState
-                                        )
+                            ZStack(alignment: .center) {
+                                ScrollViewReader { scrollReader in
+                                    ScrollView(.horizontal, showsIndicators: false) {
+                                        HStack(spacing: 12) {
+                                            ForEach(forYouSongs.indices, id: \.self) { index in
+                                                ForYouSongCard(
+                                                    song: forYouSongs[index],
+                                                    forYouSongs: forYouSongs,
+                                                    searchState: searchState
+                                                )
+                                                .id(index)
+                                            }
+                                        }
+                                        .padding(.horizontal, 20)
+                                        .opacity(isLoadingRecommendations ? 0.5 : 1.0)
+                                        .animation(.easeInOut(duration: 0.2), value: isLoadingRecommendations)
+                                    }
+                                    .onAppear {
+                                        canScrollLeft = false
+                                        canScrollRight = forYouSongs.count > 3
+                                    }
+
+                                    // Left scroll button
+                                    HStack {
+                                        if canScrollLeft {
+                                            Button(action: {
+                                                let currentIndex = Int(forYouScrollOffset)
+                                                let targetIndex = max(0, currentIndex - 3)
+                                                withAnimation(.easeInOut(duration: 0.3)) {
+                                                    scrollReader.scrollTo(targetIndex, anchor: .leading)
+                                                    forYouScrollOffset = CGFloat(targetIndex)
+                                                    canScrollLeft = targetIndex > 0
+                                                    canScrollRight = targetIndex < forYouSongs.count - 3
+                                                }
+                                            }) {
+                                                Image(systemName: "chevron.left")
+                                                    .font(.system(size: 16, weight: .semibold))
+                                                    .foregroundColor(.white)
+                                                    .frame(width: 32, height: 32)
+                                                    .background(
+                                                        Circle()
+                                                            .fill(.ultraThinMaterial)
+                                                            .overlay(
+                                                                Circle()
+                                                                    .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                                                            )
+                                                    )
+                                                    .shadow(color: .black.opacity(0.3), radius: 8, x: 0, y: 2)
+                                            }
+                                            .buttonStyle(PlainButtonStyle())
+                                            .padding(.leading, 8)
+                                        }
+
+                                        Spacer()
+
+                                        // Right scroll button
+                                        if canScrollRight {
+                                            Button(action: {
+                                                let currentIndex = Int(forYouScrollOffset)
+                                                let targetIndex = min(forYouSongs.count - 1, currentIndex + 3)
+                                                withAnimation(.easeInOut(duration: 0.3)) {
+                                                    scrollReader.scrollTo(targetIndex, anchor: .trailing)
+                                                    forYouScrollOffset = CGFloat(targetIndex)
+                                                    canScrollLeft = targetIndex > 0
+                                                    canScrollRight = targetIndex < forYouSongs.count - 3
+                                                }
+                                            }) {
+                                                Image(systemName: "chevron.right")
+                                                    .font(.system(size: 16, weight: .semibold))
+                                                    .foregroundColor(.white)
+                                                    .frame(width: 32, height: 32)
+                                                    .background(
+                                                        Circle()
+                                                            .fill(.ultraThinMaterial)
+                                                            .overlay(
+                                                                Circle()
+                                                                    .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                                                            )
+                                                    )
+                                                    .shadow(color: .black.opacity(0.3), radius: 8, x: 0, y: 2)
+                                            }
+                                            .buttonStyle(PlainButtonStyle())
+                                            .padding(.trailing, 8)
+                                        }
                                     }
                                 }
-                                .padding(.horizontal, 20)
-                                .opacity(isLoadingRecommendations ? 0.5 : 1.0)
-                                .animation(.easeInOut(duration: 0.2), value: isLoadingRecommendations)
                             }
                         } else {
                             // Empty state
@@ -541,6 +656,7 @@ struct HomeView: View {
 // For You Song Card - YouTube Music style horizontal card
 struct ForYouSongCard: View {
     let song: FavoriteSong
+    let forYouSongs: [FavoriteSong] // All "For You" songs for queue
     @ObservedObject var searchState: SearchState
     @State private var isHovered = false
 
@@ -563,8 +679,8 @@ struct ForYouSongCard: View {
 
             let track = Track(from: searchResult)
 
-            // Create queue from all for you songs
-            let tracks = searchState.recentlyPlayed.map { song in
+            // Create queue from "For You" songs (same source as current song)
+            let tracks = forYouSongs.map { song in
                 SearchResult(
                     id: song.id,
                     type: .song,

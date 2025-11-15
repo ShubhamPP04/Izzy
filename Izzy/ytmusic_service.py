@@ -231,7 +231,8 @@ class JioSaavnService:
                 'videoId': song.get('id', ''),  # Use JioSaavn ID as videoId
                 'browseId': None,
                 'year': str(song.get('year', '')) if song.get('year') else None,
-                'playCount': str(song.get('playCount', '')) if song.get('playCount') else None
+                'playCount': str(song.get('playCount', '')) if song.get('playCount') else None,
+                'musicSource': 'jiosaavn'  # IMPORTANT: Tag this as JioSaavn
             }
         except Exception as e:
             logger.error(f"Error formatting JioSaavn song: {e}")
@@ -423,7 +424,8 @@ class JioSaavnService:
                 'videoId': song.get('id', ''),  # Use JioSaavn ID as videoId
                 'browseId': None,
                 'year': str(song.get('year', '')) if song.get('year') else None,
-                'playCount': str(song.get('playCount', '')) if song.get('playCount') else None
+                'playCount': str(song.get('playCount', '')) if song.get('playCount') else None,
+                'musicSource': 'jiosaavn'  # IMPORTANT: Tag this as JioSaavn
             }
         except Exception as e:
             logger.error(f"Error formatting JioSaavn song: {e}")
@@ -1383,7 +1385,8 @@ class YTMusicService:
                 'videoId': safe_get(item, 'videoId'),
                 'browseId': safe_get(item, 'browseId'),
                 'year': None,  # Will be set below
-                'playCount': None  # Will be set below
+                'playCount': None,  # Will be set below
+                'musicSource': 'youtube_music'  # IMPORTANT: Tag this as YouTube Music
             }
             
             # Handle thumbnails

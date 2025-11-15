@@ -62,8 +62,9 @@ struct SearchResult: Identifiable, Codable {
     let browseId: String?
     let year: String?
     let playCount: String?
-    
-    init(id: String = UUID().uuidString, 
+    let musicSource: String?
+
+    init(id: String = UUID().uuidString,
          type: SearchResultType,
          title: String,
          artist: String? = nil,
@@ -73,7 +74,8 @@ struct SearchResult: Identifiable, Codable {
          videoId: String? = nil,
          browseId: String? = nil,
          year: String? = nil,
-         playCount: String? = nil) {
+         playCount: String? = nil,
+         musicSource: String? = nil) {
         self.id = id
         self.type = type
         self.title = title
@@ -85,6 +87,7 @@ struct SearchResult: Identifiable, Codable {
         self.browseId = browseId
         self.year = year
         self.playCount = playCount
+        self.musicSource = musicSource
     }
 }
 
@@ -301,7 +304,8 @@ struct FavoriteSong: Identifiable, Codable, Equatable {
         self.duration = searchResult.duration
         self.videoId = searchResult.videoId ?? ""
         self.addedDate = Date()
-        self.musicSource = musicSource ?? UserDefaults.standard.string(forKey: "musicSource") ?? "youtube_music"
+        // Prefer musicSource from SearchResult, then parameter, then UserDefaults
+        self.musicSource = searchResult.musicSource ?? musicSource ?? UserDefaults.standard.string(forKey: "musicSource") ?? "youtube_music"
     }
     
     // Custom decoder to handle missing musicSource field in existing data

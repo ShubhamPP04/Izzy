@@ -49,6 +49,12 @@ struct MusicSearchView: View {
                         print("📍 Switched to tab \(newTab)")
                     }
                 )
+                .overlay(
+                    // Drag Handle overlaid on top of the navigation
+                    DragHandleView()
+                        .frame(height: 24),
+                    alignment: .top
+                )
             
             // Content based on selected tab - Using opacity-based switching to preserve scroll positions
             ZStack {
