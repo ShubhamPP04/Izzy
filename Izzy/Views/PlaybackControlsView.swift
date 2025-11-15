@@ -390,9 +390,12 @@ struct TrackInfoView: View {
                                             .frame(width: 20, height: 20)
                                     }
                                     .buttonStyle(PlainButtonStyle())
+
+                                    // Volume slider
+                                    HoverVolumeSlider(playbackManager: playbackManager, iconSize: 12, iconColor: .primary)
                                 }
                             }
-                            
+
                             Spacer()
                         }
                         .padding(.horizontal, 16)
@@ -583,6 +586,9 @@ struct TrackInfoView: View {
                                         .frame(width: 20, height: 20)
                                 }
                                 .buttonStyle(PlainButtonStyle())
+
+                                // Volume slider
+                                HoverVolumeSlider(playbackManager: playbackManager, iconSize: 11, iconColor: .primary)
                             }
                         }
                         .padding(.horizontal, 12)
@@ -806,95 +812,108 @@ struct ControlButtonsView: View {
                     let minimalMode = UserDefaults.standard.bool(forKey: "minimalPlaybackPlayer")
                     
                     if centerButtons {
-                        // Centered layout with shuffle button on the left
-                        Button(action: {
-                            // 🔋 BATTERY EFFICIENCY: Save state when shuffle/repeat mode changes
-                            playbackManager.savePlaybackState()
-                            toggleShuffleRepeatMode()
-                        }) {
-                            Image(systemName: shuffleRepeatModeImage())
-                                .font(.system(size: minimalMode ? 10 : 14, weight: .medium))
-                                .foregroundColor(shuffleRepeatModeColor())
-                        }
-                        .buttonStyle(ControlButtonStyle())
-                        
-                        Spacer()
-                        
-                        // Previous button
-                        Button(action: {
-                            // 🔋 BATTERY EFFICIENCY: Save state before skipping tracks
-                            playbackManager.savePlaybackState()
-                            Task {
-                                await playbackManager.playPrevious()
-                            }
-                        }) {
-                            Image(systemName: "backward.fill")
-                                .font(.system(size: minimalMode ? 12 : 16, weight: .medium))
-                                .foregroundColor(playbackManager.queue.hasPrevious ? .primary : .secondary)
-                        }
-                        .buttonStyle(ControlButtonStyle())
-                        .disabled(!playbackManager.queue.hasPrevious)
-                        
-                        // Play/Pause button (bigger)
-                        Button(action: {
-                            // 🔋 BATTERY EFFICIENCY: Save state when play/pause is pressed
-                            playbackManager.savePlaybackState()
-                            if playbackManager.isPlaying {
-                                playbackManager.pause()
-                            } else {
-                                // Check if we need to resume from a saved position
-                                if playbackManager.playbackState == .stopped && playbackManager.currentTime > 0 {
-                                    Task {
-                                        await playbackManager.resumeFromSavedPosition()
-                                    }
-                                } else {
-                                    playbackManager.resume()
-                                }
-                            }
-                        }) {
-                            Group {
-                                if playbackManager.isBuffering {
-                                    ProgressView()
-                                        .scaleEffect(minimalMode ? 0.5 : 0.8)
-                                } else {
-                                    Image(systemName: playbackManager.isPlaying ? "pause.fill" : "play.fill")
-                                        .font(.system(size: minimalMode ? 12 : 16, weight: .medium))
-                                }
-                            }
-                            .foregroundColor(.white)
-                            .frame(width: minimalMode ? 28 : 40, height: minimalMode ? 28 : 40)
-                            .background(Color.blue)
-                            .clipShape(Circle())
-                            .shadow(color: .blue.opacity(minimalMode ? 0.2 : 0.3), radius: minimalMode ? 1 : 4, x: 0, y: minimalMode ? 0.5 : 2)
-                        }
-                        .buttonStyle(PlainButtonStyle())
-                        
-                        // Next button
-                        Button(action: {
-                            // 🔋 BATTERY EFFICIENCY: Save state before skipping tracks
-                            playbackManager.savePlaybackState()
-                            Task {
-                                await playbackManager.playNext()
-                            }
-                        }) {
-                            Image(systemName: "forward.fill")
-                                .font(.system(size: minimalMode ? 12 : 16, weight: .medium))
-                                .foregroundColor(playbackManager.queue.hasNext ? .primary : .secondary)
-                        }
-                        .buttonStyle(ControlButtonStyle())
-                        .disabled(!playbackManager.queue.hasNext)
-                        
-                        Spacer()
-                        
-                        // Queue button
-                        if let onQueueButtonTap = onQueueButtonTap {
-                            Button(action: onQueueButtonTap) {
-                                Image(systemName: "list.bullet")
+                        // Left side controls (fixed width for balance)
+                        HStack(spacing: minimalMode ? 8 : 12) {
+                            Button(action: {
+                                // 🔋 BATTERY EFFICIENCY: Save state when shuffle/repeat mode changes
+                                playbackManager.savePlaybackState()
+                                toggleShuffleRepeatMode()
+                            }) {
+                                Image(systemName: shuffleRepeatModeImage())
                                     .font(.system(size: minimalMode ? 10 : 14, weight: .medium))
-                                    .foregroundColor(.primary)
+                                    .foregroundColor(shuffleRepeatModeColor())
                             }
                             .buttonStyle(ControlButtonStyle())
                         }
+                        .frame(minWidth: 80, alignment: .leading)
+
+                        Spacer()
+
+                        // Center playback controls
+                        HStack(spacing: minimalMode ? 16 : 24) {
+                            // Previous button
+                            Button(action: {
+                                // 🔋 BATTERY EFFICIENCY: Save state before skipping tracks
+                                playbackManager.savePlaybackState()
+                                Task {
+                                    await playbackManager.playPrevious()
+                                }
+                            }) {
+                                Image(systemName: "backward.fill")
+                                    .font(.system(size: minimalMode ? 12 : 16, weight: .medium))
+                                    .foregroundColor(playbackManager.queue.hasPrevious ? .primary : .secondary)
+                            }
+                            .buttonStyle(ControlButtonStyle())
+                            .disabled(!playbackManager.queue.hasPrevious)
+
+                            // Play/Pause button (bigger)
+                            Button(action: {
+                                // 🔋 BATTERY EFFICIENCY: Save state when play/pause is pressed
+                                playbackManager.savePlaybackState()
+                                if playbackManager.isPlaying {
+                                    playbackManager.pause()
+                                } else {
+                                    // Check if we need to resume from a saved position
+                                    if playbackManager.playbackState == .stopped && playbackManager.currentTime > 0 {
+                                        Task {
+                                            await playbackManager.resumeFromSavedPosition()
+                                        }
+                                    } else {
+                                        playbackManager.resume()
+                                    }
+                                }
+                            }) {
+                                Group {
+                                    if playbackManager.isBuffering {
+                                        ProgressView()
+                                            .scaleEffect(minimalMode ? 0.5 : 0.8)
+                                    } else {
+                                        Image(systemName: playbackManager.isPlaying ? "pause.fill" : "play.fill")
+                                            .font(.system(size: minimalMode ? 12 : 16, weight: .medium))
+                                    }
+                                }
+                                .foregroundColor(.white)
+                                .frame(width: minimalMode ? 28 : 40, height: minimalMode ? 28 : 40)
+                                .background(Color.blue)
+                                .clipShape(Circle())
+                                .shadow(color: .blue.opacity(minimalMode ? 0.2 : 0.3), radius: minimalMode ? 1 : 4, x: 0, y: minimalMode ? 0.5 : 2)
+                            }
+                            .buttonStyle(PlainButtonStyle())
+
+                            // Next button
+                            Button(action: {
+                                // 🔋 BATTERY EFFICIENCY: Save state before skipping tracks
+                                playbackManager.savePlaybackState()
+                                Task {
+                                    await playbackManager.playNext()
+                                }
+                            }) {
+                                Image(systemName: "forward.fill")
+                                    .font(.system(size: minimalMode ? 12 : 16, weight: .medium))
+                                    .foregroundColor(playbackManager.queue.hasNext ? .primary : .secondary)
+                            }
+                            .buttonStyle(ControlButtonStyle())
+                            .disabled(!playbackManager.queue.hasNext)
+                        }
+
+                        Spacer()
+
+                        // Right side controls (fixed width for balance)
+                        HStack(spacing: minimalMode ? 8 : 12) {
+                            // Queue button
+                            if let onQueueButtonTap = onQueueButtonTap {
+                                Button(action: onQueueButtonTap) {
+                                    Image(systemName: "list.bullet")
+                                        .font(.system(size: minimalMode ? 10 : 14, weight: .medium))
+                                        .foregroundColor(.primary)
+                                }
+                                .buttonStyle(ControlButtonStyle())
+                            }
+
+                            // Volume slider
+                            HoverVolumeSlider(playbackManager: playbackManager, iconSize: minimalMode ? 12 : 14, iconColor: .primary)
+                        }
+                        .frame(minWidth: 80, alignment: .trailing)
                     } else {
                         // Left-aligned layout (default) with shuffle button on the left
                         Button(action: {
@@ -981,7 +1000,7 @@ struct ControlButtonsView: View {
                             }
                             .buttonStyle(ControlButtonStyle())
                         }
-                        
+
                         // Up Next button
                         Button(action: {
                             // Up Next functionality temporarily disabled due to state mutation issues
@@ -992,8 +1011,11 @@ struct ControlButtonsView: View {
                                 .foregroundColor(.primary)
                         }
                         .buttonStyle(ControlButtonStyle())
-                        
+
                         Spacer()
+
+                        // Volume slider
+                        HoverVolumeSlider(playbackManager: playbackManager, iconSize: minimalMode ? 12 : 14, iconColor: .primary)
                     }
                 }
                 .padding(.vertical, UserDefaults.standard.bool(forKey: "minimalPlaybackPlayer") ? 2 : 0)

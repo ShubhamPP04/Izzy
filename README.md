@@ -27,6 +27,7 @@
 - **Floating Window** - Always-on-top interface for quick music control
 - **Menu Bar Integration** - Beautiful, redesigned menu bar player with album artwork
 - **Smart Search** - Real-time search with intelligent suggestions
+- **AI-Powered Recommendations** - Personalized "For You" section with AI-curated songs based on your listening history
 - **Queue Management** - Full control over your playback queue
 - **Playlist Support** - Create and manage custom playlists
 - **Recently Played** - Track your music history
@@ -41,16 +42,22 @@
 
 ### 🎛️ Playback Controls
 - **Full Playback Control** - Play, pause, next, previous
+- **Centered Playback Layout** - Beautifully balanced playback controls with perfectly centered buttons
 - **Seek Support** - Click or drag to seek through tracks
 - **Media Key Integration** - Native macOS media key support
 - **Persistent State** - Resume playback exactly where you left off
-- **Volume Control** - Fine-grained volume adjustment
+- **Volume Control** - Fine-grained volume adjustment with hover indicator
 
 ### 🔍 Discovery
 - **AI-Powered Search** - Find music using natural language with Gemini AI
+- **Intelligent "For You" Section** - Get fresh, personalized recommendations on every refresh
+  - Uses Gemini AI to understand your music taste and mood
+  - Parallel API calls for ultra-fast refresh (2-4 seconds)
+  - Always provides new songs you haven't heard
+  - Filters out already played tracks automatically
 - **Mood & Genre** - Browse by mood and genre categories
 - **Charts** - Explore trending music
-- **Song Suggestions** - Discover similar tracks
+- **Song Suggestions** - Discover similar tracks based on what you're listening to
 - **Watch Playlist** - Auto-generated radio playlists
 
 ### 📱 Additional Features
@@ -158,6 +165,13 @@ Press `Option + Space` anywhere on your Mac to open/close Izzy
 2. Describe the music you want in natural language
 3. Example: "upbeat workout music" or "relaxing jazz for study"
 
+### AI-Powered Recommendations
+1. Go to **Settings** and add your **Gemini API key** (get it free from [Google AI Studio](https://ai.google.dev/gemini-api/docs/get-started))
+2. Visit the **Home** tab to see the "For You" section with the AI badge (✨)
+3. The AI analyzes your recently played songs and suggests similar tracks based on genre, mood, and style
+4. Tap the **refresh button** to get completely new recommendations instantly
+5. Each refresh provides fresh songs you haven't heard before
+
 ---
 
 ## 🏗️ Project Structure
@@ -228,11 +242,13 @@ Settings are stored in:
 ```
 
 ### Customizable Settings
-- Music service (YouTube Music / JioSaavn)
-- Global hotkey
-- Mini player preferences
-- Menu bar player toggle
-- Update preferences
+- **Music service** (YouTube Music / JioSaavn) - Now at the top for quick access
+- **Gemini API Key** - Enable AI-powered recommendations and search
+- **Global hotkey** - Customize your keyboard shortcut
+- **Centered playback controls** - Toggle button centering
+- **Mini player preferences** - Customize compact view
+- **Menu bar player toggle** - Show/hide menu bar integration
+- **Update preferences** - Auto-update settings
 
 ---
 
@@ -259,6 +275,13 @@ pip install --upgrade -r requirements.txt
 1. Open **Settings**
 2. Toggle **Menu Bar Player** off and on
 3. Restart Izzy
+
+### AI Recommendations Not Working
+1. Ensure you've added a valid **Gemini API key** in Settings
+2. Check for the ✨ **AI badge** next to "For You" on the Home tab
+3. Play some songs first to build listening history
+4. Check Console.app for any error messages
+5. Get a free API key from [Google AI Studio](https://ai.google.dev/gemini-api/docs/get-started)
 
 ---
 

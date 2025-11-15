@@ -7,6 +7,105 @@
 
 import SwiftUI
 
+// MARK: - Hover Volume Slider Component
+struct HoverVolumeSlider: View {
+    @ObservedObject var playbackManager: PlaybackManager
+    @State private var isHovering = false
+    @State private var hideTask: Task<Void, Never>?
+    let iconSize: CGFloat
+    let iconColor: Color
+
+    init(playbackManager: PlaybackManager, iconSize: CGFloat = 14, iconColor: Color = .primary) {
+        self.playbackManager = playbackManager
+        self.iconSize = iconSize
+        self.iconColor = iconColor
+    }
+
+    var volumeIcon: String {
+        if playbackManager.volume == 0 {
+            return "speaker.slash.fill"
+        } else if playbackManager.volume < 0.33 {
+            return "speaker.wave.1.fill"
+        } else if playbackManager.volume < 0.66 {
+            return "speaker.wave.2.fill"
+        } else {
+            return "speaker.wave.3.fill"
+        }
+    }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            // Volume icon button
+            Button(action: {
+                // Toggle mute
+                if playbackManager.volume > 0 {
+                    playbackManager.volume = 0
+                } else {
+                    playbackManager.volume = 0.7
+                }
+            }) {
+                Image(systemName: volumeIcon)
+                    .font(.system(size: iconSize, weight: .medium))
+                    .foregroundColor(iconColor)
+                    .frame(width: 20, height: 20)
+            }
+            .buttonStyle(PlainButtonStyle())
+            .help("Volume: \(Int(playbackManager.volume * 100))%")
+
+            // Volume slider (shown on hover)
+            if isHovering {
+                HStack(spacing: 4) {
+                    Slider(
+                        value: Binding(
+                            get: { Double(playbackManager.volume) },
+                            set: { playbackManager.volume = Float($0) }
+                        ),
+                        in: 0...1
+                    )
+                    .frame(width: 90)
+
+                    Text("\(Int(playbackManager.volume * 100))%")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                        .frame(width: 30)
+                }
+                .padding(.horizontal, 6)
+                .padding(.vertical, 4)
+                .background(
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Color.primary.opacity(0.05))
+                )
+                .transition(.asymmetric(
+                    insertion: .scale(scale: 0.9, anchor: .leading).combined(with: .opacity),
+                    removal: .scale(scale: 0.9, anchor: .leading).combined(with: .opacity)
+                ))
+            }
+        }
+        .padding(.horizontal, 4)
+        .padding(.vertical, 4)
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            hideTask?.cancel()
+
+            if hovering {
+                withAnimation(.spring(response: 0.25, dampingFraction: 0.8)) {
+                    isHovering = true
+                }
+            } else {
+                // Delay hiding to prevent flicker
+                hideTask = Task {
+                    try? await Task.sleep(nanoseconds: 300_000_000) // 0.3 seconds
+                    if !Task.isCancelled {
+                        withAnimation(.easeOut(duration: 0.2)) {
+                            isHovering = false
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
 struct MenuBarView: View {
     @ObservedObject var searchState: SearchState
     @ObservedObject var windowManager: WindowManager
@@ -108,9 +207,12 @@ struct MenuBarView: View {
                     }
                     .buttonStyle(PlainButtonStyle())
                     .disabled(!searchState.playbackManager.queue.hasNext)
-                    
+
                     Spacer()
-                    
+
+                    // Volume slider with hover
+                    HoverVolumeSlider(playbackManager: searchState.playbackManager)
+
                     // Open main app button
                     Button(action: {
                         // Open the main Izzy window

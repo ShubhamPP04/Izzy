@@ -42,7 +42,13 @@ class PlaybackManager: ObservableObject {
     @Published var currentTime: TimeInterval = 0
     @Published var duration: TimeInterval = 0
     @Published var isBuffering: Bool = false
-    
+    @Published var volume: Float = 0.7 {
+        didSet {
+            player?.volume = volume
+            UserDefaults.standard.set(volume, forKey: "playerVolume")
+        }
+    }
+
     private var player: AVPlayer?
     private var playerItem: AVPlayerItem?
     private var timeObserver: Any?
@@ -59,6 +65,11 @@ class PlaybackManager: ObservableObject {
     private let nowPlayingManager = NowPlayingManager.shared
     
     private init() {
+        // Load saved volume
+        let savedVolume = UserDefaults.standard.float(forKey: "playerVolume")
+        if savedVolume > 0 {
+            volume = savedVolume
+        }
         setupQueueManager()
         setupRemoteCommandHandlers()
         restoreLastTrack()
@@ -289,7 +300,7 @@ class PlaybackManager: ObservableObject {
         
         // 🚀 PERFECT SEEKING: Configure player for partial buffering
         player?.automaticallyWaitsToMinimizeStalling = true  // Wait for buffering before playing
-        player?.volume = 1.0
+        player?.volume = volume
         
         // 🚀 Configure player item for better buffering and seeking
         if let playerItem = playerItem {
@@ -418,7 +429,7 @@ class PlaybackManager: ObservableObject {
         
         // Configure audio for better playback
         player?.automaticallyWaitsToMinimizeStalling = false
-        player?.volume = 1.0
+        player?.volume = volume
         
         // Handle starting position
         if let startPosition = startFromPosition {
