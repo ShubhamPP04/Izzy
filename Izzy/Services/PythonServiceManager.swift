@@ -47,6 +47,8 @@ struct ServiceRequest: Codable {
     let limit: Int?
     let musicSource: String?
     let aiApiKey: String?
+    let params: String?
+    let country: String?
     
     init(action: String,
          query: String? = nil,
@@ -55,7 +57,9 @@ struct ServiceRequest: Codable {
          playlistId: String? = nil,
          limit: Int? = nil,
          musicSource: String? = nil,
-         aiApiKey: String? = nil) {
+         aiApiKey: String? = nil,
+         params: String? = nil,
+         country: String? = nil) {
         self.action = action
         self.query = query
         self.videoId = videoId
@@ -64,6 +68,8 @@ struct ServiceRequest: Codable {
         self.limit = limit
         self.musicSource = musicSource
         self.aiApiKey = aiApiKey
+        self.params = params
+        self.country = country
     }
 }
 
@@ -528,11 +534,11 @@ extension PythonServiceManager {
         return try await sendRequest(request, responseType: AISearchResponse.self)
     }
     
-    func getStreamInfo(videoId: String) async throws -> StreamInfo {
-        // Get the current music source from UserDefaults
-        let currentSource = UserDefaults.standard.string(forKey: "musicSource") ?? "youtube_music"
+    func getStreamInfo(videoId: String, musicSource: String? = nil) async throws -> StreamInfo {
+        // Use provided music source, or fall back to current setting
+        let sourceToUse = musicSource ?? UserDefaults.standard.string(forKey: "musicSource") ?? "youtube_music"
         
-        let request = ServiceRequest(action: "stream", videoId: videoId, musicSource: currentSource)
+        let request = ServiceRequest(action: "stream", videoId: videoId, musicSource: sourceToUse)
         return try await sendRequest(request, responseType: StreamInfo.self)
     }
     
@@ -573,6 +579,40 @@ extension PythonServiceManager {
         let currentSource = UserDefaults.standard.string(forKey: "musicSource") ?? "youtube_music"
         
         let request = ServiceRequest(action: "song_suggestions", videoId: videoId, musicSource: currentSource)
+        return try await sendRequest(request, responseType: [SearchResult].self)
+    }
+    
+    // MARK: - Home & Discovery Methods
+    
+    func getHomeFeed() async throws -> [HomeSection] {
+        // Get the current music source from UserDefaults
+        let currentSource = UserDefaults.standard.string(forKey: "musicSource") ?? "youtube_music"
+        
+        let request = ServiceRequest(action: "home", musicSource: currentSource)
+        return try await sendRequest(request, responseType: [HomeSection].self)
+    }
+    
+    func getCharts(country: String = "ZZ") async throws -> ChartsData {
+        // Get the current music source from UserDefaults
+        let currentSource = UserDefaults.standard.string(forKey: "musicSource") ?? "youtube_music"
+        
+        let request = ServiceRequest(action: "charts", musicSource: currentSource, country: country)
+        return try await sendRequest(request, responseType: ChartsData.self)
+    }
+    
+    func getMoodCategories() async throws -> [String: [MoodCategory]] {
+        // Get the current music source from UserDefaults
+        let currentSource = UserDefaults.standard.string(forKey: "musicSource") ?? "youtube_music"
+        
+        let request = ServiceRequest(action: "mood_categories", musicSource: currentSource)
+        return try await sendRequest(request, responseType: [String: [MoodCategory]].self)
+    }
+    
+    func getMoodPlaylists(params: String) async throws -> [SearchResult] {
+        // Get the current music source from UserDefaults
+        let currentSource = UserDefaults.standard.string(forKey: "musicSource") ?? "youtube_music"
+        
+        let request = ServiceRequest(action: "mood_playlists", musicSource: currentSource, params: params)
         return try await sendRequest(request, responseType: [SearchResult].self)
     }
 }

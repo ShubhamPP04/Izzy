@@ -60,6 +60,10 @@ class PlaybackManager: ObservableObject {
     private var prefetchTask: Task<Void, Never>?
     private var bufferTimer: Timer?
     
+    // 🎵 DEBOUNCE: Skip navigation debounce for rapid next/previous taps
+    private var skipDebounceTask: Task<Void, Never>?
+    private var currentPlaybackId: UUID = UUID()  // Track which playback request is current
+    
     private let queueManager = QueueManager()
     private let pythonService = PythonServiceManager.shared
     private let nowPlayingManager = NowPlayingManager.shared
@@ -188,7 +192,14 @@ class PlaybackManager: ObservableObject {
         await playCurrentTrack()
     }
     
-    func playCurrentTrack(startFromPosition: TimeInterval? = nil) async {
+    func playCurrentTrack(startFromPosition: TimeInterval? = nil, playbackId: UUID? = nil) async {
+        // 🎵 DEBOUNCE: Check if this playback request is still valid
+        let expectedId = playbackId ?? currentPlaybackId
+        guard expectedId == currentPlaybackId else {
+            print("🎵 Playback cancelled - newer request exists (expected: \(expectedId), current: \(currentPlaybackId))")
+            return
+        }
+        
         guard let track = queueManager.currentTrack else { 
             print("❌ No current track in queue")
             print("❌ Queue size: \(queueManager.queueSize), Current index: \(queueManager.currentIndex)")
@@ -222,6 +233,12 @@ class PlaybackManager: ObservableObject {
             self.objectWillChange.send()
         }
         
+        // 🎵 DEBOUNCE: Check again before network request
+        guard expectedId == currentPlaybackId else {
+            print("🎵 Playback cancelled before network - newer request exists")
+            return
+        }
+        
         do {
             print("🎵 Getting stream info for video ID: \(track.videoId)")
             
@@ -231,14 +248,32 @@ class PlaybackManager: ObservableObject {
             }
             
             // 🚀 FAST SEEK: Check cache first for instant playback
-            let streamInfo = try await getStreamInfoWithCaching(videoId: track.videoId)
+            let streamInfo = try await getStreamInfoWithCaching(videoId: track.videoId, musicSource: track.musicSource)
+            
+            // 🎵 DEBOUNCE: Check again after network request
+            guard expectedId == currentPlaybackId else {
+                print("🎵 Playback cancelled after network - newer request exists")
+                return
+            }
+            
             print("🎵 Got stream info - URL: \(streamInfo.url), Duration: \(streamInfo.duration)")
             
             await MainActor.run {
+                // 🎵 DEBOUNCE: Final check before setting up player
+                guard expectedId == self.currentPlaybackId else {
+                    print("🎵 Playback cancelled before player setup - newer request exists")
+                    return
+                }
                 self.setupPlayerWithPrefetch(with: streamInfo, track: track, startFromPosition: startFromPosition)
             }
             
         } catch {
+            // 🎵 DEBOUNCE: Only show error if this is still the current playback
+            guard expectedId == currentPlaybackId else {
+                print("🎵 Ignoring error for cancelled playback")
+                return
+            }
+            
             let errorMessage = error.localizedDescription
             print("❌ Playback error: \(errorMessage)")
             
@@ -253,8 +288,9 @@ class PlaybackManager: ObservableObject {
     }
     
     // 🚀 FAST SEEK OPTIMIZATION: Stream caching for instant playback
-    private func getStreamInfoWithCaching(videoId: String) async throws -> StreamInfo {
-        let cacheKey = NSString(string: videoId)
+    private func getStreamInfoWithCaching(videoId: String, musicSource: String? = nil) async throws -> StreamInfo {
+        // Include music source in cache key to separate caches for different sources
+        let cacheKey = NSString(string: "\(videoId)_\(musicSource ?? "default")")
         
         // Check if we have cached stream info that hasn't expired
         if let cached = streamCache.object(forKey: cacheKey), !cached.isExpired {
@@ -262,9 +298,9 @@ class PlaybackManager: ObservableObject {
             return StreamInfo(url: cached.url, title: cached.title, duration: cached.duration)
         }
         
-        // Fetch fresh stream info
-        print("🚀 Fetching fresh stream info: \(videoId)")
-        let streamInfo = try await pythonService.getStreamInfo(videoId: videoId)
+        // Fetch fresh stream info with the track's music source
+        print("🚀 Fetching fresh stream info: \(videoId) (source: \(musicSource ?? "default"))")
+        let streamInfo = try await pythonService.getStreamInfo(videoId: videoId, musicSource: musicSource)
         
         // Cache the result for future use
         let cachedInfo = CachedStreamInfo(
@@ -371,7 +407,7 @@ class PlaybackManager: ObservableObject {
                 guard !Task.isCancelled else { return }
                 
                 // Prefetch stream info for next track
-                _ = try await self?.getStreamInfoWithCaching(videoId: nextTrack.videoId)
+                _ = try await self?.getStreamInfoWithCaching(videoId: nextTrack.videoId, musicSource: nextTrack.musicSource)
                 print("🚀 Prefetched next track successfully: \(nextTrack.title)")
                 
             } catch {
@@ -380,29 +416,68 @@ class PlaybackManager: ObservableObject {
         }
     }
     
-    // Monitor buffer status and update UI accordingly for better long song performance
+    // 🚀 OPTIMIZED: Monitor buffer status with faster playback start
+    // 🔋 CPU OPTIMIZATION: Timer stops after playback starts to save CPU
     private func startBufferMonitoring() {
         // Cancel any existing timer
         bufferTimer?.invalidate()
         
-        // Create a timer to periodically check buffer status
-        bufferTimer = Timer.scheduledTimer(withTimeInterval: 1.0, repeats: true) { [weak self] _ in
+        // Track if we've started playback
+        var hasStartedPlayback = false
+        var bufferCheckCount = 0
+        
+        // 🔋 Check buffer at reasonable interval (0.5s instead of 0.3s)
+        bufferTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] timer in
             guard let self = self, let playerItem = self.playerItem else { return }
             
-            // Check if we're still buffering
+            bufferCheckCount += 1
+            
+            // Check buffer status
             let isBufferEmpty = playerItem.isPlaybackBufferEmpty
             let isBufferLikelyToKeepUp = playerItem.isPlaybackLikelyToKeepUp
+            let loadedRanges = playerItem.loadedTimeRanges
+            
+            // Calculate how much is buffered
+            var bufferedSeconds: Double = 0
+            if let firstRange = loadedRanges.first?.timeRangeValue {
+                bufferedSeconds = CMTimeGetSeconds(firstRange.start) + CMTimeGetSeconds(firstRange.duration)
+            }
             
             DispatchQueue.main.async {
-                // Update buffering state
-                self.isBuffering = isBufferEmpty || !isBufferLikelyToKeepUp
+                // 🚀 FAST START: Start playback after just 0.5 seconds of buffer OR after 2 checks (~1s)
+                let shouldStartFast = !hasStartedPlayback && 
+                    self.playbackState == .buffering && 
+                    self.player?.rate == 0 &&
+                    (bufferedSeconds >= 0.5 || bufferCheckCount >= 2 || !isBufferEmpty)
                 
-                // If buffering is complete and we're in buffering state, start playing
-                if !self.isBuffering && self.playbackState == .buffering && self.player?.rate == 0 {
+                if shouldStartFast {
+                    hasStartedPlayback = true
+                    print("🚀 Fast start! Buffered: \(String(format: "%.1f", bufferedSeconds))s, starting playback immediately")
+                    self.player?.play()
+                    self.playbackState = .playing
+                    self.updateNowPlayingInfo()
+                    
+                    // 🔋 CPU OPTIMIZATION: Stop buffer timer after playback starts!
+                    timer.invalidate()
+                    self.bufferTimer = nil
+                    print("🔋 Buffer timer stopped - saving CPU")
+                }
+                
+                // Update buffering indicator (but don't stop playback)
+                self.isBuffering = isBufferEmpty && self.playbackState.isPlaying
+                
+                // Normal start if fast start didn't trigger and buffer is ready
+                if !hasStartedPlayback && isBufferLikelyToKeepUp && self.playbackState == .buffering && self.player?.rate == 0 {
+                    hasStartedPlayback = true
                     self.player?.play()
                     self.playbackState = .playing
                     self.updateNowPlayingInfo()
                     print("🎵 Buffering complete, starting playback")
+                    
+                    // 🔋 CPU OPTIMIZATION: Stop buffer timer after playback starts!
+                    timer.invalidate()
+                    self.bufferTimer = nil
+                    print("🔋 Buffer timer stopped - saving CPU")
                 }
             }
         }
@@ -548,33 +623,114 @@ class PlaybackManager: ObservableObject {
     
     // MARK: - Queue Navigation
     
+    /// Debounced next track - waits for rapid taps to settle before playing
     func playNext() async {
-        print("🎵 playNext() called - checking queue")
-        print("🎵 Current queue size: \(queueManager.queueSize)")
-        print("🎵 Current index: \(queueManager.currentIndex)")
-        print("🎵 Has next: \(queueManager.hasNext)")
-        print("🎵 Repeat mode: \(queueManager.repeatMode)")
+        print("🎵 playNext() called - debouncing")
         
+        // Cancel any pending skip playback
+        skipDebounceTask?.cancel()
+        skipDebounceTask = nil
+        
+        // Generate new playback ID to invalidate any in-progress playback
+        let newPlaybackId = UUID()
+        currentPlaybackId = newPlaybackId
+        
+        // Stop current playback immediately
+        await MainActor.run {
+            self.player?.pause()
+            self.cleanup()  // Clean up player to stop any loading
+        }
+        
+        // Move to next in queue
         if queueManager.moveToNext() {
-            print("🎵 Successfully moved to next track in queue - new index: \(queueManager.currentIndex)")
-            await playCurrentTrack()
+            print("🎵 Moved to next track - index: \(queueManager.currentIndex)")
+            
+            // Update UI immediately to show the new track info
+            await MainActor.run {
+                if let track = queueManager.currentTrack {
+                    self.currentTrack = track
+                    self.playbackState = .buffering
+                    self.currentTime = 0
+                    self.duration = track.duration ?? 0
+                }
+            }
+            
+            // Schedule debounced playback - wait for user to stop tapping
+            skipDebounceTask = Task { [weak self, newPlaybackId] in
+                do {
+                    // Wait 0.4 seconds after last tap
+                    try await Task.sleep(nanoseconds: 400_000_000)
+                    
+                    guard !Task.isCancelled else {
+                        print("🎵 Skip cancelled - user tapped again")
+                        return
+                    }
+                    
+                    // Now actually load and play the track with the playback ID
+                    print("🎵 Debounce complete - now loading track")
+                    await self?.playCurrentTrack(playbackId: newPlaybackId)
+                } catch {
+                    print("🎵 Skip debounce interrupted")
+                }
+            }
         } else {
-            print("🎵 No next track available - stopping playback")
+            print("🎵 No next track available - stopping")
             await MainActor.run {
                 self.stop()
             }
         }
     }
     
+    /// Debounced previous track - waits for rapid taps to settle before playing
     func playPrevious() async {
-        print("🎵 playPrevious() called - checking queue")
-        print("🎵 Current queue size: \(queueManager.queueSize)")
-        print("🎵 Current index: \(queueManager.currentIndex)")
-        print("🎵 Has previous: \(queueManager.hasPrevious)")
+        print("🎵 playPrevious() called - debouncing")
         
+        // Cancel any pending skip playback
+        skipDebounceTask?.cancel()
+        skipDebounceTask = nil
+        
+        // Generate new playback ID to invalidate any in-progress playback
+        let newPlaybackId = UUID()
+        currentPlaybackId = newPlaybackId
+        
+        // Stop current playback immediately
+        await MainActor.run {
+            self.player?.pause()
+            self.cleanup()  // Clean up player to stop any loading
+        }
+        
+        // Move to previous in queue
         if queueManager.moveToPrevious() {
-            print("🎵 Successfully moved to previous track in queue - new index: \(queueManager.currentIndex)")
-            await playCurrentTrack()
+            print("🎵 Moved to previous track - index: \(queueManager.currentIndex)")
+            
+            // Update UI immediately to show the new track info
+            await MainActor.run {
+                if let track = queueManager.currentTrack {
+                    self.currentTrack = track
+                    self.playbackState = .buffering
+                    self.currentTime = 0
+                    self.duration = track.duration ?? 0
+                }
+            }
+            
+            // Schedule debounced playback - wait for user to stop tapping
+            skipDebounceTask = Task { [weak self, newPlaybackId] in
+                do {
+                    // Wait 0.4 seconds after last tap
+                    try await Task.sleep(nanoseconds: 400_000_000)
+                    
+                    guard !Task.isCancelled else {
+                        print("🎵 Skip cancelled - user tapped again")
+                        return
+                    }
+                    
+                    // Now actually load and play the track with the playback ID
+                    print("🎵 Debounce complete - now loading track")
+                    await self?.playCurrentTrack(playbackId: newPlaybackId)
+                } catch {
+                    print("🎵 Skip debounce interrupted")
+                }
+            }
         } else {
             print("🎵 No previous track available")
         }
@@ -736,6 +892,10 @@ class PlaybackManager: ObservableObject {
         // Stop buffer monitoring
         bufferTimer?.invalidate()
         bufferTimer = nil
+        
+        // Cancel any pending skip task
+        skipDebounceTask?.cancel()
+        skipDebounceTask = nil
         
         cancellables.removeAll()
         player = nil

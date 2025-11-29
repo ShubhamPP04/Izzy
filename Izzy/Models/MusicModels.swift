@@ -173,6 +173,7 @@ struct Track: Identifiable, Codable {
     let videoId: String
     let explicit: Bool
     let year: String?
+    let musicSource: String?
     
     init(id: String = UUID().uuidString,
          title: String,
@@ -182,7 +183,8 @@ struct Track: Identifiable, Codable {
          duration: TimeInterval,
          videoId: String,
          explicit: Bool = false,
-         year: String? = nil) {
+         year: String? = nil,
+         musicSource: String? = nil) {
         self.id = id
         self.title = title
         self.artist = artist
@@ -192,6 +194,7 @@ struct Track: Identifiable, Codable {
         self.videoId = videoId
         self.explicit = explicit
         self.year = year
+        self.musicSource = musicSource
     }
     
     // Convert SearchResult to Track
@@ -205,6 +208,7 @@ struct Track: Identifiable, Codable {
         self.videoId = searchResult.videoId ?? ""
         self.explicit = searchResult.explicit
         self.year = searchResult.year
+        self.musicSource = searchResult.musicSource
     }
 }
 
@@ -411,5 +415,46 @@ extension TimeInterval {
 extension String {
     var isValidVideoId: Bool {
         return self.count == 11 && self.range(of: "^[a-zA-Z0-9_-]+$", options: .regularExpression) != nil
+    }
+}
+
+// MARK: - Home & Discovery Models
+
+/// Represents a section on the home page (e.g., "Trending Now", "New Releases")
+struct HomeSection: Codable, Identifiable {
+    var id: String { title }
+    let title: String
+    let contents: [SearchResult]
+    
+    init(title: String, contents: [SearchResult]) {
+        self.title = title
+        self.contents = contents
+    }
+}
+
+/// Represents charts data with different categories
+struct ChartsData: Codable {
+    let songs: [SearchResult]
+    let videos: [SearchResult]?
+    let artists: [SearchResult]?
+    let trending: [SearchResult]?
+    
+    init(songs: [SearchResult], videos: [SearchResult]? = nil, artists: [SearchResult]? = nil, trending: [SearchResult]? = nil) {
+        self.songs = songs
+        self.videos = videos
+        self.artists = artists
+        self.trending = trending
+    }
+}
+
+/// Represents a mood/genre category for browsing
+struct MoodCategory: Codable, Identifiable {
+    var id: String { params }
+    let title: String
+    let params: String
+    
+    init(title: String, params: String) {
+        self.title = title
+        self.params = params
     }
 }

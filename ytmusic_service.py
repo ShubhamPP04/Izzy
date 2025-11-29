@@ -913,6 +913,314 @@ class JioSaavnService:
                 'success': False,
                 'error': str(e)
             }
+    
+    def get_home(self) -> Dict[str, Any]:
+        """Get JioSaavn home feed with trending songs, playlists, etc."""
+        try:
+            if not HAS_REQUESTS:
+                return {
+                    'success': False,
+                    'error': 'requests library not available'
+                }
+            
+            print("🏠 Fetching JioSaavn home feed...", file=sys.stderr)
+            
+            sections = []
+            
+            # Try to get modules endpoint first
+            try:
+                response = requests.get(f"{self.base_url}/modules", params={
+                    'language': 'hindi,english'
+                }, timeout=15)
+                
+                if response.status_code == 200:
+                    data = response.json()
+                    if data.get('success') and data.get('data'):
+                        home_data = data['data']
+                        
+                        # Process trending songs
+                        if home_data.get('trending') and home_data['trending'].get('songs'):
+                            trending_songs = []
+                            for song in home_data['trending']['songs'][:20]:
+                                formatted_song = self._format_jiosaavn_song(song)
+                                if formatted_song:
+                                    trending_songs.append(formatted_song)
+                            if trending_songs:
+                                sections.append({
+                                    'title': 'Trending Now',
+                                    'contents': trending_songs
+                                })
+                        
+                        # Process new releases
+                        if home_data.get('new_releases'):
+                            new_releases = []
+                            for album in home_data['new_releases'][:15]:
+                                formatted_album = self._format_jiosaavn_album(album)
+                                if formatted_album:
+                                    new_releases.append(formatted_album)
+                            if new_releases:
+                                sections.append({
+                                    'title': 'New Releases',
+                                    'contents': new_releases
+                                })
+            except Exception as e:
+                print(f"⚠️ Modules endpoint failed: {e}, using fallback", file=sys.stderr)
+            
+            # Fallback: Use search to get trending content if modules failed
+            if not sections:
+                print("🔄 Using search fallback for home sections", file=sys.stderr)
+                
+                # Trending songs
+                try:
+                    response = requests.get(f"{self.base_url}/search/songs", params={
+                        'query': 'trending hits 2024',
+                        'page': 0,
+                        'limit': 20
+                    }, timeout=10)
+                    if response.status_code == 200:
+                        data = response.json()
+                        if data.get('success') and data.get('data'):
+                            trending_songs = []
+                            for song in data['data'].get('results', [])[:20]:
+                                formatted_song = self._format_jiosaavn_song(song)
+                                if formatted_song:
+                                    trending_songs.append(formatted_song)
+                            if trending_songs:
+                                sections.append({
+                                    'title': 'Trending Now',
+                                    'contents': trending_songs
+                                })
+                except Exception as e:
+                    print(f"⚠️ Trending search failed: {e}", file=sys.stderr)
+                
+                # New releases / Latest
+                try:
+                    response = requests.get(f"{self.base_url}/search/songs", params={
+                        'query': 'new songs 2024',
+                        'page': 0,
+                        'limit': 15
+                    }, timeout=10)
+                    if response.status_code == 200:
+                        data = response.json()
+                        if data.get('success') and data.get('data'):
+                            new_songs = []
+                            for song in data['data'].get('results', [])[:15]:
+                                formatted_song = self._format_jiosaavn_song(song)
+                                if formatted_song:
+                                    new_songs.append(formatted_song)
+                            if new_songs:
+                                sections.append({
+                                    'title': 'New Releases',
+                                    'contents': new_songs
+                                })
+                except Exception as e:
+                    print(f"⚠️ New releases search failed: {e}", file=sys.stderr)
+                
+                # Bollywood hits
+                try:
+                    response = requests.get(f"{self.base_url}/search/songs", params={
+                        'query': 'bollywood hits',
+                        'page': 0,
+                        'limit': 15
+                    }, timeout=10)
+                    if response.status_code == 200:
+                        data = response.json()
+                        if data.get('success') and data.get('data'):
+                            bollywood_songs = []
+                            for song in data['data'].get('results', [])[:15]:
+                                formatted_song = self._format_jiosaavn_song(song)
+                                if formatted_song:
+                                    bollywood_songs.append(formatted_song)
+                            if bollywood_songs:
+                                sections.append({
+                                    'title': 'Bollywood Hits',
+                                    'contents': bollywood_songs
+                                })
+                except Exception as e:
+                    print(f"⚠️ Bollywood search failed: {e}", file=sys.stderr)
+                
+                # Punjabi hits
+                try:
+                    response = requests.get(f"{self.base_url}/search/songs", params={
+                        'query': 'punjabi hits',
+                        'page': 0,
+                        'limit': 15
+                    }, timeout=10)
+                    if response.status_code == 200:
+                        data = response.json()
+                        if data.get('success') and data.get('data'):
+                            punjabi_songs = []
+                            for song in data['data'].get('results', [])[:15]:
+                                formatted_song = self._format_jiosaavn_song(song)
+                                if formatted_song:
+                                    punjabi_songs.append(formatted_song)
+                            if punjabi_songs:
+                                sections.append({
+                                    'title': 'Punjabi Hits',
+                                    'contents': punjabi_songs
+                                })
+                except Exception as e:
+                    print(f"⚠️ Punjabi search failed: {e}", file=sys.stderr)
+            
+            print(f"🏠 Retrieved {len(sections)} home sections", file=sys.stderr)
+            
+            return {
+                'success': True,
+                'data': sections
+            }
+            
+        except Exception as e:
+            logger.error(f"JioSaavn home feed failed: {e}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
+    def get_charts(self, country: str = 'IN') -> Dict[str, Any]:
+        """Get JioSaavn charts/top songs"""
+        try:
+            if not HAS_REQUESTS:
+                return {
+                    'success': False,
+                    'error': 'requests library not available'
+                }
+            
+            print(f"📊 Fetching JioSaavn charts...", file=sys.stderr)
+            
+            # Search for trending songs as charts fallback
+            response = requests.get(f"{self.base_url}/search/songs", params={
+                'query': 'top hits',
+                'page': 0,
+                'limit': 50
+            }, timeout=10)
+            
+            if response.status_code != 200:
+                return {
+                    'success': False,
+                    'error': f'Failed to fetch charts: HTTP {response.status_code}'
+                }
+            
+            data = response.json()
+            songs = []
+            
+            if data.get('success') and data.get('data'):
+                for song in data['data'].get('results', [])[:50]:
+                    formatted_song = self._format_jiosaavn_song(song)
+                    if formatted_song:
+                        songs.append(formatted_song)
+            
+            print(f"📊 Retrieved {len(songs)} chart songs", file=sys.stderr)
+            
+            return {
+                'success': True,
+                'data': {
+                    'songs': songs,
+                    'videos': [],
+                    'artists': [],
+                    'trending': []
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"JioSaavn charts failed: {e}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
+    def get_mood_categories(self) -> Dict[str, Any]:
+        """Get JioSaavn mood/genre categories"""
+        try:
+            if not HAS_REQUESTS:
+                return {
+                    'success': False,
+                    'error': 'requests library not available'
+                }
+            
+            print("🎭 Fetching JioSaavn mood categories...", file=sys.stderr)
+            
+            # Define common moods/genres for JioSaavn
+            categories = {
+                'Moods': [
+                    {'title': 'Happy', 'params': 'happy'},
+                    {'title': 'Sad', 'params': 'sad'},
+                    {'title': 'Romantic', 'params': 'romantic'},
+                    {'title': 'Party', 'params': 'party'},
+                    {'title': 'Chill', 'params': 'chill'},
+                    {'title': 'Workout', 'params': 'workout'},
+                    {'title': 'Sleep', 'params': 'sleep'},
+                    {'title': 'Focus', 'params': 'focus'}
+                ],
+                'Genres': [
+                    {'title': 'Bollywood', 'params': 'bollywood'},
+                    {'title': 'Pop', 'params': 'pop'},
+                    {'title': 'Rock', 'params': 'rock'},
+                    {'title': 'Hip-Hop', 'params': 'hip hop'},
+                    {'title': 'Classical', 'params': 'classical'},
+                    {'title': 'Devotional', 'params': 'devotional'},
+                    {'title': 'Punjabi', 'params': 'punjabi'},
+                    {'title': 'EDM', 'params': 'edm'}
+                ]
+            }
+            
+            return {
+                'success': True,
+                'data': categories
+            }
+            
+        except Exception as e:
+            logger.error(f"JioSaavn mood categories failed: {e}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
+    def get_mood_playlists(self, params: str) -> Dict[str, Any]:
+        """Get JioSaavn playlists for a specific mood/genre"""
+        try:
+            if not HAS_REQUESTS:
+                return {
+                    'success': False,
+                    'error': 'requests library not available'
+                }
+            
+            print(f"🎭 Fetching JioSaavn playlists for mood: {params}", file=sys.stderr)
+            
+            # Search for playlists matching the mood
+            response = requests.get(f"{self.base_url}/search/songs", params={
+                'query': params,
+                'page': 0,
+                'limit': 30
+            }, timeout=10)
+            
+            if response.status_code != 200:
+                return {
+                    'success': False,
+                    'error': f'Failed to fetch mood playlists: HTTP {response.status_code}'
+                }
+            
+            data = response.json()
+            songs = []
+            
+            if data.get('success') and data.get('data'):
+                for song in data['data'].get('results', [])[:30]:
+                    formatted_song = self._format_jiosaavn_song(song)
+                    if formatted_song:
+                        songs.append(formatted_song)
+            
+            print(f"🎭 Retrieved {len(songs)} mood songs", file=sys.stderr)
+            
+            return {
+                'success': True,
+                'data': songs
+            }
+            
+        except Exception as e:
+            logger.error(f"JioSaavn mood playlists failed: {e}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
 
 # MARK: - YouTube Music Service
 
@@ -1375,7 +1683,7 @@ class YTMusicService:
             
             # Common fields - match Swift SearchResult struct exactly
             result = {
-                'id': safe_get(item, 'videoId') or safe_get(item, 'browseId') or safe_get(item, 'playlistId', ''),
+                'id': safe_get(item, 'videoId') or safe_get(item, 'playlistId') or safe_get(item, 'browseId', ''),
                 'type': category,
                 'title': title,
                 'artist': None,  # Will be set below based on category
@@ -1388,6 +1696,13 @@ class YTMusicService:
                 'playCount': None,  # Will be set below
                 'musicSource': 'youtube_music'  # IMPORTANT: Tag this as YouTube Music
             }
+            
+            # For playlists, ensure id is set to playlistId
+            if category == 'playlists':
+                playlist_id = safe_get(item, 'playlistId')
+                if playlist_id:
+                    result['id'] = playlist_id
+                    print(f"📋 Playlist formatted: {title} with playlistId: {playlist_id}", file=sys.stderr)
             
             # Handle thumbnails
             thumbnails_raw = safe_get(item, 'thumbnails', [])
@@ -1550,26 +1865,44 @@ class YTMusicService:
     def get_stream_info(self, video_id: str) -> Dict[str, Any]:
         """
         Extract stream URL and metadata for a video ID using yt-dlp or fallback
+        OPTIMIZED for fast loading - prioritizes speed over quality
         """
+        import time
+        start_time = time.time()
+        
         try:
+            # 1. Check cache first (instant)
             cached = self._get_cached_stream(video_id)
             if cached:
-                print(f"Using cached stream info for {video_id}", file=sys.stderr)
+                print(f"⚡ Cached stream in {time.time() - start_time:.2f}s for {video_id}", file=sys.stderr)
                 return {
                     'success': True,
                     'data': cached
                 }
 
+            # 2. Try fast ytmusicapi extraction first (usually < 1 second)
+            print(f"🚀 Attempting fast stream extraction for {video_id}", file=sys.stderr)
             fast_stream = self._get_stream_via_ytmusicapi(video_id)
             if fast_stream and fast_stream.get('success'):
                 self._set_cached_stream(video_id, fast_stream['data'])
+                print(f"⚡ Fast stream in {time.time() - start_time:.2f}s for {video_id}", file=sys.stderr)
                 return fast_stream
 
+            # 3. Try Invidious API (fast, no rate limiting)
+            print(f"🔄 Trying Invidious API for {video_id}", file=sys.stderr)
+            invidious_stream = self._get_stream_via_invidious(video_id)
+            if invidious_stream and invidious_stream.get('success'):
+                self._set_cached_stream(video_id, invidious_stream['data'])
+                print(f"⚡ Invidious stream in {time.time() - start_time:.2f}s for {video_id}", file=sys.stderr)
+                return invidious_stream
+
+            # 4. Fallback to yt-dlp (slower but more reliable)
             if HAS_YTDLP:
-                print(f"Using yt-dlp for stream extraction: {video_id}", file=sys.stderr)
-                result = self._get_stream_with_ytdlp(video_id)
+                print(f"🐢 Falling back to yt-dlp for {video_id}", file=sys.stderr)
+                result = self._get_stream_with_ytdlp_fast(video_id)
                 if result.get('success'):
                     self._set_cached_stream(video_id, result['data'])
+                    print(f"⚡ yt-dlp stream in {time.time() - start_time:.2f}s for {video_id}", file=sys.stderr)
                 return result
             else:
                 print(f"yt-dlp not available, using fallback for: {video_id}", file=sys.stderr)
@@ -1582,12 +1915,142 @@ class YTMusicService:
                 'error': f"Stream extraction failed: {str(e)}"
             }
 
+    def _get_stream_via_invidious(self, video_id: str) -> Optional[Dict[str, Any]]:
+        """Get stream via Invidious API - fast and reliable alternative"""
+        try:
+            import urllib.request
+            import json
+            
+            # List of Invidious instances to try
+            instances = [
+                'https://inv.nadeko.net',
+                'https://invidious.fdn.fr',
+                'https://invidious.privacyredirect.com',
+                'https://vid.puffyan.us',
+            ]
+            
+            for instance in instances:
+                try:
+                    url = f"{instance}/api/v1/videos/{video_id}"
+                    req = urllib.request.Request(url, headers={
+                        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+                    })
+                    
+                    with urllib.request.urlopen(req, timeout=5) as response:
+                        data = json.loads(response.read().decode('utf-8'))
+                    
+                    # Get audio streams
+                    adaptive_formats = data.get('adaptiveFormats', [])
+                    audio_formats = [f for f in adaptive_formats if f.get('type', '').startswith('audio/')]
+                    
+                    if audio_formats:
+                        # Prefer m4a/mp4 audio, then webm
+                        best_audio = None
+                        for fmt in audio_formats:
+                            mime = fmt.get('type', '')
+                            if 'mp4' in mime or 'm4a' in mime:
+                                best_audio = fmt
+                                break
+                        if not best_audio:
+                            best_audio = audio_formats[0]
+                        
+                        stream_url = best_audio.get('url')
+                        if stream_url:
+                            return {
+                                'success': True,
+                                'data': {
+                                    'url': stream_url,
+                                    'title': data.get('title', ''),
+                                    'duration': data.get('lengthSeconds', 0),
+                                    'quality': best_audio.get('bitrate', 'unknown')
+                                }
+                            }
+                except Exception as e:
+                    print(f"Invidious instance {instance} failed: {e}", file=sys.stderr)
+                    continue
+                    
+            return None
+        except Exception as e:
+            print(f"Invidious extraction failed: {e}", file=sys.stderr)
+            return None
+
+    def _get_stream_with_ytdlp_fast(self, video_id: str) -> Dict[str, Any]:
+        """
+        FAST yt-dlp extraction - optimized for speed over reliability
+        """
+        # Only try YouTube Music URL (faster)
+        url = f"https://music.youtube.com/watch?v={video_id}"
+        
+        # Minimal yt-dlp options for speed
+        fast_opts = {
+            'quiet': True,
+            'no_warnings': True,
+            'extractaudio': False,
+            'noplaylist': True,
+            'no_check_certificate': True,
+            'extract_flat': False,
+            'format': 'bestaudio[ext=m4a]/bestaudio/best',  # Single format selector
+            'extractor_args': {
+                'youtube': {
+                    'player_client': ['android'],  # Single fast client
+                    'player_skip': ['webpage', 'configs'],
+                }
+            },
+            'http_headers': {
+                'User-Agent': 'com.google.android.youtube/17.36.4 (Linux; U; Android 12)'
+            },
+            'retries': 2,  # Reduced retries
+            'socket_timeout': 10,  # Shorter timeout
+        }
+
+        try:
+            if not HAS_YTDLP or YoutubeDL is None:
+                raise Exception("yt-dlp is not available")
+
+            print(f"Fast yt-dlp extraction: {video_id}", file=sys.stderr)
+
+            with YoutubeDL(fast_opts) as ydl:
+                info = ydl.extract_info(url, download=False)
+
+            stream_url = info.get('url')
+            
+            # Get audio URL from formats if not directly available
+            if not stream_url:
+                formats = info.get('formats', []) or []
+                requested = info.get('requested_formats', []) or []
+                all_formats = formats + requested
+                
+                audio_formats = [f for f in all_formats if f.get('acodec') and f.get('acodec') != 'none']
+                if audio_formats:
+                    # Pick best audio format
+                    audio_formats.sort(key=lambda x: x.get('abr', 0) or 0, reverse=True)
+                    stream_url = audio_formats[0].get('url')
+
+            if not stream_url:
+                raise Exception("No audio stream found")
+
+            return {
+                'success': True,
+                'data': {
+                    'url': stream_url,
+                    'title': info.get('title', ''),
+                    'duration': info.get('duration', 0),
+                    'quality': str(info.get('abr', 'unknown'))
+                }
+            }
+
+        except Exception as e:
+            print(f"Fast yt-dlp failed: {e}", file=sys.stderr)
+            # Try regular yt-dlp as last resort
+            return self._get_stream_with_ytdlp(video_id)
+
     def _get_stream_via_ytmusicapi(self, video_id: str) -> Optional[Dict[str, Any]]:
         """Attempt to retrieve a fast-start audio stream directly from ytmusicapi."""
         if not HAS_YTMUSICAPI or not self.yt:
             return None
 
         try:
+            print(f"🎵 ytmusicapi: Fetching song data for {video_id}", file=sys.stderr)
             song_data = self.yt.get_song(video_id)
             streaming_data = (song_data or {}).get('streamingData') or {}
             video_details = (song_data or {}).get('videoDetails') or {}
@@ -1599,20 +2062,26 @@ class YTMusicService:
             for fmt in adaptive_formats + progressive_formats:
                 if not isinstance(fmt, dict):
                     continue
+                # Handle both direct URL and signatureCipher
                 url = fmt.get('url')
+                if not url and fmt.get('signatureCipher'):
+                    # Skip formats that require signature deciphering - yt-dlp handles these
+                    continue
                 mime_type = fmt.get('mimeType', '')
                 if not url or 'audio' not in mime_type.lower():
                     continue
                 candidates.append(fmt)
 
             if not candidates:
+                print(f"🎵 ytmusicapi: No direct audio URLs found for {video_id}", file=sys.stderr)
                 return None
 
             def sort_key(fmt: Dict[str, Any]):
                 bitrate = fmt.get('bitrate') or fmt.get('averageBitrate') or 0
                 mime_type = fmt.get('mimeType', '')
+                # Prefer m4a/mp4 for better compatibility
                 ext_preference = 0 if 'audio/mp4' in mime_type or 'm4a' in mime_type else 1
-                return (bitrate, ext_preference)
+                return (ext_preference, -bitrate)  # Lower ext_preference better, higher bitrate better
 
             selected = sorted(candidates, key=sort_key)[0]
 
@@ -1620,6 +2089,7 @@ class YTMusicService:
             duration_raw = video_details.get('lengthSeconds')
             duration = float(duration_raw) if duration_raw else streaming_data.get('duration')
 
+            print(f"🎵 ytmusicapi: Found stream URL for {video_id}", file=sys.stderr)
             return {
                 'success': True,
                 'data': {
@@ -1631,6 +2101,7 @@ class YTMusicService:
             }
 
         except Exception as err:
+            print(f"🎵 ytmusicapi failed for {video_id}: {err}", file=sys.stderr)
             logger.debug(f"ytmusicapi fast stream lookup failed for {video_id}: {err}")
             return None
     
@@ -2051,9 +2522,24 @@ class YTMusicService:
             
             print(f"Retrieved mood categories with {len(mood_data)} sections", file=sys.stderr)
             
+            # Format the mood categories into the expected structure
+            formatted_data = {}
+            for section_name, categories in mood_data.items():
+                formatted_categories = []
+                for cat in categories:
+                    if isinstance(cat, dict):
+                        formatted_categories.append({
+                            'title': cat.get('title', ''),
+                            'params': cat.get('params', ''),
+                            'thumbnailURL': ''  # YouTube Music doesn't provide thumbnails for categories
+                        })
+                formatted_data[section_name] = formatted_categories
+            
+            print(f"🎭 Formatted {sum(len(v) for v in formatted_data.values())} mood categories", file=sys.stderr)
+            
             return {
                 'success': True,
-                'data': mood_data
+                'data': formatted_data
             }
             
         except Exception as e:
@@ -2091,7 +2577,7 @@ class YTMusicService:
                 'error': str(e)
             }
     
-    def get_charts(self, country: str = 'ZZ') -> Dict[str, Any]:
+    def get_charts(self, country: str = 'IN') -> Dict[str, Any]:
         """
         Get charts data from YouTube Music (top songs, artists, etc.)
         """
@@ -2107,9 +2593,55 @@ class YTMusicService:
             
             print(f"Retrieved charts for country {country}", file=sys.stderr)
             
+            # Format the charts data
+            formatted_data = {
+                'songs': [],
+                'videos': [],
+                'artists': [],
+                'trending': []
+            }
+            
+            # Format songs/tracks
+            if 'songs' in charts_data:
+                songs = charts_data['songs']
+                items = songs.get('items', []) if isinstance(songs, dict) else songs
+                for item in items[:20]:
+                    formatted = self._format_single_result(item, 'songs')
+                    if formatted:
+                        formatted_data['songs'].append(formatted)
+            
+            # Format trending videos
+            if 'videos' in charts_data:
+                videos = charts_data['videos']
+                items = videos.get('items', []) if isinstance(videos, dict) else videos
+                for item in items[:15]:
+                    formatted = self._format_single_result(item, 'songs')
+                    if formatted:
+                        formatted_data['videos'].append(formatted)
+            
+            # Format trending artists
+            if 'artists' in charts_data:
+                artists = charts_data['artists']
+                items = artists.get('items', []) if isinstance(artists, dict) else artists
+                for item in items[:15]:
+                    formatted = self._format_single_result(item, 'artists')
+                    if formatted:
+                        formatted_data['artists'].append(formatted)
+            
+            # Format trending
+            if 'trending' in charts_data:
+                trending = charts_data['trending']
+                items = trending.get('items', []) if isinstance(trending, dict) else trending
+                for item in items[:15]:
+                    formatted = self._format_single_result(item, 'songs')
+                    if formatted:
+                        formatted_data['trending'].append(formatted)
+            
+            print(f"📊 Formatted charts: {len(formatted_data['songs'])} songs, {len(formatted_data['videos'])} videos", file=sys.stderr)
+            
             return {
                 'success': True,
-                'data': charts_data
+                'data': formatted_data
             }
             
         except Exception as e:
@@ -2135,9 +2667,54 @@ class YTMusicService:
             
             print(f"Retrieved home feed with {len(home_data)} sections", file=sys.stderr)
             
+            # Format the home data into sections with contents
+            sections = []
+            for section in home_data:
+                if not isinstance(section, dict):
+                    continue
+                    
+                title = section.get('title', '')
+                contents_raw = section.get('contents', [])
+                
+                if not title or not contents_raw:
+                    continue
+                
+                # Format each item in the section
+                formatted_contents = []
+                for item in contents_raw:
+                    if not isinstance(item, dict):
+                        continue
+                    
+                    # Determine the type based on available fields
+                    if item.get('videoId'):
+                        formatted_item = self._format_single_result(item, 'songs')
+                    elif item.get('browseId') and 'album' in str(item.get('browseId', '')).lower():
+                        formatted_item = self._format_single_result(item, 'albums')
+                    elif item.get('playlistId'):
+                        formatted_item = self._format_single_result(item, 'playlists')
+                    elif item.get('browseId'):
+                        # Could be artist or playlist
+                        if 'artist' in title.lower() or item.get('subscribers'):
+                            formatted_item = self._format_single_result(item, 'artists')
+                        else:
+                            formatted_item = self._format_single_result(item, 'playlists')
+                    else:
+                        formatted_item = self._format_single_result(item, 'songs')
+                    
+                    if formatted_item:
+                        formatted_contents.append(formatted_item)
+                
+                if formatted_contents:
+                    sections.append({
+                        'title': title,
+                        'contents': formatted_contents
+                    })
+            
+            print(f"🏠 Formatted {len(sections)} home sections for YouTube Music", file=sys.stderr)
+            
             return {
                 'success': True,
-                'data': home_data
+                'data': sections
             }
             
         except Exception as e:

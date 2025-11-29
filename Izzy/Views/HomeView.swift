@@ -22,6 +22,21 @@ struct HomeView: View {
     @State private var forYouScrollOffset: CGFloat = 0
     @State private var canScrollLeft = false
     @State private var canScrollRight = false
+    
+    // Use cached data from SearchState instead of local state
+    private var homeSections: [HomeSection] {
+        get { searchState.cachedHomeSections }
+    }
+    private var chartsData: ChartsData? {
+        get { searchState.cachedChartsData }
+    }
+    private var moodCategories: [String: [MoodCategory]] {
+        get { searchState.cachedMoodCategories }
+    }
+    
+    @State private var isLoadingHome = false
+    @State private var isLoadingCharts = false
+    @State private var isLoadingMoods = false
 
     // Computed property for dynamic greeting based on time of day
     private var greeting: String {
@@ -251,7 +266,151 @@ struct HomeView: View {
         return currentSource == "youtube_music" ? "YouTube Music" : "JioSaavn"
     }
     
+    // MARK: - Explore Data Loading
+    
+    /// Load all explore sections (home, charts, moods)
+    private func loadExploreData() async {
+        // Use SearchState's flag to prevent reloading on window toggle
+        guard !searchState.hasLoadedExploreData else { 
+            print("📦 Using cached explore data")
+            return 
+        }
+        
+        // Load sections sequentially to avoid overwhelming the Python service
+        await loadHomeSections()
+        await loadCharts()
+        await loadMoodCategories()
+        
+        await MainActor.run {
+            searchState.hasLoadedExploreData = true
+        }
+    }
+    
+    /// Load home feed sections
+    private func loadHomeSections() async {
+        guard !isLoadingHome else { return }
+        
+        await MainActor.run {
+            isLoadingHome = true
+        }
+        
+        defer {
+            Task { @MainActor in
+                isLoadingHome = false
+            }
+        }
+        
+        do {
+            let pythonService = PythonServiceManager.shared
+            let sections = try await pythonService.getHomeFeed()
+            
+            await MainActor.run {
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    searchState.cachedHomeSections = sections
+                }
+            }
+            print("🏠 Loaded \(sections.count) home sections")
+        } catch {
+            print("❌ Failed to load home sections: \\(error)")
+        }
+    }
+    
+    /// Load charts data
+    private func loadCharts() async {
+        guard !isLoadingCharts else { return }
+        
+        await MainActor.run {
+            isLoadingCharts = true
+        }
+        
+        defer {
+            Task { @MainActor in
+                isLoadingCharts = false
+            }
+        }
+        
+        do {
+            let pythonService = PythonServiceManager.shared
+            let country = musicSource == "jiosaavn" ? "IN" : "ZZ"
+            let charts = try await pythonService.getCharts(country: country)
+            
+            await MainActor.run {
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    searchState.cachedChartsData = charts
+                }
+            }
+            print("📊 Loaded charts with \(charts.songs.count) songs")
+        } catch {
+            print("❌ Failed to load charts: \(error)")
+        }
+    }
+    
+    /// Load mood categories
+    private func loadMoodCategories() async {
+        guard !isLoadingMoods else { return }
+        
+        await MainActor.run {
+            isLoadingMoods = true
+        }
+        
+        defer {
+            Task { @MainActor in
+                isLoadingMoods = false
+            }
+        }
+        
+        do {
+            let pythonService = PythonServiceManager.shared
+            let categories = try await pythonService.getMoodCategories()
+            
+            await MainActor.run {
+                withAnimation(.easeInOut(duration: 0.3)) {
+                    searchState.cachedMoodCategories = categories
+                }
+            }
+            print("🎭 Loaded \(categories.count) mood categories")
+        } catch {
+            print("❌ Failed to load mood categories: \(error)")
+        }
+    }
+    
+    /// Refresh all explore data
+    private func refreshExploreData() async {
+        searchState.hasLoadedExploreData = false
+        searchState.cachedHomeSections = []
+        searchState.cachedChartsData = nil
+        searchState.cachedMoodCategories = [:]
+        await loadExploreData()
+    }
+    
+    /// Get icon for section title
+    private func sectionIcon(for title: String) -> String {
+        let lowercased = title.lowercased()
+        if lowercased.contains("trending") {
+            return "flame.fill"
+        } else if lowercased.contains("new") || lowercased.contains("release") {
+            return "sparkles"
+        } else if lowercased.contains("chart") || lowercased.contains("top") {
+            return "chart.bar.fill"
+        } else if lowercased.contains("playlist") || lowercased.contains("featured") {
+            return "music.note.list"
+        } else if lowercased.contains("album") {
+            return "square.stack.fill"
+        } else if lowercased.contains("artist") {
+            return "person.2.fill"
+        } else {
+            return "music.note"
+        }
+    }
+    
     var body: some View {
+        // Show playlist detail view when a playlist is selected
+        if searchState.selectedExplorePlaylist != nil {
+            ExplorePlaylistDetailView(
+                playlist: searchState.selectedExplorePlaylist!,
+                searchState: searchState
+            )
+        } else {
         ScrollViewReader { scrollReader in
             ScrollView {
             VStack(alignment: .leading, spacing: 32) {
@@ -478,6 +637,65 @@ struct HomeView: View {
                     }
                 }
 
+                // MARK: - Explore Sections (Charts, Trending, Moods)
+                
+                // Charts Section - Top songs
+                if !isLoadingCharts {
+                    if let charts = chartsData, !charts.songs.isEmpty {
+                        ExploreSectionView(
+                            title: "Top Charts",
+                            subtitle: "Most popular right now",
+                            icon: "chart.line.uptrend.xyaxis",
+                            items: Array(charts.songs.prefix(15)),
+                            searchState: searchState,
+                            isLoading: isLoadingCharts,
+                            onRefresh: {
+                                searchState.cachedChartsData = nil
+                                await loadCharts()
+                            }
+                        )
+                    }
+                } else {
+                    ExploreSectionLoadingView(title: "Top Charts")
+                }
+                
+                // Home Sections - Dynamic sections from API
+                ForEach(homeSections) { section in
+                    ExploreSectionView(
+                        title: section.title,
+                        subtitle: nil,
+                        icon: sectionIcon(for: section.title),
+                        items: Array(section.contents.prefix(15)),
+                        searchState: searchState,
+                        isLoading: isLoadingHome,
+                        onRefresh: {
+                            searchState.cachedHomeSections = []
+                            await loadHomeSections()
+                        }
+                    )
+                }
+                
+                // Loading placeholder for home sections
+                if isLoadingHome && homeSections.isEmpty {
+                    ExploreSectionLoadingView(title: "Trending")
+                    ExploreSectionLoadingView(title: "New Releases")
+                }
+                
+                // Moods & Genres Section
+                if !moodCategories.isEmpty {
+                    MoodsAndGenresSection(
+                        moodCategories: moodCategories,
+                        searchState: searchState,
+                        isLoading: isLoadingMoods,
+                        onRefresh: {
+                            searchState.cachedMoodCategories = [:]
+                            await loadMoodCategories()
+                        }
+                    )
+                } else if isLoadingMoods {
+                    ExploreSectionLoadingView(title: "Moods & Genres")
+                }
+
                 // Quick Actions Grid with more elegant design
                 LazyVGrid(columns: [
                     GridItem(.flexible(), spacing: 20),
@@ -629,6 +847,10 @@ struct HomeView: View {
             Task {
                 await getForYouRecommendations()
             }
+            // Load Explore sections (charts, home, moods)
+            Task {
+                await loadExploreData()
+            }
         }
         .onChange(of: musicSource) { _ in
             // Update recommendations when music source changes
@@ -637,6 +859,10 @@ struct HomeView: View {
             shownSongIds.removeAll()
             Task {
                 await getForYouRecommendations()
+            }
+            // Also refresh explore data for new source
+            Task {
+                await refreshExploreData()
             }
         }
         // Removed onAppear scroll-to-top to maintain scroll position persistence
@@ -650,6 +876,7 @@ struct HomeView: View {
             }
         )
         }
+        } // End else block for playlist detail view
     }
 }
 
@@ -830,6 +1057,821 @@ struct ElegantStatCard: View {
         .frame(maxWidth: .infinity)
         .padding(20)
         .modifier(StatCardBackgroundModifier())
+    }
+}
+
+// MARK: - Explore Section Views
+
+/// Horizontal scrolling explore section for songs/albums/playlists with scroll arrows
+struct ExploreSectionView: View {
+    let title: String
+    let subtitle: String?
+    let icon: String
+    let items: [SearchResult]
+    @ObservedObject var searchState: SearchState
+    var isLoading: Bool = false
+    var onRefresh: (() async -> Void)? = nil
+    
+    @State private var scrollOffset: CGFloat = 0
+    @State private var canScrollLeft = false
+    @State private var canScrollRight = true
+    @State private var isRefreshing = false
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Section header
+            HStack {
+                Image(systemName: icon)
+                    .font(.system(size: 16))
+                    .foregroundColor(.blue)
+                
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(title)
+                        .font(.title3)
+                        .fontWeight(.bold)
+                        .foregroundColor(.primary)
+                    
+                    if let subtitle = subtitle {
+                        Text(subtitle)
+                            .font(.caption)
+                            .foregroundColor(.secondary)
+                    }
+                }
+                
+                Spacer()
+                
+                // Refresh button
+                if onRefresh != nil {
+                    Button(action: {
+                        guard !isRefreshing && !isLoading else { return }
+                        isRefreshing = true
+                        Task {
+                            await onRefresh?()
+                            await MainActor.run {
+                                isRefreshing = false
+                            }
+                        }
+                    }) {
+                        ZStack {
+                            if isRefreshing || isLoading {
+                                ProgressView()
+                                    .scaleEffect(0.6)
+                                    .frame(width: 14, height: 14)
+                            } else {
+                                Image(systemName: "arrow.clockwise")
+                                    .font(.system(size: 12, weight: .medium))
+                            }
+                        }
+                        .foregroundColor(.secondary)
+                        .frame(width: 20, height: 20)
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                    .help("Refresh \(title)")
+                    .disabled(isRefreshing || isLoading)
+                }
+            }
+            .padding(.horizontal, 20)
+            
+            // Horizontal scroll content with navigation arrows
+            ZStack(alignment: .center) {
+                ScrollViewReader { scrollReader in
+                    ScrollView(.horizontal, showsIndicators: false) {
+                        HStack(spacing: 12) {
+                            ForEach(items.indices, id: \.self) { index in
+                                ExploreSongCard(
+                                    item: items[index],
+                                    allItems: items,
+                                    searchState: searchState
+                                )
+                                .id(index)
+                            }
+                        }
+                        .padding(.horizontal, 20)
+                    }
+                    .onAppear {
+                        canScrollLeft = false
+                        canScrollRight = items.count > 3
+                    }
+                    
+                    // Navigation arrows overlay
+                    HStack {
+                        // Left scroll button
+                        if canScrollLeft {
+                            Button(action: {
+                                let currentIndex = Int(scrollOffset)
+                                let targetIndex = max(0, currentIndex - 3)
+                                withAnimation(.easeInOut(duration: 0.3)) {
+                                    scrollReader.scrollTo(targetIndex, anchor: .leading)
+                                    scrollOffset = CGFloat(targetIndex)
+                                    canScrollLeft = targetIndex > 0
+                                    canScrollRight = targetIndex < items.count - 3
+                                }
+                            }) {
+                                Image(systemName: "chevron.left")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundColor(.white)
+                                    .frame(width: 32, height: 32)
+                                    .background(
+                                        Circle()
+                                            .fill(.ultraThinMaterial)
+                                            .overlay(
+                                                Circle()
+                                                    .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                                            )
+                                    )
+                                    .shadow(color: .black.opacity(0.3), radius: 8, x: 0, y: 2)
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                            .padding(.leading, 8)
+                        }
+                        
+                        Spacer()
+                        
+                        // Right scroll button
+                        if canScrollRight {
+                            Button(action: {
+                                let currentIndex = Int(scrollOffset)
+                                let targetIndex = min(items.count - 1, currentIndex + 3)
+                                withAnimation(.easeInOut(duration: 0.3)) {
+                                    scrollReader.scrollTo(targetIndex, anchor: .trailing)
+                                    scrollOffset = CGFloat(targetIndex)
+                                    canScrollLeft = targetIndex > 0
+                                    canScrollRight = targetIndex < items.count - 3
+                                }
+                            }) {
+                                Image(systemName: "chevron.right")
+                                    .font(.system(size: 16, weight: .semibold))
+                                    .foregroundColor(.white)
+                                    .frame(width: 32, height: 32)
+                                    .background(
+                                        Circle()
+                                            .fill(.ultraThinMaterial)
+                                            .overlay(
+                                                Circle()
+                                                    .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                                            )
+                                    )
+                                    .shadow(color: .black.opacity(0.3), radius: 8, x: 0, y: 2)
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                            .padding(.trailing, 8)
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Song card for explore sections
+struct ExploreSongCard: View {
+    let item: SearchResult
+    let allItems: [SearchResult]
+    @ObservedObject var searchState: SearchState
+    @State private var isHovered = false
+    
+    var body: some View {
+        Button(action: {
+            playItem()
+        }) {
+            VStack(alignment: .leading, spacing: 8) {
+                // Thumbnail
+                ZStack(alignment: .bottomTrailing) {
+                    AsyncImage(url: URL(string: item.thumbnailURL ?? "")) { image in
+                        image
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                    } placeholder: {
+                        RoundedRectangle(cornerRadius: 8)
+                            .fill(.ultraThinMaterial)
+                            .overlay(
+                                Image(systemName: iconForType)
+                                    .foregroundColor(.secondary)
+                                    .font(.title3)
+                            )
+                    }
+                    .frame(width: 120, height: 120)
+                    .clipShape(RoundedRectangle(cornerRadius: 8))
+                    
+                    // Play icon overlay on hover
+                    if isHovered {
+                        ZStack {
+                            Circle()
+                                .fill(Color.black.opacity(0.7))
+                                .frame(width: 36, height: 36)
+                            
+                            Image(systemName: "play.fill")
+                                .font(.system(size: 14, weight: .semibold))
+                                .foregroundColor(.white)
+                        }
+                        .transition(.scale.combined(with: .opacity))
+                    }
+                    
+                    // Duration badge for songs
+                    if item.type == .song, let duration = item.duration {
+                        Text(formatDuration(duration))
+                            .font(.system(size: 10, weight: .medium))
+                            .foregroundColor(.white)
+                            .padding(.horizontal, 6)
+                            .padding(.vertical, 2)
+                            .background(Capsule().fill(Color.black.opacity(0.7)))
+                            .padding(6)
+                    }
+                }
+                .shadow(color: Color.black.opacity(0.2), radius: isHovered ? 8 : 4, x: 0, y: 2)
+                
+                // Info
+                VStack(alignment: .leading, spacing: 3) {
+                    Text(item.title)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.primary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                    
+                    if let artist = item.artist {
+                        Text(artist)
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+                .frame(width: 120, alignment: .leading)
+            }
+            .scaleEffect(isHovered ? 1.02 : 1.0)
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isHovered)
+        }
+        .buttonStyle(PlainButtonStyle())
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.2)) {
+                isHovered = hovering
+            }
+        }
+    }
+    
+    private var iconForType: String {
+        switch item.type {
+        case .song: return "music.note"
+        case .album: return "square.stack"
+        case .playlist: return "music.note.list"
+        case .artist: return "person.fill"
+        case .video: return "play.rectangle.fill"
+        }
+    }
+    
+    private func formatDuration(_ seconds: TimeInterval) -> String {
+        let minutes = Int(seconds) / 60
+        let secs = Int(seconds) % 60
+        return String(format: "%d:%02d", minutes, secs)
+    }
+    
+    private func playItem() {
+        print("🎵 ExploreSongCard.playItem() - Type: \(item.type), Title: \(item.title), VideoId: \(item.videoId ?? "nil"), MusicSource: \(item.musicSource ?? "nil")")
+        switch item.type {
+        case .song, .video:
+            let track = Track(from: item)
+            print("🎵 Playing song/video: \(track.title), VideoId: \(track.videoId), MusicSource: \(track.musicSource ?? "nil")")
+            let tracks = allItems.filter { $0.type == .song || $0.type == .video }.map { Track(from: $0) }
+            Task {
+                await searchState.playbackManager.play(track: track, fromQueue: tracks)
+            }
+        case .album:
+            // Load album tracks
+            if let browseId = item.browseId {
+                Task {
+                    do {
+                        let tracks = try await PythonServiceManager.shared.getAlbumTracks(browseId: browseId)
+                        if let firstTrack = tracks.first {
+                            let track = Track(from: firstTrack)
+                            let allTracks = tracks.map { Track(from: $0) }
+                            await searchState.playbackManager.play(track: track, fromQueue: allTracks)
+                        }
+                    } catch {
+                        print("Failed to load album tracks: \(error)")
+                    }
+                }
+            }
+        case .playlist:
+            // Open playlist in-app instead of directly playing
+            let playlistId = item.id
+            print("🎵 Opening playlist in-app: \(item.title), PlaylistId: \(playlistId)")
+            
+            // Set selected playlist and load tracks
+            searchState.selectedExplorePlaylist = item
+            searchState.isLoadingExplorePlaylist = true
+            searchState.selectedExplorePlaylistTracks = []
+            
+            Task {
+                do {
+                    let tracks = try await PythonServiceManager.shared.getPlaylistTracks(playlistId: playlistId)
+                    print("🎵 Loaded \(tracks.count) tracks from playlist")
+                    await MainActor.run {
+                        searchState.selectedExplorePlaylistTracks = tracks
+                        searchState.isLoadingExplorePlaylist = false
+                    }
+                } catch {
+                    print("❌ Failed to load playlist tracks: \(error)")
+                    await MainActor.run {
+                        searchState.isLoadingExplorePlaylist = false
+                    }
+                }
+            }
+        case .artist:
+            // Load artist songs
+            if let browseId = item.browseId {
+                Task {
+                    do {
+                        let tracks = try await PythonServiceManager.shared.getArtistSongs(browseId: browseId)
+                        if let firstTrack = tracks.first {
+                            let track = Track(from: firstTrack)
+                            let allTracks = tracks.map { Track(from: $0) }
+                            await searchState.playbackManager.play(track: track, fromQueue: allTracks)
+                        }
+                    } catch {
+                        print("Failed to load artist songs: \(error)")
+                    }
+                }
+            }
+        }
+    }
+}
+
+/// Loading placeholder for explore sections
+struct ExploreSectionLoadingView: View {
+    let title: String
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // Section header
+            HStack {
+                RoundedRectangle(cornerRadius: 4)
+                    .fill(.ultraThinMaterial)
+                    .frame(width: 16, height: 16)
+                
+                Text(title)
+                    .font(.title3)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
+                
+                Spacer()
+            }
+            .padding(.horizontal, 20)
+            
+            // Loading placeholders
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    ForEach(0..<5, id: \.self) { _ in
+                        VStack(alignment: .leading, spacing: 8) {
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(.ultraThinMaterial)
+                                .frame(width: 120, height: 120)
+                                .overlay(
+                                    ProgressView()
+                                )
+                            
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(.ultraThinMaterial)
+                                .frame(width: 120, height: 12)
+                            
+                            RoundedRectangle(cornerRadius: 4)
+                                .fill(.ultraThinMaterial)
+                                .frame(width: 80, height: 10)
+                        }
+                    }
+                }
+                .padding(.horizontal, 20)
+            }
+        }
+    }
+}
+
+/// Mood/Genre category card
+/// Moods & Genres Section with refresh button
+struct MoodsAndGenresSection: View {
+    let moodCategories: [String: [MoodCategory]]
+    @ObservedObject var searchState: SearchState
+    var isLoading: Bool = false
+    var onRefresh: (() async -> Void)? = nil
+    
+    @State private var isRefreshing = false
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            HStack {
+                Image(systemName: "theatermasks.fill")
+                    .font(.system(size: 16))
+                    .foregroundColor(.purple)
+                
+                Text("Moods & Genres")
+                    .font(.title3)
+                    .fontWeight(.bold)
+                    .foregroundColor(.primary)
+                
+                Spacer()
+                
+                // Refresh button
+                if onRefresh != nil {
+                    Button(action: {
+                        guard !isRefreshing && !isLoading else { return }
+                        isRefreshing = true
+                        Task {
+                            await onRefresh?()
+                            await MainActor.run {
+                                isRefreshing = false
+                            }
+                        }
+                    }) {
+                        ZStack {
+                            if isRefreshing || isLoading {
+                                ProgressView()
+                                    .scaleEffect(0.6)
+                                    .frame(width: 14, height: 14)
+                            } else {
+                                Image(systemName: "arrow.clockwise")
+                                    .font(.system(size: 12, weight: .medium))
+                            }
+                        }
+                        .foregroundColor(.secondary)
+                        .frame(width: 20, height: 20)
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                    .help("Refresh Moods & Genres")
+                    .disabled(isRefreshing || isLoading)
+                }
+            }
+            .padding(.horizontal, 20)
+            
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 12) {
+                    ForEach(Array(moodCategories.keys.sorted()), id: \.self) { category in
+                        if let moods = moodCategories[category] {
+                            ForEach(moods.prefix(8)) { mood in
+                                MoodCategoryCard(
+                                    mood: mood,
+                                    searchState: searchState
+                                )
+                            }
+                        }
+                    }
+                }
+                .padding(.horizontal, 20)
+            }
+        }
+    }
+}
+
+struct MoodCategoryCard: View {
+    let mood: MoodCategory
+    @ObservedObject var searchState: SearchState
+    @State private var isHovered = false
+    @State private var isLoading = false
+    
+    // Gradient colors for different moods
+    private var gradientColors: [Color] {
+        let title = mood.title.lowercased()
+        if title.contains("happy") || title.contains("party") {
+            return [.yellow, .orange]
+        } else if title.contains("sad") || title.contains("sleep") {
+            return [.blue, .purple]
+        } else if title.contains("romantic") || title.contains("love") {
+            return [.pink, .red]
+        } else if title.contains("chill") || title.contains("relax") {
+            return [.teal, .blue]
+        } else if title.contains("workout") || title.contains("energy") {
+            return [.red, .orange]
+        } else if title.contains("focus") || title.contains("study") {
+            return [.green, .teal]
+        } else if title.contains("bollywood") || title.contains("punjabi") {
+            return [.orange, .red]
+        } else if title.contains("rock") || title.contains("metal") {
+            return [.gray, .black]
+        } else if title.contains("hip") || title.contains("rap") {
+            return [.purple, .black]
+        } else if title.contains("edm") || title.contains("electronic") {
+            return [.cyan, .purple]
+        } else if title.contains("classical") || title.contains("devotional") {
+            return [.orange, .yellow]
+        } else {
+            return [.blue, .purple]
+        }
+    }
+    
+    var body: some View {
+        Button(action: {
+            loadMoodPlaylist()
+        }) {
+            ZStack {
+                // Gradient background
+                LinearGradient(
+                    colors: gradientColors,
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                
+                // Content
+                VStack(spacing: 4) {
+                    if isLoading {
+                        ProgressView()
+                            .scaleEffect(0.8)
+                    } else {
+                        Text(mood.title)
+                            .font(.system(size: 14, weight: .bold))
+                            .foregroundColor(.white)
+                            .lineLimit(2)
+                            .multilineTextAlignment(.center)
+                    }
+                }
+                .padding(12)
+            }
+            .frame(width: 100, height: 80)
+            .clipShape(RoundedRectangle(cornerRadius: 12))
+            .shadow(color: gradientColors.first?.opacity(0.4) ?? .clear, radius: isHovered ? 8 : 4, x: 0, y: 2)
+            .scaleEffect(isHovered ? 1.05 : 1.0)
+            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isHovered)
+        }
+        .buttonStyle(PlainButtonStyle())
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.2)) {
+                isHovered = hovering
+            }
+        }
+        .disabled(isLoading)
+    }
+    
+    private func loadMoodPlaylist() {
+        isLoading = true
+        
+        Task {
+            do {
+                let songs = try await PythonServiceManager.shared.getMoodPlaylists(params: mood.params)
+                
+                await MainActor.run {
+                    isLoading = false
+                }
+                
+                if let firstSong = songs.first {
+                    let track = Track(from: firstSong)
+                    let tracks = songs.map { Track(from: $0) }
+                    await searchState.playbackManager.play(track: track, fromQueue: tracks)
+                }
+            } catch {
+                print("Failed to load mood playlist: \(error)")
+                await MainActor.run {
+                    isLoading = false
+                }
+            }
+        }
+    }
+}
+
+// MARK: - Explore Playlist Detail View
+
+/// Shows tracks from a selected explore playlist
+struct ExplorePlaylistDetailView: View {
+    let playlist: SearchResult
+    @ObservedObject var searchState: SearchState
+    @Environment(\.dismiss) private var dismiss
+    
+    var body: some View {
+        VStack(spacing: 0) {
+            // Header with back button
+            HStack {
+                Button(action: {
+                    searchState.selectedExplorePlaylist = nil
+                    searchState.selectedExplorePlaylistTracks = []
+                }) {
+                    HStack(spacing: 6) {
+                        Image(systemName: "chevron.left")
+                            .font(.system(size: 14, weight: .semibold))
+                        Text("Back")
+                            .font(.system(size: 14, weight: .medium))
+                    }
+                    .foregroundColor(.blue)
+                }
+                .buttonStyle(PlainButtonStyle())
+                
+                Spacer()
+                
+                // Play all button
+                if !searchState.selectedExplorePlaylistTracks.isEmpty {
+                    Button(action: {
+                        playAllTracks()
+                    }) {
+                        HStack(spacing: 4) {
+                            Image(systemName: "play.fill")
+                                .font(.system(size: 12))
+                            Text("Play All")
+                                .font(.system(size: 13, weight: .medium))
+                        }
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 6)
+                        .background(Capsule().fill(Color.blue))
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 12)
+            
+            // Playlist info header
+            HStack(spacing: 16) {
+                // Thumbnail
+                AsyncImage(url: URL(string: playlist.thumbnailURL ?? "")) { image in
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } placeholder: {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(.ultraThinMaterial)
+                        .overlay(
+                            Image(systemName: "music.note.list")
+                                .font(.title)
+                                .foregroundColor(.secondary)
+                        )
+                }
+                .frame(width: 80, height: 80)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(playlist.title)
+                        .font(.headline)
+                        .fontWeight(.bold)
+                        .lineLimit(2)
+                    
+                    if let artist = playlist.artist {
+                        Text(artist)
+                            .font(.subheadline)
+                            .foregroundColor(.secondary)
+                    }
+                    
+                    Text("\(searchState.selectedExplorePlaylistTracks.count) tracks")
+                        .font(.caption)
+                        .foregroundColor(.secondary)
+                }
+                
+                Spacer()
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 16)
+            
+            Divider()
+                .padding(.horizontal, 20)
+            
+            // Tracks list
+            if searchState.isLoadingExplorePlaylist {
+                VStack {
+                    Spacer()
+                    ProgressView()
+                        .scaleEffect(1.2)
+                    Text("Loading tracks...")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .padding(.top, 8)
+                    Spacer()
+                }
+            } else if searchState.selectedExplorePlaylistTracks.isEmpty {
+                VStack {
+                    Spacer()
+                    Image(systemName: "music.note")
+                        .font(.system(size: 40))
+                        .foregroundColor(.secondary)
+                    Text("No tracks found")
+                        .font(.subheadline)
+                        .foregroundColor(.secondary)
+                        .padding(.top, 8)
+                    Spacer()
+                }
+            } else {
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(Array(searchState.selectedExplorePlaylistTracks.enumerated()), id: \.element.id) { index, track in
+                            ExplorePlaylistTrackRow(
+                                track: track,
+                                index: index + 1,
+                                allTracks: searchState.selectedExplorePlaylistTracks,
+                                searchState: searchState
+                            )
+                        }
+                    }
+                    .padding(.vertical, 8)
+                }
+            }
+        }
+    }
+    
+    private func playAllTracks() {
+        guard let firstTrack = searchState.selectedExplorePlaylistTracks.first else { return }
+        let track = Track(from: firstTrack)
+        let allTracks = searchState.selectedExplorePlaylistTracks.map { Track(from: $0) }
+        Task {
+            await searchState.playbackManager.play(track: track, fromQueue: allTracks)
+        }
+    }
+}
+
+/// Single track row in explore playlist detail view
+struct ExplorePlaylistTrackRow: View {
+    let track: SearchResult
+    let index: Int
+    let allTracks: [SearchResult]
+    @ObservedObject var searchState: SearchState
+    @State private var isHovered = false
+    
+    // Check if this track is currently playing
+    private var isCurrentlyPlaying: Bool {
+        guard let currentTrack = searchState.playbackManager.currentTrack,
+              let trackVideoId = track.videoId,
+              !trackVideoId.isEmpty else { return false }
+        return currentTrack.videoId == trackVideoId
+    }
+    
+    var body: some View {
+        Button(action: {
+            playTrack()
+        }) {
+            HStack(spacing: 12) {
+                // Track number or playing indicator
+                ZStack {
+                    if isCurrentlyPlaying {
+                        Image(systemName: "speaker.wave.2.fill")
+                            .font(.system(size: 12))
+                            .foregroundColor(.blue)
+                    } else {
+                        Text("\(index)")
+                            .font(.system(size: 13))
+                            .foregroundColor(.secondary)
+                    }
+                }
+                .frame(width: 24)
+                
+                // Thumbnail
+                AsyncImage(url: URL(string: track.thumbnailURL ?? "")) { image in
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } placeholder: {
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(.ultraThinMaterial)
+                }
+                .frame(width: 40, height: 40)
+                .clipShape(RoundedRectangle(cornerRadius: 4))
+                
+                // Track info
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(track.title)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(isCurrentlyPlaying ? .blue : .primary)
+                        .lineLimit(1)
+                    
+                    if let artist = track.artist {
+                        Text(artist)
+                            .font(.system(size: 11))
+                            .foregroundColor(.secondary)
+                            .lineLimit(1)
+                    }
+                }
+                
+                Spacer()
+                
+                // Duration
+                if let duration = track.duration {
+                    Text(formatDuration(duration))
+                        .font(.system(size: 12))
+                        .foregroundColor(.secondary)
+                }
+                
+                // Play indicator on hover
+                if isHovered && !isCurrentlyPlaying {
+                    Image(systemName: "play.fill")
+                        .font(.system(size: 12))
+                        .foregroundColor(.blue)
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isCurrentlyPlaying ? Color.blue.opacity(0.15) : (isHovered ? Color.primary.opacity(0.05) : Color.clear))
+            )
+        }
+        .buttonStyle(PlainButtonStyle())
+        .onHover { hovering in
+            isHovered = hovering
+        }
+    }
+    
+    private func playTrack() {
+        let trackToPlay = Track(from: track)
+        let queue = allTracks.map { Track(from: $0) }
+        Task {
+            await searchState.playbackManager.play(track: trackToPlay, fromQueue: queue)
+        }
+    }
+    
+    private func formatDuration(_ seconds: TimeInterval) -> String {
+        let minutes = Int(seconds) / 60
+        let secs = Int(seconds) % 60
+        return String(format: "%d:%02d", minutes, secs)
     }
 }
 

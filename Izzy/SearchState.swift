@@ -27,6 +27,19 @@ class SearchState: ObservableObject {
     @Published var favorites: [FavoriteSong] = []
     @Published var recentlyPlayed: [FavoriteSong] = [] // Add this line for recently played songs
     
+    // Explore data persistence (survives window hide/show)
+    @Published var cachedHomeSections: [HomeSection] = []
+    @Published var cachedChartsData: ChartsData?
+    @Published var cachedMoodCategories: [String: [MoodCategory]] = [:]
+    @Published var hasLoadedExploreData: Bool = false
+    @Published var cachedForYouSongs: [FavoriteSong] = []
+    @Published var hasLoadedForYou: Bool = false
+    
+    // Selected explore playlist for in-app display
+    @Published var selectedExplorePlaylist: SearchResult?
+    @Published var selectedExplorePlaylistTracks: [SearchResult] = []
+    @Published var isLoadingExplorePlaylist: Bool = false
+    
     // Music search integration
     let musicSearchManager = MusicSearchManager()
     let playbackManager = PlaybackManager.shared

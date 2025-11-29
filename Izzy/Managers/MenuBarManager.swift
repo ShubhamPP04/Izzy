@@ -87,8 +87,8 @@ class SimpleMenuBarManager: ObservableObject {
         progressTimer?.invalidate()
         
         if playbackState.isPlaying {
-            // Update progress every 100ms for smooth updates
-            progressTimer = Timer.scheduledTimer(withTimeInterval: 0.1, repeats: true) { [weak self] _ in
+            // 🔋 CPU OPTIMIZATION: Update progress every 500ms (was 100ms) - still smooth, 80% less CPU
+            progressTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
                 self?.updateProgressFromPlaybackManager()
             }
         }
