@@ -31,9 +31,11 @@ xcodebuild -project Izzy.xcodeproj \
            clean build
 
 # Update the Info.plist to the correct version
-echo "📝 Updating app version to 1.1.7..."
-plutil -replace CFBundleShortVersionString -string "1.1.7" "$APP_PATH/Contents/Info.plist"
-plutil -replace CFBundleVersion -string "16" "$APP_PATH/Contents/Info.plist"
+APP_VERSION="1.1.8"
+APP_BUILD="17"
+echo "📝 Updating app version to ${APP_VERSION}..."
+plutil -replace CFBundleShortVersionString -string "$APP_VERSION" "$APP_PATH/Contents/Info.plist"
+plutil -replace CFBundleVersion -string "$APP_BUILD" "$APP_PATH/Contents/Info.plist"
 
 # Verify the version update
 echo "🔍 Verifying version update..."

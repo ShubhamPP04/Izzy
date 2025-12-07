@@ -19,6 +19,49 @@ class WindowManager: ObservableObject {
     // Window position persistence
     private let windowPositionKey = "FloatingPanelPosition"
     private var shouldCenterWindow = false
+
+    private func makeFloatingPanel() -> FloatingPanel {
+        let panel = FloatingPanel(
+            view: {
+                // Create the music search view with full functionality
+                let baseView = MusicSearchView(
+                    searchState: self.searchState ?? SearchState(),
+                    windowManager: self
+                )
+
+                if let hotkeyManager = self.hotkeyManager {
+                    return AnyView(baseView.environmentObject(hotkeyManager))
+                } else {
+                    return AnyView(baseView)
+                }
+            },
+            contentRect: NSRect(x: 0, y: 0, width: 600, height: 750),
+            didClose: {
+                print("🔚 Panel closed callback")
+                // Position is saved in hideWindow() before panel.close()
+                self.floatingPanel = nil
+                self.isVisible = false
+            },
+            windowManager: self,
+            playbackManager: self.searchState?.playbackManager
+        )
+
+        // Restore search state before the panel is ever shown
+        searchState?.restoreState()
+
+        return panel
+    }
+
+    /// Pre-create the floating panel so the first hotkey press feels instant.
+    func prewarmWindow() {
+        guard floatingPanel == nil else { return }
+        print("🔥 Prewarming floating panel for instant hotkey")
+        floatingPanel = makeFloatingPanel()
+
+        // Keep it hidden/off-screen until explicitly shown
+        floatingPanel?.setIsVisible(false)
+        floatingPanel?.orderOut(nil)
+    }
     
     func setupWindow(_ window: NSWindow) {
         // Completely hide the main SwiftUI window since we only use FloatingPanel
@@ -39,6 +82,11 @@ class WindowManager: ObservableObject {
 
         // 🔋 BATTERY EFFICIENCY: Save playback state before showing window
         searchState?.playbackManager.savePlaybackState()
+
+        // Build panel ahead of time if needed
+        if floatingPanel == nil {
+            floatingPanel = makeFloatingPanel()
+        }
 
         // If panel already exists and is not visible, just show it
         if let panel = floatingPanel {
@@ -72,33 +120,7 @@ class WindowManager: ObservableObject {
         print("🆕 Creating new floating panel")
 
         // Create new floating panel
-        let panel = FloatingPanel(
-            view: {
-                // Create the music search view with full functionality
-                let baseView = MusicSearchView(
-                    searchState: self.searchState ?? SearchState(),
-                    windowManager: self
-                )
-
-                if let hotkeyManager = self.hotkeyManager {
-                    return AnyView(baseView.environmentObject(hotkeyManager))
-                } else {
-                    return AnyView(baseView)
-                }
-            },
-            contentRect: NSRect(x: 0, y: 0, width: 600, height: 750),
-            didClose: {
-                print("🔚 Panel closed callback")
-                // Position is saved in hideWindow() before panel.close()
-                self.floatingPanel = nil
-                self.isVisible = false
-            },
-            windowManager: self,
-            playbackManager: self.searchState?.playbackManager
-        )
-
-        // Restore search state before showing
-        searchState?.restoreState()
+        let panel = makeFloatingPanel()
 
         // Update visibility state immediately
         isVisible = true
@@ -145,8 +167,8 @@ class WindowManager: ObservableObject {
         isVisible = false
         print("🔒 Panel marked as hidden")
 
-        // Close the panel
-        panel.close()
+        // Order out but keep the panel warm for instant re-show
+        panel.orderOut(nil)
 
         // IMPORTANT: Release app focus so other apps can work properly
         // This ensures that when the panel is hidden, other apps can receive input

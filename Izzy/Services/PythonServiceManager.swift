@@ -82,9 +82,12 @@ class PythonServiceManager: ObservableObject {
     private var inputPipe: Pipe?
     private var outputPipe: Pipe?
     private var isServiceRunning = false
-    private let serviceQueue = DispatchQueue(label: "python-service", qos: .userInitiated)
+    private let serviceQueue = DispatchQueue(label: "python-service", qos: .utility)
     private let timeout: TimeInterval = 45.0
     private var lastRequestTime = Date()  // 🔋 BATTERY EFFICIENCY: Track last request time
+    private var inactivityTimer: DispatchSourceTimer?
+    private let inactivityCheckInterval: TimeInterval = 60
+    private let inactivityThreshold: TimeInterval = 240  // 4 minutes of inactivity before suspension
     private var storedGeminiAPIKey: String? {
         let key = UserDefaults.standard.string(forKey: "geminiApiKey")?.trimmingCharacters(in: .whitespacesAndNewlines)
         return key?.isEmpty == true ? nil : key
@@ -248,11 +251,14 @@ class PythonServiceManager: ObservableObject {
             }
             
             isServiceRunning = true
+            lastRequestTime = Date()
+            startInactivityTimer()
             
             // Monitor process termination
             process.terminationHandler = { [weak self] _ in
                 DispatchQueue.main.async {
                     self?.isServiceRunning = false
+                    self?.stopInactivityTimer()
                     self?.cleanup()
                 }
             }
@@ -268,9 +274,29 @@ class PythonServiceManager: ObservableObject {
     func stopService() {
         guard isServiceRunning, let process = process else { return }
         
+        stopInactivityTimer()
         process.terminate()
         process.waitUntilExit()
         cleanup()
+    }
+
+    private func startInactivityTimer() {
+        serviceQueue.async { [weak self] in
+            guard let self = self else { return }
+            if self.inactivityTimer != nil { return }
+            let timer = DispatchSource.makeTimerSource(queue: self.serviceQueue)
+            timer.schedule(deadline: .now() + self.inactivityCheckInterval, repeating: self.inactivityCheckInterval)
+            timer.setEventHandler { [weak self] in
+                self?.suspendServiceIfNeeded()
+            }
+            self.inactivityTimer = timer
+            timer.activate()
+        }
+    }
+
+    private func stopInactivityTimer() {
+        inactivityTimer?.cancel()
+        inactivityTimer = nil
     }
     
     private func cleanup() {
@@ -484,7 +510,7 @@ class PythonServiceManager: ObservableObject {
     func suspendServiceIfNeeded() {
         // Only suspend if no requests have been made recently
         let timeSinceLastRequest = Date().timeIntervalSince(lastRequestTime)
-        if timeSinceLastRequest > 300 { // 5 minutes
+        if timeSinceLastRequest > inactivityThreshold {
             print("🔋 Suspending Python service due to inactivity")
             stopService()
         }
@@ -497,6 +523,7 @@ class PythonServiceManager: ObservableObject {
             try startService()
         }
         lastRequestTime = Date()
+        startInactivityTimer()
     }
 }
 

@@ -1,8 +1,8 @@
 {
   "latest": {
-  "version": "1.1.3",
-    "build": "12",
-    "releaseDate": "2025-09-21",
+    "version": "1.1.8",
+    "build": "17",
+    "releaseDate": "2025-12-07",
     "downloadURL": "https://github.com/ShubhamPP04/Izzy/releases/latest",
     "releaseNotesURL": "https://github.com/ShubhamPP04/Izzy/releases/latest",
     "minimumOSVersion": "14.0",
@@ -19,7 +19,16 @@
   },
   "releaseNotes": [
     {
-  "version": "1.1.3",
+      "version": "1.1.8",
+      "date": "2025-12-07",
+      "changes": [
+        "Faster hotkey toggle by prewarming the floating window",
+        "Lower background CPU for menu bar and mini player when app is hidden",
+        "Battery optimizations for hidden state"
+      ]
+    },
+    {
+      "version": "1.1.3",
       "date": "2025-09-21",
       "changes": [
         "Enhanced mini player with smart resume functionality",

@@ -5,6 +5,28 @@
     <link>https://yourwebsite.com/izzy/appcast.xml</link>
     <description>Most recent changes with links to updates.</description>
     <language>en</language>
+
+    <!-- Version 1.1.8 -->
+    <item>
+      <title>Version 1.1.8</title>
+      <description>
+        <![CDATA[
+          <ul>
+            <li>Faster hotkey toggle with prewarmed floating window</li>
+            <li>Lower background CPU for menu bar and mini player when hidden</li>
+            <li>Battery optimizations while app stays hidden</li>
+          </ul>
+        ]]>
+      </description>
+      <pubDate>Sun, 07 Dec 2025 12:00:00 +0000</pubDate>
+      <sparkle:version>17</sparkle:version>
+      <sparkle:shortVersionString>1.1.8</sparkle:shortVersionString>
+      <enclosure url="https://yourwebsite.com/izzy/Izzy.dmg"
+                 sparkle:version="17"
+                 sparkle:shortVersionString="1.1.8"
+                 length="16839788"
+                 type="application/octet-stream" />
+    </item>
     
     <!-- Version 1.1.3 -->
     <item>

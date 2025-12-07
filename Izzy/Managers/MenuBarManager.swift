@@ -19,6 +19,8 @@ class SimpleMenuBarManager: ObservableObject {
     private var windowManager: WindowManager?
     private var cancellables = Set<AnyCancellable>()
     private var progressTimer: Timer?
+    private let activeProgressInterval: TimeInterval = 0.5
+    private let backgroundProgressInterval: TimeInterval = 1.5
     
     @Published var isEnabled = false {
         didSet {
@@ -46,6 +48,17 @@ class SimpleMenuBarManager: ObservableObject {
         self.searchState = searchState
         self.windowManager = windowManager
         updateMenuBar()
+
+        // Adjust update cadence based on whether the app is active to keep CPU low when hidden
+        NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.updateProgressTimer() }
+            .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.updateProgressTimer() }
+            .store(in: &cancellables)
         
         // Listen for track changes
         searchState.playbackManager.$currentTrack
@@ -87,9 +100,14 @@ class SimpleMenuBarManager: ObservableObject {
         progressTimer?.invalidate()
         
         if playbackState.isPlaying {
-            // 🔋 CPU OPTIMIZATION: Update progress every 500ms (was 100ms) - still smooth, 80% less CPU
-            progressTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            // 🔋 CPU OPTIMIZATION: Slow down when app is hidden to minimize CPU use
+            let interval = NSApp.isActive ? activeProgressInterval : backgroundProgressInterval
+            progressTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
                 self?.updateProgressFromPlaybackManager()
+            }
+            progressTimer?.tolerance = interval * 0.3
+            if let timer = progressTimer {
+                RunLoop.main.add(timer, forMode: .common)
             }
         }
     }

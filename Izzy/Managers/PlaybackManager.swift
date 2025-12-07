@@ -747,6 +747,9 @@ class PlaybackManager: ObservableObject {
         timeObserver = player.addPeriodicTimeObserver(forInterval: interval, queue: .main) { [weak self] time in
             guard let self = self else { return }
             
+            // Skip updates when paused to avoid wasted work
+            guard self.playbackState.isPlaying else { return }
+            
             // Skip time updates if we're currently seeking to prevent interference
             guard !self.isSeeking else { return }
             

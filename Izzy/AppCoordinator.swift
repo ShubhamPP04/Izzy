@@ -123,6 +123,11 @@ class AppCoordinator: ObservableObject {
         // App is now fully initialized and ready to respond to hotkeys
         // The floating panel will be created when the hotkey is pressed
         print("🚀 Izzy app initialized - ready for hotkey (\(hotkeyManager.currentShortcutDescription))")
+
+        // Prewarm the floating panel so the first hotkey press is instant
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
+            self.windowManager.prewarmWindow()
+        }
     }
     
     func handleAppActivation() {
