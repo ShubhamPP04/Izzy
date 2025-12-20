@@ -73,8 +73,14 @@
 
 ### Requirements
 - macOS 14.0 (Sonoma) or later
-- Python 3.13+ (for music service backend)
+- **Python 3.13+** (for music service backend)
 - Internet connection
+
+> [!IMPORTANT]
+> **Python 3.13 or higher is strictly required.** The app will **not work** with earlier Python versions (3.12, 3.11, etc.). Please ensure you have Python 3.13+ installed before running the app:
+> ```bash
+> brew install python@3.13
+> ```
 
 ### Download
 
