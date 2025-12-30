@@ -11,9 +11,15 @@ struct FavoriteItemView: View {
     let favorite: FavoriteSong
     @ObservedObject var searchState: SearchState
     @Binding var editMode: Bool
+    var queueList: [FavoriteSong]? = nil  // Optional queue list for filtered playback
     @State private var showingAddToPlaylist = false
     @StateObject private var playlistManager = PlaylistManager.shared
     @State private var isHovered = false // Add hover state
+    
+    // Use provided queue list or fall back to all favorites
+    private var songsForQueue: [FavoriteSong] {
+        queueList ?? searchState.favorites
+    }
     
     var body: some View {
         HStack(spacing: 8) {
@@ -33,16 +39,20 @@ struct FavoriteItemView: View {
             }
             .frame(width: 40, height: 40)
             .clipShape(RoundedRectangle(cornerRadius: 4))
+            .overlay(alignment: .bottomTrailing) {
+                if let source = favorite.musicSource {
+                    Circle()
+                        .fill(source == "jiosaavn" ? Color.green : Color.red)
+                        .frame(width: 8, height: 8)
+                        .offset(x: 2, y: 2)
+                }
+            }
             
             // Content
             VStack(alignment: .leading, spacing: 2) {
                 Text(favorite.title)
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(
-                        favorite.musicSource == "jiosaavn" ? 
-                        Color.green : 
-                        Color.primary
-                    )
+                    .foregroundColor(.primary)
                     .lineLimit(1)
                 
                 if let artist = favorite.artist, !artist.isEmpty {
@@ -171,30 +181,32 @@ struct FavoriteItemView: View {
                 videoId: favorite.videoId,
                 browseId: nil,
                 year: nil,
-                playCount: nil
+                playCount: nil,
+                musicSource: favorite.musicSource
             )
             
             // Play the song
             let track = Track(from: searchResult)
             
-            // Create queue from all favorites
-            let tracks = searchState.favorites.map { favorite in
+            // Create queue from filtered favorites (uses songsForQueue)
+            let tracks = songsForQueue.map { song in
                 SearchResult(
-                    id: favorite.id,
+                    id: song.id,
                     type: .song,
-                    title: favorite.title,
-                    artist: favorite.artist,
-                    thumbnailURL: favorite.thumbnailURL,
-                    duration: favorite.duration,
+                    title: song.title,
+                    artist: song.artist,
+                    thumbnailURL: song.thumbnailURL,
+                    duration: song.duration,
                     explicit: false,
-                    videoId: favorite.videoId,
+                    videoId: song.videoId,
                     browseId: nil,
                     year: nil,
-                    playCount: nil
+                    playCount: nil,
+                    musicSource: song.musicSource
                 )
             }.map { Track(from: $0) }
             
-            // Play with the full queue - the QueueManager will handle shuffle logic
+            // Play with the filtered queue - the QueueManager will handle shuffle logic
             Task {
                 await searchState.playbackManager.play(track: track, fromQueue: tracks)
             }
@@ -206,6 +218,19 @@ struct FavoritesView: View {
     @ObservedObject var searchState: SearchState
     @State private var editMode = false
     @Binding var scrollOffset: CGFloat
+    @State private var selectedFilter: SourceFilter = .all
+    
+    // Filtered songs based on selected source
+    private var filteredFavorites: [FavoriteSong] {
+        switch selectedFilter {
+        case .all:
+            return searchState.favorites
+        case .youtubeMusic:
+            return searchState.favorites.filter { $0.musicSource == "youtube_music" }
+        case .jioSaavn:
+            return searchState.favorites.filter { $0.musicSource == "jiosaavn" }
+        }
+    }
     
     var body: some View {
         VStack(spacing: 0) {
@@ -253,21 +278,34 @@ struct FavoritesView: View {
             .padding(.top, 20)
             .padding(.bottom, 12)
             
+            // Source Filter Tabs
+            HStack {
+                SourceFilterPicker(selectedFilter: $selectedFilter)
+                Spacer()
+                
+                // Show count for selected filter
+                Text("\(filteredFavorites.count) songs")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 12)
+            
             Divider()
             
             // Favorites grid with 2 songs per row
-            if searchState.favorites.isEmpty {
+            if filteredFavorites.isEmpty {
                 VStack(spacing: 16) {
-                    Image(systemName: "heart")
+                    Image(systemName: selectedFilter == .all ? "heart" : selectedFilter.icon)
                         .font(.system(size: 40))
                         .foregroundColor(.secondary)
                     
                     VStack(spacing: 8) {
-                        Text("No favorites yet")
+                        Text(selectedFilter == .all ? "No favorites yet" : "No \(selectedFilter.displayName) favorites")
                             .font(.headline)
                             .fontWeight(.semibold)
                         
-                        Text("Start adding songs to your favorites to see them here")
+                        Text(selectedFilter == .all ? "Start adding songs to your favorites to see them here" : "Add songs from \(selectedFilter.displayName) to your favorites")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                             .multilineTextAlignment(.center)
@@ -279,7 +317,7 @@ struct FavoritesView: View {
                 if editMode {
                     // Edit mode with drag and drop reordering using List
                     List {
-                        ForEach($searchState.favorites, id: \.id) { $favorite in
+                        ForEach(filteredFavorites, id: \.id) { favorite in
                             HStack {
                                 // Drag handle in edit mode
                                 Image(systemName: "line.horizontal.3")
@@ -291,17 +329,13 @@ struct FavoritesView: View {
                                 FavoriteItemView(
                                     favorite: favorite,
                                     searchState: searchState,
-                                    editMode: $editMode
+                                    editMode: $editMode,
+                                    queueList: filteredFavorites
                                 )
                                 
                                 Spacer()
                             }
                             .padding(.vertical, 4)
-                        }
-                        .onMove { indices, newOffset in
-                            // Update the order in the search state
-                            searchState.favorites.move(fromOffsets: indices, toOffset: newOffset)
-                            searchState.updateFavoritesOrder(searchState.favorites)
                         }
                     }
                     .listStyle(PlainListStyle())
@@ -314,11 +348,12 @@ struct FavoritesView: View {
                             GridItem(.flexible(), spacing: 12),
                             GridItem(.flexible(), spacing: 12)
                         ], spacing: 12) {
-                            ForEach(searchState.favorites, id: \.id) { favorite in
+                            ForEach(filteredFavorites, id: \.id) { favorite in
                                 FavoriteItemView(
                                     favorite: favorite,
                                     searchState: searchState,
-                                    editMode: $editMode
+                                    editMode: $editMode,
+                                    queueList: filteredFavorites
                                 )
                             }
                         }

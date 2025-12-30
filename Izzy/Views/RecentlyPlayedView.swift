@@ -7,13 +7,86 @@
 
 import SwiftUI
 
+// MARK: - Source Filter Enum
+enum SourceFilter: String, CaseIterable {
+    case all = "All"
+    case youtubeMusic = "youtube_music"
+    case jioSaavn = "jiosaavn"
+    
+    var displayName: String {
+        switch self {
+        case .all: return "All"
+        case .youtubeMusic: return "YouTube Music"
+        case .jioSaavn: return "JioSaavn"
+        }
+    }
+    
+    var icon: String {
+        switch self {
+        case .all: return "music.note.list"
+        case .youtubeMusic: return "play.circle.fill"
+        case .jioSaavn: return "music.note"
+        }
+    }
+    
+    var color: Color {
+        switch self {
+        case .all: return .blue
+        case .youtubeMusic: return .red
+        case .jioSaavn: return .green
+        }
+    }
+}
+
+// MARK: - Source Filter Picker View
+struct SourceFilterPicker: View {
+    @Binding var selectedFilter: SourceFilter
+    
+    var body: some View {
+        HStack(spacing: 8) {
+            ForEach(SourceFilter.allCases, id: \.self) { filter in
+                Button(action: {
+                    withAnimation(.easeInOut(duration: 0.2)) {
+                        selectedFilter = filter
+                    }
+                }) {
+                    HStack(spacing: 5) {
+                        Image(systemName: filter.icon)
+                            .font(.system(size: 11))
+                        Text(filter.displayName)
+                            .font(.system(size: 12, weight: .medium))
+                    }
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                    .background(
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(selectedFilter == filter ? filter.color.opacity(0.2) : Color.primary.opacity(0.05))
+                    )
+                    .foregroundColor(selectedFilter == filter ? filter.color : .secondary)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 16)
+                            .stroke(selectedFilter == filter ? filter.color.opacity(0.5) : Color.clear, lineWidth: 1)
+                    )
+                }
+                .buttonStyle(PlainButtonStyle())
+            }
+        }
+    }
+}
+
 struct RecentlyPlayedItemView: View {
     let recentlyPlayed: FavoriteSong
     @ObservedObject var searchState: SearchState
     @Binding var editMode: Bool
+    var queueList: [FavoriteSong]? = nil  // Optional queue list for filtered playback
     @State private var showingAddToPlaylist = false
     @StateObject private var playlistManager = PlaylistManager.shared
     @State private var isHovered = false // Add hover state
+    
+    // Use provided queue list or fall back to all recently played
+    private var songsForQueue: [FavoriteSong] {
+        queueList ?? searchState.recentlyPlayed
+    }
     
     var body: some View {
         HStack(spacing: 8) {
@@ -33,16 +106,20 @@ struct RecentlyPlayedItemView: View {
             }
             .frame(width: 40, height: 40)
             .clipShape(RoundedRectangle(cornerRadius: 4))
+            .overlay(alignment: .bottomTrailing) {
+                if let source = recentlyPlayed.musicSource {
+                    Circle()
+                        .fill(source == "jiosaavn" ? Color.green : Color.red)
+                        .frame(width: 8, height: 8)
+                        .offset(x: 2, y: 2)
+                }
+            }
             
             // Content
             VStack(alignment: .leading, spacing: 2) {
                 Text(recentlyPlayed.title)
                     .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(
-                        recentlyPlayed.musicSource == "jiosaavn" ? 
-                        Color.green : 
-                        Color.primary
-                    )
+                    .foregroundColor(.primary)
                     .lineLimit(1)
                 
                 if let artist = recentlyPlayed.artist, !artist.isEmpty {
@@ -157,30 +234,32 @@ struct RecentlyPlayedItemView: View {
                 videoId: recentlyPlayed.videoId,
                 browseId: nil,
                 year: nil,
-                playCount: nil
+                playCount: nil,
+                musicSource: recentlyPlayed.musicSource
             )
             
             // Play the song
             let track = Track(from: searchResult)
             
-            // Create queue from all recently played songs
-            let tracks = searchState.recentlyPlayed.map { recentlyPlayed in
+            // Create queue from filtered recently played songs (uses songsForQueue)
+            let tracks = songsForQueue.map { song in
                 SearchResult(
-                    id: recentlyPlayed.id,
+                    id: song.id,
                     type: .song,
-                    title: recentlyPlayed.title,
-                    artist: recentlyPlayed.artist,
-                    thumbnailURL: recentlyPlayed.thumbnailURL,
-                    duration: recentlyPlayed.duration,
+                    title: song.title,
+                    artist: song.artist,
+                    thumbnailURL: song.thumbnailURL,
+                    duration: song.duration,
                     explicit: false,
-                    videoId: recentlyPlayed.videoId,
+                    videoId: song.videoId,
                     browseId: nil,
                     year: nil,
-                    playCount: nil
+                    playCount: nil,
+                    musicSource: song.musicSource
                 )
             }.map { Track(from: $0) }
             
-            // Play with the full queue - the QueueManager will handle shuffle logic
+            // Play with the filtered queue - the QueueManager will handle shuffle logic
             Task {
                 await searchState.playbackManager.play(track: track, fromQueue: tracks)
             }
@@ -192,6 +271,19 @@ struct RecentlyPlayedView: View {
     @ObservedObject var searchState: SearchState
     @State private var editMode = false
     @Binding var scrollOffset: CGFloat
+    @State private var selectedFilter: SourceFilter = .all
+    
+    // Filtered songs based on selected source
+    private var filteredRecentlyPlayed: [FavoriteSong] {
+        switch selectedFilter {
+        case .all:
+            return searchState.recentlyPlayed
+        case .youtubeMusic:
+            return searchState.recentlyPlayed.filter { $0.musicSource == "youtube_music" }
+        case .jioSaavn:
+            return searchState.recentlyPlayed.filter { $0.musicSource == "jiosaavn" }
+        }
+    }
     
     var body: some View {
         VStack(spacing: 0) {
@@ -263,21 +355,34 @@ struct RecentlyPlayedView: View {
             .padding(.top, 20)
             .padding(.bottom, 12)
             
+            // Source Filter Tabs
+            HStack {
+                SourceFilterPicker(selectedFilter: $selectedFilter)
+                Spacer()
+                
+                // Show count for selected filter
+                Text("\(filteredRecentlyPlayed.count) songs")
+                    .font(.system(size: 12))
+                    .foregroundColor(.secondary)
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 12)
+            
             Divider()
             
             // Recently played grid with 2 songs per row
-            if searchState.recentlyPlayed.isEmpty {
+            if filteredRecentlyPlayed.isEmpty {
                 VStack(spacing: 16) {
-                    Image(systemName: "clock")
+                    Image(systemName: selectedFilter == .all ? "clock" : selectedFilter.icon)
                         .font(.system(size: 40))
                         .foregroundColor(.secondary)
                     
                     VStack(spacing: 8) {
-                        Text("No recently played songs yet")
+                        Text(selectedFilter == .all ? "No recently played songs yet" : "No \(selectedFilter.displayName) songs")
                             .font(.headline)
                             .fontWeight(.semibold)
                         
-                        Text("Play some songs to see them appear here")
+                        Text(selectedFilter == .all ? "Play some songs to see them appear here" : "Play some songs from \(selectedFilter.displayName) to see them here")
                             .font(.subheadline)
                             .foregroundColor(.secondary)
                             .multilineTextAlignment(.center)
@@ -289,7 +394,7 @@ struct RecentlyPlayedView: View {
                 if editMode {
                     // Edit mode with drag and drop reordering using List
                     List {
-                        ForEach($searchState.recentlyPlayed, id: \.id) { $recentlyPlayed in
+                        ForEach(filteredRecentlyPlayed, id: \.id) { recentlyPlayed in
                             HStack {
                                 // Drag handle in edit mode
                                 Image(systemName: "line.horizontal.3")
@@ -301,17 +406,13 @@ struct RecentlyPlayedView: View {
                                 RecentlyPlayedItemView(
                                     recentlyPlayed: recentlyPlayed,
                                     searchState: searchState,
-                                    editMode: $editMode
+                                    editMode: $editMode,
+                                    queueList: filteredRecentlyPlayed
                                 )
                                 
                                 Spacer()
                             }
                             .padding(.vertical, 4)
-                        }
-                        .onMove { indices, newOffset in
-                            // Update the order in the search state
-                            searchState.recentlyPlayed.move(fromOffsets: indices, toOffset: newOffset)
-                            searchState.updateRecentlyPlayedOrder(searchState.recentlyPlayed)
                         }
                     }
                     .listStyle(PlainListStyle())
@@ -324,11 +425,12 @@ struct RecentlyPlayedView: View {
                             GridItem(.flexible(), spacing: 12),
                             GridItem(.flexible(), spacing: 12)
                         ], spacing: 12) {
-                            ForEach(searchState.recentlyPlayed, id: \.id) { recentlyPlayed in
+                            ForEach(filteredRecentlyPlayed, id: \.id) { recentlyPlayed in
                                 RecentlyPlayedItemView(
                                     recentlyPlayed: recentlyPlayed,
                                     searchState: searchState,
-                                    editMode: $editMode
+                                    editMode: $editMode,
+                                    queueList: filteredRecentlyPlayed
                                 )
                             }
                         }
