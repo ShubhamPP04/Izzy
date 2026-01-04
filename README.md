@@ -9,7 +9,7 @@
 [![macOS](https://img.shields.io/badge/macOS-14.0+-blue.svg)](https://www.apple.com/macos/)
 [![Swift](https://img.shields.io/badge/Swift-5.9-orange.svg)](https://swift.org)
 [![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Version](https://img.shields.io/badge/version-1.1.6-brightgreen.svg)](https://github.com/ShubhamPP04/Izzy/releases)
+[![Version](https://img.shields.io/badge/version-1.2.0-brightgreen.svg)](https://github.com/ShubhamPP04/Izzy/releases)
 
 </div>
 
@@ -20,6 +20,8 @@
 ### 🎸 Triple Music Service Support
 - **YouTube Music** - Stream millions of songs from YouTube Music
 - **Tidal** - Hi-Res lossless audio (up to 24-bit/192kHz FLAC) via [hifi-api](https://github.com/uimaxbai/hifi-api)
+  - 🏷️ **Quality Badges** - Visual Hi-Res, Lossless, and HQ indicators on every song
+  - ⚡ **Optimized Performance** - Smart caching and connection pooling for smooth playback
 - **JioSaavn** - Access India's largest music streaming platform
 - Seamless switching between services
 
@@ -33,6 +35,7 @@
 - **Playlist Support** - Create and manage custom playlists
 - **Recently Played** - Track your music history
 - **Favorites** - Save your favorite tracks for easy access
+- **🆕 Song Downloads** - Download songs in Hi-Res quality with embedded album art and metadata
 
 ### 🎨 Modern Design
 - **Glassy UI** - Beautiful glassmorphism design with blur effects
@@ -67,6 +70,14 @@
 - **Keyboard Shortcuts** - Full keyboard navigation
 - **Background Playback** - Continues playing in background
 - **Auto-Updates** - Built-in update mechanism
+
+### 💾 Download Feature (Tidal)
+- **Hi-Res Priority** - Downloads prefer Hi-Res Lossless > Hi-Res > Lossless > High quality
+- **Album Art Embedding** - FFmpeg automatically embeds cover art into downloaded files
+- **Full Metadata** - Title, artist, album embedded in each track
+- **Download Location** - Songs saved to `~/Downloads/Izzy Music/`
+- **macOS Notifications** - Get notified when downloads complete
+- **Available Everywhere** - Download button on search results, favorites, queue, playlists, and more
 
 ---
 
@@ -208,6 +219,7 @@ Izzy/
 │   ├── Services/                 # External integrations
 │   │   ├── PythonServiceManager.swift
 │   │   ├── GeminiService.swift
+│   │   ├── DownloadManager.swift    # Song download service
 │   │   └── UpdateManager.swift
 │   └── ytmusic_service.py       # Python backend
 ├── build/                        # Build outputs
@@ -232,6 +244,7 @@ Izzy/
 - **yt-dlp** - Audio stream extraction
 - **requests** - HTTP client for JioSaavn & Tidal
 - **aiohttp** - Async HTTP (optional)
+- **FFmpeg** - Audio processing & metadata embedding (optional, for downloads)
 
 ### External Services
 - **YouTube Music** - Music catalog and streaming
@@ -330,8 +343,10 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 - [ytmusicapi](https://github.com/sigma67/ytmusicapi) - YouTube Music API
 - [yt-dlp](https://github.com/yt-dlp/yt-dlp) - YouTube downloader
+- [hifi-api](https://github.com/uimaxbai/hifi-api) - Tidal Hi-Res streaming API
 - [saavn.dev](https://saavn.dev) - JioSaavn API
 - [Google Gemini](https://ai.google.dev/) - AI-powered search
+- [FFmpeg](https://ffmpeg.org/) - Audio processing & metadata
 
 ---
 
