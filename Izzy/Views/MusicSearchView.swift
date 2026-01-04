@@ -150,10 +150,15 @@ struct MusicSearchView: View {
             }
         }
         
-        // Quit Button - Top Right Corner
+        // Music Provider Switch Button - Top Left Corner & Quit Button - Top Right Corner
         VStack {
             HStack {
+                // Music Provider Switch Button
+                MusicProviderSwitchButton(searchState: searchState)
+                
                 Spacer()
+                
+                // Quit Button
                 Button(action: {
                     NSApplication.shared.terminate(nil)
                 }) {
@@ -170,7 +175,7 @@ struct MusicSearchView: View {
                 .help("Quit Izzy")
             }
             .padding(.top, 8)
-            .padding(.trailing, 8)
+            .padding(.horizontal, 8)
             Spacer()
         }
     }
@@ -517,6 +522,114 @@ struct AnimatedTabButton: View {
             }
         }
         .animation(.easeInOut(duration: 0.2), value: isSelected)
+    }
+}
+
+
+// MARK: - Music Provider Switch Button
+struct MusicProviderSwitchButton: View {
+    @ObservedObject var searchState: SearchState
+    @AppStorage("musicSource") private var musicSource = MusicSource.youtubeMusic.rawValue
+    @AppStorage("providerSwitchMode") private var providerSwitchMode = "dropdown" // "dropdown" or "click"
+    @State private var isHovered = false
+    
+    private var currentSource: MusicSource {
+        MusicSource(rawValue: musicSource) ?? .youtubeMusic
+    }
+    
+    private var buttonContent: some View {
+        HStack(spacing: 4) {
+            Image(systemName: currentSource.icon)
+                .font(.system(size: 12, weight: .medium))
+                .foregroundColor(currentSource.color)
+            
+            if isHovered {
+                Text(currentSource.displayName)
+                    .font(.system(size: 11, weight: .medium))
+                    .foregroundColor(currentSource.color)
+                    .transition(.asymmetric(
+                        insertion: .opacity.combined(with: .move(edge: .leading)),
+                        removal: .opacity.combined(with: .move(edge: .leading))
+                    ))
+            }
+            
+            // Show dropdown indicator for menu mode
+            if providerSwitchMode == "dropdown" && isHovered {
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 8, weight: .bold))
+                    .foregroundColor(currentSource.color.opacity(0.7))
+                    .transition(.opacity)
+            }
+        }
+        .padding(.horizontal, isHovered ? 10 : 8)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: 8)
+                .fill(currentSource.color.opacity(0.15))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 8)
+                        .stroke(currentSource.color.opacity(0.3), lineWidth: 1)
+                )
+        )
+    }
+    
+    var body: some View {
+        Group {
+            if providerSwitchMode == "dropdown" {
+                // Dropdown Menu Mode - Using Picker with MenuPickerStyle to match settings UI
+                Menu {
+                    ForEach(MusicSource.allCases, id: \.self) { source in
+                        Button(action: {
+                            switchToProvider(source)
+                        }) {
+                            Label {
+                                Text(source.displayName)
+                            } icon: {
+                                Image(systemName: source.icon)
+                                    .foregroundColor(source.color)
+                            }
+                        }
+                    }
+                } label: {
+                    buttonContent
+                }
+                .menuStyle(.borderlessButton)
+                .menuIndicator(.hidden)
+            } else {
+                // Click to Cycle Mode
+                Button(action: {
+                    cycleToNextProvider()
+                }) {
+                    buttonContent
+                }
+                .buttonStyle(PlainButtonStyle())
+            }
+        }
+        .help(providerSwitchMode == "dropdown" ? "Select Music Provider" : "Click to Switch Provider: \(currentSource.displayName)")
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.2)) {
+                isHovered = hovering
+            }
+        }
+        .animation(.easeInOut(duration: 0.2), value: musicSource)
+    }
+    
+    private func switchToProvider(_ source: MusicSource) {
+        guard source != currentSource else { return }
+        musicSource = source.rawValue
+        UserDefaults.standard.set(source.rawValue, forKey: "musicSource")
+        searchState.musicSearchManager.clearCacheForMusicSourceChange()
+        searchState.clearSearch()
+        print("🔄 Music source switched to: \(source.displayName)")
+    }
+    
+    private func cycleToNextProvider() {
+        let allSources = MusicSource.allCases
+        if let currentIndex = allSources.firstIndex(of: currentSource) {
+            let nextIndex = (currentIndex + 1) % allSources.count
+            let newSource = allSources[nextIndex]
+            switchToProvider(newSource)
+        }
     }
 }
 

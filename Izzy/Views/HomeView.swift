@@ -892,9 +892,132 @@ struct ForYouSongCard: View {
     @State private var isHovered = false
 
     var body: some View {
-        Button(action: {
-            // Play the song
-            let searchResult = SearchResult(
+        VStack(alignment: .leading, spacing: 8) {
+            // Thumbnail
+            ZStack(alignment: .bottomTrailing) {
+                AsyncImage(url: URL(string: song.thumbnailURL ?? "")) { image in
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } placeholder: {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(.ultraThinMaterial)
+                        .overlay(
+                            Image(systemName: "music.note")
+                                .foregroundColor(.secondary)
+                                .font(.title3)
+                        )
+                }
+                .frame(width: 120, height: 120)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+
+                // Play icon overlay on hover
+                if isHovered {
+                    VStack {
+                        HStack {
+                            Spacer()
+                            // Download button
+                            Button(action: {
+                                Task {
+                                    await DownloadManager.shared.downloadSong(song)
+                                }
+                            }) {
+                                ZStack {
+                                    Circle()
+                                        .fill(Color.black.opacity(0.6))
+                                        .frame(width: 28, height: 28)
+                                    Image(systemName: "arrow.down.circle.fill")
+                                        .font(.system(size: 14))
+                                        .foregroundColor(.white)
+                                }
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                            .help("Download")
+                        }
+                        .padding(6)
+                        
+                        Spacer()
+                        
+                        // Play button
+                        Button(action: {
+                            playSong()
+                        }) {
+                            ZStack {
+                                Circle()
+                                    .fill(Color.black.opacity(0.7))
+                                    .frame(width: 36, height: 36)
+
+                                Image(systemName: "play.fill")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundColor(.white)
+                            }
+                        }
+                        .buttonStyle(PlainButtonStyle())
+                        .padding(.bottom, 6)
+                    }
+                    .transition(.scale.combined(with: .opacity))
+                }
+            }
+            .shadow(color: Color.black.opacity(0.2), radius: isHovered ? 8 : 4, x: 0, y: 2)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                playSong()
+            }
+
+            // Song info
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 4) {
+                    Text(song.title)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.primary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
+                    
+                    // Tidal quality badge
+                    if song.musicSource == "tidal", let quality = song.audioQuality {
+                        TidalQualityBadge(quality: quality)
+                    }
+                }
+
+                if let artist = song.artist {
+                    Text(artist)
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
+            }
+            .frame(width: 120, alignment: .leading)
+        }
+        .scaleEffect(isHovered ? 1.02 : 1.0)
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isHovered)
+        .contentShape(Rectangle())
+        .onHover { hovering in
+            withAnimation(.easeInOut(duration: 0.2)) {
+                isHovered = hovering
+            }
+        }
+    }
+    
+    private func playSong() {
+        let searchResult = SearchResult(
+            id: song.id,
+            type: .song,
+            title: song.title,
+            artist: song.artist,
+            thumbnailURL: song.thumbnailURL,
+            duration: song.duration,
+            explicit: false,
+            videoId: song.videoId,
+            browseId: nil,
+            year: nil,
+            playCount: nil
+        )
+
+        let track = Track(from: searchResult)
+
+        // Create queue from "For You" songs (same source as current song)
+        let tracks = forYouSongs.map { song in
+            SearchResult(
                 id: song.id,
                 type: .song,
                 title: song.title,
@@ -907,124 +1030,10 @@ struct ForYouSongCard: View {
                 year: nil,
                 playCount: nil
             )
+        }.map { Track(from: $0) }
 
-            let track = Track(from: searchResult)
-
-            // Create queue from "For You" songs (same source as current song)
-            let tracks = forYouSongs.map { song in
-                SearchResult(
-                    id: song.id,
-                    type: .song,
-                    title: song.title,
-                    artist: song.artist,
-                    thumbnailURL: song.thumbnailURL,
-                    duration: song.duration,
-                    explicit: false,
-                    videoId: song.videoId,
-                    browseId: nil,
-                    year: nil,
-                    playCount: nil
-                )
-            }.map { Track(from: $0) }
-
-            Task {
-                await searchState.playbackManager.play(track: track, fromQueue: tracks)
-            }
-        }) {
-            VStack(alignment: .leading, spacing: 8) {
-                // Thumbnail
-                ZStack(alignment: .bottomTrailing) {
-                    AsyncImage(url: URL(string: song.thumbnailURL ?? "")) { image in
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                    } placeholder: {
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(.ultraThinMaterial)
-                            .overlay(
-                                Image(systemName: "music.note")
-                                    .foregroundColor(.secondary)
-                                    .font(.title3)
-                            )
-                    }
-                    .frame(width: 120, height: 120)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-
-                    // Play icon overlay on hover
-                    if isHovered {
-                        VStack {
-                            HStack {
-                                Spacer()
-                                // Download button
-                                Button(action: {
-                                    Task {
-                                        await DownloadManager.shared.downloadSong(song)
-                                    }
-                                }) {
-                                    ZStack {
-                                        Circle()
-                                            .fill(Color.black.opacity(0.6))
-                                            .frame(width: 28, height: 28)
-                                        Image(systemName: "arrow.down.circle.fill")
-                                            .font(.system(size: 14))
-                                            .foregroundColor(.white)
-                                    }
-                                }
-                                .buttonStyle(PlainButtonStyle())
-                                .help("Download")
-                            }
-                            .padding(6)
-                            
-                            Spacer()
-                            
-                            ZStack {
-                                Circle()
-                                    .fill(Color.black.opacity(0.7))
-                                    .frame(width: 36, height: 36)
-
-                                Image(systemName: "play.fill")
-                                    .font(.system(size: 14, weight: .semibold))
-                                    .foregroundColor(.white)
-                            }
-                            .padding(.bottom, 6)
-                        }
-                        .transition(.scale.combined(with: .opacity))
-                    }
-                }
-                .shadow(color: Color.black.opacity(0.2), radius: isHovered ? 8 : 4, x: 0, y: 2)
-
-                // Song info
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 4) {
-                        Text(song.title)
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(.primary)
-                            .lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
-                        
-                        // Tidal quality badge
-                        if song.musicSource == "tidal", let quality = song.audioQuality {
-                            TidalQualityBadge(quality: quality)
-                        }
-                    }
-
-                    if let artist = song.artist {
-                        Text(artist)
-                            .font(.system(size: 11))
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
-                    }
-                }
-                .frame(width: 120, alignment: .leading)
-            }
-            .scaleEffect(isHovered ? 1.02 : 1.0)
-            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isHovered)
-        }
-        .buttonStyle(PlainButtonStyle())
-        .onHover { hovering in
-            withAnimation(.easeInOut(duration: 0.2)) {
-                isHovered = hovering
-            }
+        Task {
+            await searchState.playbackManager.play(track: track, fromQueue: tracks)
         }
     }
 }
@@ -1269,55 +1278,56 @@ struct ExploreSongCard: View {
     @State private var isHovered = false
     
     var body: some View {
-        Button(action: {
-            playItem()
-        }) {
-            VStack(alignment: .leading, spacing: 8) {
-                // Thumbnail
-                ZStack(alignment: .bottomTrailing) {
-                    AsyncImage(url: URL(string: item.thumbnailURL ?? "")) { image in
-                        image
-                            .resizable()
-                            .aspectRatio(contentMode: .fill)
-                    } placeholder: {
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(.ultraThinMaterial)
-                            .overlay(
-                                Image(systemName: iconForType)
-                                    .foregroundColor(.secondary)
-                                    .font(.title3)
-                            )
-                    }
-                    .frame(width: 120, height: 120)
-                    .clipShape(RoundedRectangle(cornerRadius: 8))
-                    
-                    // Play icon overlay on hover
-                    if isHovered {
-                        VStack {
-                            HStack {
-                                Spacer()
-                                // Download button
-                                Button(action: {
-                                    Task {
-                                        await DownloadManager.shared.downloadSong(item)
-                                    }
-                                }) {
-                                    ZStack {
-                                        Circle()
-                                            .fill(Color.black.opacity(0.6))
-                                            .frame(width: 28, height: 28)
-                                        Image(systemName: "arrow.down.circle.fill")
-                                            .font(.system(size: 14))
-                                            .foregroundColor(.white)
-                                    }
-                                }
-                                .buttonStyle(PlainButtonStyle())
-                                .help("Download")
-                            }
-                            .padding(6)
-                            
+        VStack(alignment: .leading, spacing: 8) {
+            // Thumbnail
+            ZStack(alignment: .bottomTrailing) {
+                AsyncImage(url: URL(string: item.thumbnailURL ?? "")) { image in
+                    image
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } placeholder: {
+                    RoundedRectangle(cornerRadius: 8)
+                        .fill(.ultraThinMaterial)
+                        .overlay(
+                            Image(systemName: iconForType)
+                                .foregroundColor(.secondary)
+                                .font(.title3)
+                        )
+                }
+                .frame(width: 120, height: 120)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+                
+                // Play icon overlay on hover
+                if isHovered {
+                    VStack {
+                        HStack {
                             Spacer()
-                            
+                            // Download button
+                            Button(action: {
+                                Task {
+                                    await DownloadManager.shared.downloadSong(item)
+                                }
+                            }) {
+                                ZStack {
+                                    Circle()
+                                        .fill(Color.black.opacity(0.6))
+                                        .frame(width: 28, height: 28)
+                                    Image(systemName: "arrow.down.circle.fill")
+                                        .font(.system(size: 14))
+                                        .foregroundColor(.white)
+                                }
+                            }
+                            .buttonStyle(PlainButtonStyle())
+                            .help("Download")
+                        }
+                        .padding(6)
+                        
+                        Spacer()
+                        
+                        // Play button
+                        Button(action: {
+                            playItem()
+                        }) {
                             ZStack {
                                 Circle()
                                     .fill(Color.black.opacity(0.7))
@@ -1327,52 +1337,57 @@ struct ExploreSongCard: View {
                                     .font(.system(size: 14, weight: .semibold))
                                     .foregroundColor(.white)
                             }
-                            .padding(.bottom, 6)
                         }
-                        .transition(.scale.combined(with: .opacity))
+                        .buttonStyle(PlainButtonStyle())
+                        .padding(.bottom, 6)
                     }
-                    
-                    // Duration badge for songs
-                    if item.type == .song, let duration = item.duration {
-                        Text(formatDuration(duration))
-                            .font(.system(size: 10, weight: .medium))
-                            .foregroundColor(.white)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 2)
-                            .background(Capsule().fill(Color.black.opacity(0.7)))
-                            .padding(6)
-                    }
+                    .transition(.scale.combined(with: .opacity))
                 }
-                .shadow(color: Color.black.opacity(0.2), radius: isHovered ? 8 : 4, x: 0, y: 2)
                 
-                // Info
-                VStack(alignment: .leading, spacing: 3) {
-                    HStack(spacing: 4) {
-                        Text(item.title)
-                            .font(.system(size: 12, weight: .medium))
-                            .foregroundColor(.primary)
-                            .lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
-                        
-                        // Tidal quality badge
-                        if item.musicSource == "tidal", let quality = item.audioQuality {
-                            TidalQualityBadge(quality: quality)
-                        }
-                    }
+                // Duration badge for songs
+                if item.type == .song, let duration = item.duration {
+                    Text(formatDuration(duration))
+                        .font(.system(size: 10, weight: .medium))
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 6)
+                        .padding(.vertical, 2)
+                        .background(Capsule().fill(Color.black.opacity(0.7)))
+                        .padding(6)
+                }
+            }
+            .shadow(color: Color.black.opacity(0.2), radius: isHovered ? 8 : 4, x: 0, y: 2)
+            .contentShape(Rectangle())
+            .onTapGesture {
+                playItem()
+            }
+            
+            // Info
+            VStack(alignment: .leading, spacing: 3) {
+                HStack(spacing: 4) {
+                    Text(item.title)
+                        .font(.system(size: 12, weight: .medium))
+                        .foregroundColor(.primary)
+                        .lineLimit(2)
+                        .fixedSize(horizontal: false, vertical: true)
                     
-                    if let artist = item.artist {
-                        Text(artist)
-                            .font(.system(size: 11))
-                            .foregroundColor(.secondary)
-                            .lineLimit(1)
+                    // Tidal quality badge
+                    if item.musicSource == "tidal", let quality = item.audioQuality {
+                        TidalQualityBadge(quality: quality)
                     }
                 }
-                .frame(width: 120, alignment: .leading)
+                
+                if let artist = item.artist {
+                    Text(artist)
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                        .lineLimit(1)
+                }
             }
-            .scaleEffect(isHovered ? 1.02 : 1.0)
-            .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isHovered)
+            .frame(width: 120, alignment: .leading)
         }
-        .buttonStyle(PlainButtonStyle())
+        .scaleEffect(isHovered ? 1.02 : 1.0)
+        .animation(.spring(response: 0.3, dampingFraction: 0.7), value: isHovered)
+        .contentShape(Rectangle())
         .onHover { hovering in
             withAnimation(.easeInOut(duration: 0.2)) {
                 isHovered = hovering

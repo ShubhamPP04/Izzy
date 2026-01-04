@@ -403,6 +403,43 @@ struct SettingsView: View {
                         .foregroundColor(.secondary)
                 }
             }
+            
+            Divider()
+                .padding(.vertical, 4)
+            
+            // Provider Switch Button Mode Setting
+            HStack {
+                Image(systemName: "hand.tap")
+                    .foregroundColor(.blue)
+                    .font(.system(size: 14, weight: .medium))
+                
+                Text("Quick Switch Mode")
+                    .font(.system(size: 14, weight: .medium))
+                
+                Spacer()
+            }
+            
+            Text("Choose how the provider switch button in the top-left corner works")
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
+            
+            Picker("Switch Mode", selection: Binding(
+                get: { UserDefaults.standard.string(forKey: "providerSwitchMode") ?? "dropdown" },
+                set: { UserDefaults.standard.set($0, forKey: "providerSwitchMode") }
+            )) {
+                Text("Dropdown Menu")
+                    .tag("dropdown")
+                
+                Text("Click to Cycle")
+                    .tag("click")
+            }
+            .pickerStyle(SegmentedPickerStyle())
+            
+            Text(UserDefaults.standard.string(forKey: "providerSwitchMode") == "click" 
+                ? "Click the button to cycle through providers one by one" 
+                : "Click to open a menu and select any provider directly")
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
         }
     }
 
