@@ -262,8 +262,12 @@ struct HomeView: View {
 
     // Get source display name
     private var currentSourceName: String {
-        let currentSource = UserDefaults.standard.string(forKey: "musicSource") ?? "youtube_music"
-        return currentSource == "youtube_music" ? "YouTube Music" : "JioSaavn"
+        switch musicSource {
+        case "youtube_music": return "YouTube Music"
+        case "jiosaavn": return "JioSaavn"
+        case "tidal": return "Tidal"
+        default: return "YouTube Music"
+        }
     }
     
     // MARK: - Explore Data Loading
@@ -948,14 +952,41 @@ struct ForYouSongCard: View {
 
                     // Play icon overlay on hover
                     if isHovered {
-                        ZStack {
-                            Circle()
-                                .fill(Color.black.opacity(0.7))
-                                .frame(width: 36, height: 36)
+                        VStack {
+                            HStack {
+                                Spacer()
+                                // Download button
+                                Button(action: {
+                                    Task {
+                                        await DownloadManager.shared.downloadSong(song)
+                                    }
+                                }) {
+                                    ZStack {
+                                        Circle()
+                                            .fill(Color.black.opacity(0.6))
+                                            .frame(width: 28, height: 28)
+                                        Image(systemName: "arrow.down.circle.fill")
+                                            .font(.system(size: 14))
+                                            .foregroundColor(.white)
+                                    }
+                                }
+                                .buttonStyle(PlainButtonStyle())
+                                .help("Download")
+                            }
+                            .padding(6)
+                            
+                            Spacer()
+                            
+                            ZStack {
+                                Circle()
+                                    .fill(Color.black.opacity(0.7))
+                                    .frame(width: 36, height: 36)
 
-                            Image(systemName: "play.fill")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(.white)
+                                Image(systemName: "play.fill")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundColor(.white)
+                            }
+                            .padding(.bottom, 6)
                         }
                         .transition(.scale.combined(with: .opacity))
                     }
@@ -964,11 +995,18 @@ struct ForYouSongCard: View {
 
                 // Song info
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(song.title)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(.primary)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: 4) {
+                        Text(song.title)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.primary)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                        
+                        // Tidal quality badge
+                        if song.musicSource == "tidal", let quality = song.audioQuality {
+                            TidalQualityBadge(quality: quality)
+                        }
+                    }
 
                     if let artist = song.artist {
                         Text(artist)
@@ -1255,14 +1293,41 @@ struct ExploreSongCard: View {
                     
                     // Play icon overlay on hover
                     if isHovered {
-                        ZStack {
-                            Circle()
-                                .fill(Color.black.opacity(0.7))
-                                .frame(width: 36, height: 36)
+                        VStack {
+                            HStack {
+                                Spacer()
+                                // Download button
+                                Button(action: {
+                                    Task {
+                                        await DownloadManager.shared.downloadSong(item)
+                                    }
+                                }) {
+                                    ZStack {
+                                        Circle()
+                                            .fill(Color.black.opacity(0.6))
+                                            .frame(width: 28, height: 28)
+                                        Image(systemName: "arrow.down.circle.fill")
+                                            .font(.system(size: 14))
+                                            .foregroundColor(.white)
+                                    }
+                                }
+                                .buttonStyle(PlainButtonStyle())
+                                .help("Download")
+                            }
+                            .padding(6)
                             
-                            Image(systemName: "play.fill")
-                                .font(.system(size: 14, weight: .semibold))
-                                .foregroundColor(.white)
+                            Spacer()
+                            
+                            ZStack {
+                                Circle()
+                                    .fill(Color.black.opacity(0.7))
+                                    .frame(width: 36, height: 36)
+                                
+                                Image(systemName: "play.fill")
+                                    .font(.system(size: 14, weight: .semibold))
+                                    .foregroundColor(.white)
+                            }
+                            .padding(.bottom, 6)
                         }
                         .transition(.scale.combined(with: .opacity))
                     }
@@ -1282,11 +1347,18 @@ struct ExploreSongCard: View {
                 
                 // Info
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(item.title)
-                        .font(.system(size: 12, weight: .medium))
-                        .foregroundColor(.primary)
-                        .lineLimit(2)
-                        .fixedSize(horizontal: false, vertical: true)
+                    HStack(spacing: 4) {
+                        Text(item.title)
+                            .font(.system(size: 12, weight: .medium))
+                            .foregroundColor(.primary)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                        
+                        // Tidal quality badge
+                        if item.musicSource == "tidal", let quality = item.audioQuality {
+                            TidalQualityBadge(quality: quality)
+                        }
+                    }
                     
                     if let artist = item.artist {
                         Text(artist)

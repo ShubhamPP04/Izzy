@@ -12,12 +12,14 @@ enum SourceFilter: String, CaseIterable {
     case all = "All"
     case youtubeMusic = "youtube_music"
     case jioSaavn = "jiosaavn"
+    case tidal = "tidal"
     
     var displayName: String {
         switch self {
         case .all: return "All"
         case .youtubeMusic: return "YouTube Music"
         case .jioSaavn: return "JioSaavn"
+        case .tidal: return "Tidal"
         }
     }
     
@@ -26,6 +28,7 @@ enum SourceFilter: String, CaseIterable {
         case .all: return "music.note.list"
         case .youtubeMusic: return "play.circle.fill"
         case .jioSaavn: return "music.note"
+        case .tidal: return "waveform"
         }
     }
     
@@ -34,6 +37,7 @@ enum SourceFilter: String, CaseIterable {
         case .all: return .blue
         case .youtubeMusic: return .red
         case .jioSaavn: return .green
+        case .tidal: return MusicSource.tidal.color
         }
     }
 }
@@ -109,7 +113,7 @@ struct RecentlyPlayedItemView: View {
             .overlay(alignment: .bottomTrailing) {
                 if let source = recentlyPlayed.musicSource {
                     Circle()
-                        .fill(source == "jiosaavn" ? Color.green : Color.red)
+                        .fill(MusicSource.colorForSource(source))
                         .frame(width: 8, height: 8)
                         .offset(x: 2, y: 2)
                 }
@@ -117,10 +121,17 @@ struct RecentlyPlayedItemView: View {
             
             // Content
             VStack(alignment: .leading, spacing: 2) {
-                Text(recentlyPlayed.title)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.primary)
-                    .lineLimit(1)
+                HStack(spacing: 4) {
+                    Text(recentlyPlayed.title)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                    
+                    // Quality badge for Tidal tracks
+                    if recentlyPlayed.musicSource == "tidal", let quality = recentlyPlayed.audioQuality {
+                        TidalQualityBadge(quality: quality)
+                    }
+                }
                 
                 if let artist = recentlyPlayed.artist, !artist.isEmpty {
                     Text(artist)
@@ -160,6 +171,19 @@ struct RecentlyPlayedItemView: View {
                 }
                 .buttonStyle(PlainButtonStyle())
                 .help("Add to queue")
+                
+                // Download button
+                Button(action: {
+                    Task {
+                        await DownloadManager.shared.downloadSong(recentlyPlayed)
+                    }
+                }) {
+                    Image(systemName: "arrow.down.circle")
+                        .foregroundColor(.secondary)
+                        .font(.system(size: 12, weight: .medium))
+                }
+                .buttonStyle(PlainButtonStyle())
+                .help("Download")
                 
                 // Add to Playlist button
                 Button(action: {
@@ -282,6 +306,8 @@ struct RecentlyPlayedView: View {
             return searchState.recentlyPlayed.filter { $0.musicSource == "youtube_music" }
         case .jioSaavn:
             return searchState.recentlyPlayed.filter { $0.musicSource == "jiosaavn" }
+        case .tidal:
+            return searchState.recentlyPlayed.filter { $0.musicSource == "tidal" }
         }
     }
     

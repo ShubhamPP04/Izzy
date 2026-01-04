@@ -4,7 +4,7 @@
 
 ![Izzy Banner](image.png)
 
-**A beautiful, modern music player for macOS with YouTube Music & JioSaavn integration**
+**A beautiful, modern music player for macOS with YouTube Music, Tidal & JioSaavn integration**
 
 [![macOS](https://img.shields.io/badge/macOS-14.0+-blue.svg)](https://www.apple.com/macos/)
 [![Swift](https://img.shields.io/badge/Swift-5.9-orange.svg)](https://swift.org)
@@ -17,8 +17,9 @@
 
 ## ✨ Features
 
-### 🎸 Dual Music Service Support
+### 🎸 Triple Music Service Support
 - **YouTube Music** - Stream millions of songs from YouTube Music
+- **Tidal** - Hi-Res lossless audio (up to 24-bit/192kHz FLAC) via [hifi-api](https://github.com/uimaxbai/hifi-api)
 - **JioSaavn** - Access India's largest music streaming platform
 - Seamless switching between services
 
@@ -158,7 +159,7 @@ Press `Option + Space` anywhere on your Mac to open/close Izzy
 
 ### Switch Music Services
 1. Open **Settings** (⚙️ icon)
-2. Select **YouTube Music** or **JioSaavn**
+2. Select **YouTube Music**, **Tidal**, or **JioSaavn**
 3. Service will switch immediately
 
 ### Create Playlists
@@ -229,11 +230,12 @@ Izzy/
 - **Python 3.13+** - Backend service
 - **ytmusicapi** - YouTube Music API
 - **yt-dlp** - Audio stream extraction
-- **requests** - HTTP client for JioSaavn
+- **requests** - HTTP client for JioSaavn & Tidal
 - **aiohttp** - Async HTTP (optional)
 
 ### External Services
 - **YouTube Music** - Music catalog and streaming
+- **Tidal** (via [hifi-api](https://github.com/uimaxbai/hifi-api)) - Hi-Res lossless audio streaming
 - **JioSaavn** (via saavn.dev) - Indian music streaming
 - **Google Gemini AI** - Natural language music search
 
@@ -248,7 +250,7 @@ Settings are stored in:
 ```
 
 ### Customizable Settings
-- **Music service** (YouTube Music / JioSaavn) - Now at the top for quick access
+- **Music service** (YouTube Music / Tidal / JioSaavn) - Now at the top for quick access
 - **Gemini API Key** - Enable AI-powered recommendations and search
 - **Global hotkey** - Customize your keyboard shortcut
 - **Centered playback controls** - Toggle button centering

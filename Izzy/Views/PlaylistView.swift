@@ -554,10 +554,17 @@ struct PlaylistSongItemView: View {
             
             // Song info
             VStack(alignment: .leading, spacing: 3) {
-                Text(song.title)
-                    .font(.system(size: 14, weight: .medium))
-                    .foregroundColor(.primary)
-                    .lineLimit(1)
+                HStack(spacing: 4) {
+                    Text(song.title)
+                        .font(.system(size: 14, weight: .medium))
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                    
+                    // Quality badge for Tidal tracks
+                    if song.musicSource == "tidal", let quality = song.audioQuality {
+                        TidalQualityBadge(quality: quality)
+                    }
+                }
                 
                 if let artist = song.artist, !artist.isEmpty {
                     Text(artist)
@@ -575,6 +582,21 @@ struct PlaylistSongItemView: View {
                     .font(.system(size: 12, weight: .medium))
                     .foregroundColor(.secondary)
                     .monospacedDigit()
+            }
+            
+            // Download button (only shown when not in edit mode)
+            if !editMode {
+                Button(action: {
+                    Task {
+                        await DownloadManager.shared.downloadSong(song)
+                    }
+                }) {
+                    Image(systemName: "arrow.down.circle")
+                        .font(.system(size: 16))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(PlainButtonStyle())
+                .help("Download")
             }
             
             if editMode {

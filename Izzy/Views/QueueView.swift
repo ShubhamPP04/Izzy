@@ -127,10 +127,17 @@ struct QueueItemView: View {
             
             // Song info
             VStack(alignment: .leading, spacing: 2) {
-                Text(track.title)
-                    .font(.system(size: 13, weight: isCurrentTrack ? .semibold : .medium))
-                    .foregroundColor(isCurrentTrack ? .blue : .primary)
-                    .lineLimit(1)
+                HStack(spacing: 4) {
+                    Text(track.title)
+                        .font(.system(size: 13, weight: isCurrentTrack ? .semibold : .medium))
+                        .foregroundColor(isCurrentTrack ? .blue : .primary)
+                        .lineLimit(1)
+                    
+                    // Quality badge for Tidal tracks
+                    if track.musicSource == "tidal", let quality = track.audioQuality {
+                        TidalQualityBadge(quality: quality)
+                    }
+                }
                 
                 Text(track.artist)
                     .font(.system(size: 11))
@@ -144,6 +151,19 @@ struct QueueItemView: View {
             Text(track.duration.formattedDuration)
                 .font(.system(size: 11))
                 .foregroundColor(.secondary)
+            
+            // Download button
+            Button(action: {
+                Task {
+                    await DownloadManager.shared.downloadSong(track)
+                }
+            }) {
+                Image(systemName: "arrow.down.circle")
+                    .font(.system(size: 14))
+                    .foregroundColor(.secondary)
+            }
+            .buttonStyle(PlainButtonStyle())
+            .help("Download")
             
             // Remove button
             Button(action: {

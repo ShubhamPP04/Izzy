@@ -6,17 +6,20 @@
 //
 
 import Foundation
+import SwiftUI
 
 // MARK: - Music Sources
 
 enum MusicSource: String, CaseIterable, Codable {
     case youtubeMusic = "youtube_music"
     case jioSaavn = "jiosaavn"
+    case tidal = "tidal"
     
     var displayName: String {
         switch self {
         case .youtubeMusic: return "YouTube Music"
         case .jioSaavn: return "JioSaavn"
+        case .tidal: return "Tidal"
         }
     }
     
@@ -24,7 +27,22 @@ enum MusicSource: String, CaseIterable, Codable {
         switch self {
         case .youtubeMusic: return "play.circle.fill"
         case .jioSaavn: return "music.note.list"
+        case .tidal: return "waveform"
         }
+    }
+    
+    var color: Color {
+        switch self {
+        case .youtubeMusic: return .red
+        case .jioSaavn: return .green
+        case .tidal: return Color(red: 0.4, green: 0.7, blue: 1.0) // Light blue
+        }
+    }
+    
+    /// Get color for a music source string
+    static func colorForSource(_ source: String?) -> Color {
+        guard let source = source else { return .gray }
+        return MusicSource(rawValue: source)?.color ?? .gray
     }
 }
 
@@ -63,6 +81,7 @@ struct SearchResult: Identifiable, Codable {
     let year: String?
     let playCount: String?
     let musicSource: String?
+    let audioQuality: String?  // For Tidal: HI_RES_LOSSLESS, HI_RES, LOSSLESS, HIGH, LOW
 
     init(id: String = UUID().uuidString,
          type: SearchResultType,
@@ -75,7 +94,8 @@ struct SearchResult: Identifiable, Codable {
          browseId: String? = nil,
          year: String? = nil,
          playCount: String? = nil,
-         musicSource: String? = nil) {
+         musicSource: String? = nil,
+         audioQuality: String? = nil) {
         self.id = id
         self.type = type
         self.title = title
@@ -88,6 +108,7 @@ struct SearchResult: Identifiable, Codable {
         self.year = year
         self.playCount = playCount
         self.musicSource = musicSource
+        self.audioQuality = audioQuality
     }
 }
 
@@ -174,6 +195,7 @@ struct Track: Identifiable, Codable {
     let explicit: Bool
     let year: String?
     let musicSource: String?
+    let audioQuality: String?
     
     init(id: String = UUID().uuidString,
          title: String,
@@ -184,7 +206,8 @@ struct Track: Identifiable, Codable {
          videoId: String,
          explicit: Bool = false,
          year: String? = nil,
-         musicSource: String? = nil) {
+         musicSource: String? = nil,
+         audioQuality: String? = nil) {
         self.id = id
         self.title = title
         self.artist = artist
@@ -195,6 +218,7 @@ struct Track: Identifiable, Codable {
         self.explicit = explicit
         self.year = year
         self.musicSource = musicSource
+        self.audioQuality = audioQuality
     }
     
     // Convert SearchResult to Track
@@ -209,6 +233,7 @@ struct Track: Identifiable, Codable {
         self.explicit = searchResult.explicit
         self.year = searchResult.year
         self.musicSource = searchResult.musicSource
+        self.audioQuality = searchResult.audioQuality
     }
 }
 
@@ -279,12 +304,14 @@ struct StreamInfo: Codable {
     let title: String
     let duration: TimeInterval
     let quality: String?
+    let mimeType: String?
     
-    init(url: String, title: String, duration: TimeInterval, quality: String? = nil) {
+    init(url: String, title: String, duration: TimeInterval, quality: String? = nil, mimeType: String? = nil) {
         self.url = url
         self.title = title
         self.duration = duration
         self.quality = quality
+        self.mimeType = mimeType
     }
 }
 
@@ -299,6 +326,7 @@ struct FavoriteSong: Identifiable, Codable, Equatable {
     let videoId: String
     let addedDate: Date
     let musicSource: String?  // Add music source field
+    let audioQuality: String?  // For Tidal: HI_RES_LOSSLESS, HI_RES, LOSSLESS, HIGH, LOW
     
     init(from searchResult: SearchResult, musicSource: String? = nil) {
         self.id = searchResult.id
@@ -310,6 +338,7 @@ struct FavoriteSong: Identifiable, Codable, Equatable {
         self.addedDate = Date()
         // Prefer musicSource from SearchResult, then parameter, then UserDefaults
         self.musicSource = searchResult.musicSource ?? musicSource ?? UserDefaults.standard.string(forKey: "musicSource") ?? "youtube_music"
+        self.audioQuality = searchResult.audioQuality
     }
     
     // Custom decoder to handle missing musicSource field in existing data
@@ -324,6 +353,7 @@ struct FavoriteSong: Identifiable, Codable, Equatable {
         self.addedDate = try container.decode(Date.self, forKey: .addedDate)
         // For musicSource, use the decoded value if present, otherwise default to "youtube_music"
         self.musicSource = try container.decodeIfPresent(String.self, forKey: .musicSource) ?? "youtube_music"
+        self.audioQuality = try container.decodeIfPresent(String.self, forKey: .audioQuality)
     }
     
     // Equatable conformance
@@ -335,7 +365,8 @@ struct FavoriteSong: Identifiable, Codable, Equatable {
                lhs.duration == rhs.duration &&
                lhs.videoId == rhs.videoId &&
                lhs.addedDate == rhs.addedDate &&
-               lhs.musicSource == rhs.musicSource
+               lhs.musicSource == rhs.musicSource &&
+               lhs.audioQuality == rhs.audioQuality
     }
 }
 

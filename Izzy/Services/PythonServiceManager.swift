@@ -569,6 +569,15 @@ extension PythonServiceManager {
         return try await sendRequest(request, responseType: StreamInfo.self)
     }
     
+    func getDownloadStreamInfo(videoId: String, musicSource: String? = nil) async throws -> StreamInfo {
+        // Use provided music source, or fall back to current setting
+        let sourceToUse = musicSource ?? UserDefaults.standard.string(forKey: "musicSource") ?? "youtube_music"
+        
+        // Use download_stream action for Hi-Res quality preference
+        let request = ServiceRequest(action: "download_stream", videoId: videoId, musicSource: sourceToUse)
+        return try await sendRequest(request, responseType: StreamInfo.self)
+    }
+    
     func getAlbumTracks(browseId: String) async throws -> [SearchResult] {
         // Get the current music source from UserDefaults
         let currentSource = UserDefaults.standard.string(forKey: "musicSource") ?? "youtube_music"

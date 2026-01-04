@@ -42,7 +42,7 @@ struct FavoriteItemView: View {
             .overlay(alignment: .bottomTrailing) {
                 if let source = favorite.musicSource {
                     Circle()
-                        .fill(source == "jiosaavn" ? Color.green : Color.red)
+                        .fill(MusicSource.colorForSource(source))
                         .frame(width: 8, height: 8)
                         .offset(x: 2, y: 2)
                 }
@@ -50,10 +50,17 @@ struct FavoriteItemView: View {
             
             // Content
             VStack(alignment: .leading, spacing: 2) {
-                Text(favorite.title)
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundColor(.primary)
-                    .lineLimit(1)
+                HStack(spacing: 4) {
+                    Text(favorite.title)
+                        .font(.system(size: 13, weight: .medium))
+                        .foregroundColor(.primary)
+                        .lineLimit(1)
+                    
+                    // Tidal quality badge
+                    if favorite.musicSource == "tidal", let quality = favorite.audioQuality {
+                        TidalQualityBadge(quality: quality)
+                    }
+                }
                 
                 if let artist = favorite.artist, !artist.isEmpty {
                     Text(artist)
@@ -93,6 +100,19 @@ struct FavoriteItemView: View {
                 }
                 .buttonStyle(PlainButtonStyle())
                 .help("Add to queue")
+                
+                // Download button
+                Button(action: {
+                    Task {
+                        await DownloadManager.shared.downloadSong(favorite)
+                    }
+                }) {
+                    Image(systemName: "arrow.down.circle")
+                        .foregroundColor(.secondary)
+                        .font(.system(size: 12, weight: .medium))
+                }
+                .buttonStyle(PlainButtonStyle())
+                .help("Download")
                 
                 // Add to Playlist button
                 Button(action: {
@@ -229,6 +249,8 @@ struct FavoritesView: View {
             return searchState.favorites.filter { $0.musicSource == "youtube_music" }
         case .jioSaavn:
             return searchState.favorites.filter { $0.musicSource == "jiosaavn" }
+        case .tidal:
+            return searchState.favorites.filter { $0.musicSource == "tidal" }
         }
     }
     

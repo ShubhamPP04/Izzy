@@ -129,10 +129,17 @@ struct MiniPlayerView: View {
             VStack(alignment: .leading, spacing: 4) {
                 // Track title and artist
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(manager.currentTrack?.title ?? "No track playing")
-                        .font(.system(size: 13, weight: .semibold))
-                        .foregroundColor(.white)
-                        .lineLimit(1)
+                    HStack(spacing: 4) {
+                        Text(manager.currentTrack?.title ?? "No track playing")
+                            .font(.system(size: 13, weight: .semibold))
+                            .foregroundColor(.white)
+                            .lineLimit(1)
+                        
+                        // Quality badge for Tidal tracks
+                        if manager.currentTrack?.musicSource == "tidal", let quality = manager.currentTrack?.audioQuality {
+                            TidalQualityBadge(quality: quality)
+                        }
+                    }
                     
                     Text(manager.currentTrack?.artist ?? "")
                         .font(.system(size: 11, weight: .medium))

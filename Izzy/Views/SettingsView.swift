@@ -391,6 +391,18 @@ struct SettingsView: View {
                         .foregroundColor(.secondary)
                 }
             }
+
+            if MusicSource(rawValue: musicSource) == .tidal {
+                HStack {
+                    Image(systemName: "info.circle")
+                        .foregroundColor(MusicSource.tidal.color)
+                        .font(.system(size: 12))
+
+                    Text("Tidal integration provides access to Hi-Res lossless audio quality (up to 24-bit/192kHz FLAC).")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                }
+            }
         }
     }
 

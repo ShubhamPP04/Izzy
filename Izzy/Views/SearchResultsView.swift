@@ -465,6 +465,11 @@ struct SearchResultRow: View {
                             .clipShape(RoundedRectangle(cornerRadius: 2))
                     }
                     
+                    // Tidal audio quality badges
+                    if result.musicSource == "tidal", let quality = result.audioQuality {
+                        TidalQualityBadge(quality: quality)
+                    }
+                    
                     Spacer()
                 }
                 
@@ -505,6 +510,20 @@ struct SearchResultRow: View {
             // Action buttons (only for songs and videos)
             if (category == .song || category == .video) && searchState != nil {
                 HStack(spacing: 8) {
+                    // Download button
+                    Button(action: {
+                        Task {
+                            await DownloadManager.shared.downloadSong(result)
+                        }
+                    }) {
+                        Image(systemName: "arrow.down.circle")
+                            .foregroundColor(.secondary)
+                            .font(.system(size: 14, weight: .medium))
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                    .opacity(isHovered ? 1.0 : 0.0)
+                    .help("Download")
+                    
                     // Add to Queue button
                     Button(action: {
                         let track = Track(from: result)
