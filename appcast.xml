@@ -6,6 +6,30 @@
     <description>Most recent changes with links to updates.</description>
     <language>en</language>
 
+    <!-- Version 1.1.9 -->
+    <item>
+      <title>Version 1.1.9</title>
+      <description>
+        <![CDATA[
+          <ul>
+            <li>Song downloads with Hi-Res quality preference</li>
+            <li>Album art and metadata embedding via FFmpeg</li>
+            <li>Tidal quality badges (Hi-Res, Lossless, HQ) on all songs</li>
+            <li>Optimized Tidal performance with caching and connection pooling</li>
+            <li>Downloads saved to ~/Downloads/Izzy Music/</li>
+          </ul>
+        ]]>
+      </description>
+      <pubDate>Sat, 04 Jan 2026 12:00:00 +0000</pubDate>
+      <sparkle:version>18</sparkle:version>
+      <sparkle:shortVersionString>1.1.9</sparkle:shortVersionString>
+      <enclosure url="https://yourwebsite.com/izzy/Izzy.dmg"
+                 sparkle:version="18"
+                 sparkle:shortVersionString="1.1.9"
+                 length="16839788"
+                 type="application/octet-stream" />
+    </item>
+
     <!-- Version 1.1.8 -->
     <item>
       <title>Version 1.1.8</title>
