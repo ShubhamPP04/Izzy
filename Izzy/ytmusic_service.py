@@ -1370,7 +1370,9 @@ class TidalService:
     def search_all(self, query: str, limit: int = 20) -> Dict[str, Any]:
         """
         Search across Tidal music library using hifi-api
-        OPTIMIZED: Uses single API call instead of multiple
+        Extracts tracks, albums, and artists from track search results
+        Note: The hifi-api only supports track search, so we extract album/artist 
+        info from track results
         """
         try:
             if not HAS_REQUESTS:
@@ -1387,8 +1389,11 @@ class TidalService:
                 'videos': []
             }
             
-            # Single search call for tracks (main use case)
-            # This reduces CPU/memory usage significantly
+            # Search for tracks (songs) - the main API endpoint
+            # We also extract albums and artists from track results
+            seen_albums = set()
+            seen_artists = set()
+            
             try:
                 response = self._make_request("/search/", {'s': query}, timeout=10)
                 if response and response.status_code == 200:
@@ -1402,12 +1407,46 @@ class TidalService:
                     elif isinstance(data, list):
                         items = data
                     
-                    for track in items[:limit]:
+                    for track in items[:limit * 2]:  # Get more items to extract albums/artists
+                        # Format track as song
                         formatted_track = self._format_tidal_track(track)
-                        if formatted_track:
+                        if formatted_track and len(results['songs']) < limit:
                             results['songs'].append(formatted_track)
+                        
+                        # Extract album from track
+                        album_data = track.get('album', {})
+                        if album_data and album_data.get('id'):
+                            album_id = str(album_data.get('id'))
+                            if album_id not in seen_albums and len(results['albums']) < limit:
+                                seen_albums.add(album_id)
+                                formatted_album = self._format_tidal_album(album_data)
+                                if formatted_album:
+                                    results['albums'].append(formatted_album)
+                        
+                        # Extract artist from track
+                        artist_data = track.get('artist', {})
+                        if artist_data and artist_data.get('id'):
+                            artist_id = str(artist_data.get('id'))
+                            if artist_id not in seen_artists and len(results['artists']) < limit:
+                                seen_artists.add(artist_id)
+                                formatted_artist = self._format_tidal_artist(artist_data)
+                                if formatted_artist:
+                                    results['artists'].append(formatted_artist)
+                        
+                        # Also check artists array (multiple artists)
+                        for artist in track.get('artists', []):
+                            if artist and artist.get('id'):
+                                artist_id = str(artist.get('id'))
+                                if artist_id not in seen_artists and len(results['artists']) < limit:
+                                    seen_artists.add(artist_id)
+                                    formatted_artist = self._format_tidal_artist(artist)
+                                    if formatted_artist:
+                                        results['artists'].append(formatted_artist)
+                        
             except Exception as e:
                 print(f"Error searching Tidal tracks: {e}", file=sys.stderr)
+            
+            print(f"🔍 Tidal search: {len(results['songs'])} songs, {len(results['albums'])} albums, {len(results['artists'])} artists", file=sys.stderr)
             
             return {
                 'success': True,
@@ -1850,9 +1889,9 @@ class TidalService:
             album_data = data['data']
             tracks = []
             
-            # Get tracks from album items
+            # Get tracks from album items (limit to 20)
             items = album_data.get('items', [])
-            for item in items:
+            for item in items[:20]:  # Limit to 20 tracks
                 # Handle both direct track and item wrapper
                 track = item.get('item', item)
                 if track.get('type') == 'track' or track.get('id'):
@@ -1897,7 +1936,7 @@ class TidalService:
                 }
             
             tracks = []
-            for item in data['items']:
+            for item in data['items'][:20]:  # Limit to 20 tracks
                 track = item.get('item', item)
                 formatted_track = self._format_tidal_track(track)
                 if formatted_track:
@@ -1936,9 +1975,9 @@ class TidalService:
             data = response.json()
             tracks = []
             
-            # Get tracks from response
+            # Get tracks from response (limit to 20)
             if data.get('tracks'):
-                for track in data['tracks']:
+                for track in data['tracks'][:20]:  # Limit to 20 tracks
                     formatted_track = self._format_tidal_track(track)
                     if formatted_track:
                         tracks.append(formatted_track)

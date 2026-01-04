@@ -15,7 +15,7 @@
             buildForAnalyzing = "YES">
             <BuildableReference
                BuildableIdentifier = "primary"
-               BlueprintIdentifier = "1CF338F32E668D950056FF61"
+               BlueprintIdentifier = "1CF338FF2E668D970056FF61"
                BuildableName = "Izzy.app"
                BlueprintName = "Izzy"
                ReferencedContainer = "container:Izzy.xcodeproj">
@@ -68,7 +68,7 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "1CF338F32E668D950056FF61"
+            BlueprintIdentifier = "1CF338FF2E668D970056FF61"
             BuildableName = "Izzy.app"
             BlueprintName = "Izzy"
             ReferencedContainer = "container:Izzy.xcodeproj">
@@ -85,7 +85,7 @@
          runnableDebuggingMode = "0">
          <BuildableReference
             BuildableIdentifier = "primary"
-            BlueprintIdentifier = "1CF338F32E668D950056FF61"
+            BlueprintIdentifier = "1CF338FF2E668D970056FF61"
             BuildableName = "Izzy.app"
             BlueprintName = "Izzy"
             ReferencedContainer = "container:Izzy.xcodeproj">

@@ -1229,16 +1229,150 @@ class TidalService:
     Tidal music service integration using hifi-api
     GitHub: https://github.com/uimaxbai/hifi-api
     Provides Hi-Res lossless audio (up to 24-bit/192kHz FLAC)
+    Uses public API instances that don't require authentication
+    
+    OPTIMIZED: Uses caching and single API calls to reduce CPU/memory usage
     """
     
+    # Audio quality levels in order of preference for STREAMING (highest to lowest)
+    # Note: LOSSLESS is more compatible for playback
+    QUALITY_LEVELS = [
+        'LOSSLESS',         # 16-bit/44.1kHz FLAC (CD quality) - most compatible
+        'HI_RES_LOSSLESS',  # Up to 24-bit/192kHz FLAC (MQA) - may need special codec
+        'HI_RES',           # Up to 24-bit/96kHz FLAC - may need special codec
+        'HIGH',             # 320kbps AAC
+        'LOW'               # 96kbps AAC
+    ]
+    
+    # Audio quality levels in order of preference for DOWNLOADING
+    # NOTE: LOSSLESS is tried first because HI_RES/HI_RES_LOSSLESS use DASH segmented
+    # streaming (50+ segments) which requires complex downloading. LOSSLESS provides
+    # a direct FLAC URL that can be downloaded in one request.
+    DOWNLOAD_QUALITY_LEVELS = [
+        'LOSSLESS',         # 16-bit/44.1kHz FLAC (CD quality) - direct URL, works reliably
+        'HI_RES_LOSSLESS',  # Up to 24-bit/192kHz FLAC (MQA) - requires DASH parsing
+        'HI_RES',           # Up to 24-bit/96kHz FLAC - requires DASH parsing
+        'HIGH',             # 320kbps AAC
+        'LOW'               # 96kbps AAC
+    ]
+    
     def __init__(self):
-        # Default to public hifi-api instance - can be configured to use self-hosted
-        self.base_url = "https://hifi-api.vercel.app"  # Public instance
-        # Alternative: self.base_url = "http://localhost:8000"  # Self-hosted
+        # Public API instances from tidal-ui (load balanced)
+        # These are community-hosted instances that don't require token.json auth
+        self.api_targets = [
+            {"name": "squid-api", "url": "https://triton.squid.wtf", "weight": 30},
+            {"name": "kinoplus", "url": "https://tidal.kinoplus.online", "weight": 20},
+            {"name": "binimum", "url": "https://tidal-api.binimum.org", "weight": 10},
+            {"name": "binimum-2", "url": "https://tidal-api-2.binimum.org", "weight": 10},
+        ]
+        self.current_api_index = 0
+        self.base_url = self.api_targets[0]["url"]  # Default to highest weight
+        
+        # Preferred quality - LOSSLESS for best compatibility
+        self.preferred_quality = 'LOSSLESS'
+        
+        # Simple cache to reduce API calls (cache for 5 minutes)
+        self._cache = {}
+        self._cache_ttl = 300  # 5 minutes
+        
+        # Reuse session for connection pooling (reduces CPU/memory)
+        self._session = None
+    
+    def _get_session(self):
+        """Get or create a reusable requests session"""
+        if self._session is None:
+            self._session = requests.Session()
+            # Set default headers
+            self._session.headers.update({
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)',
+                'Accept': 'application/json'
+            })
+        return self._session
+    
+    def _get_cache_key(self, endpoint: str, params: Dict) -> str:
+        """Generate cache key"""
+        return f"{endpoint}:{json.dumps(params, sort_keys=True)}"
+    
+    def _get_cached(self, key: str) -> Optional[Dict]:
+        """Get cached response if valid"""
+        if key in self._cache:
+            cached_time, data = self._cache[key]
+            if time.time() - cached_time < self._cache_ttl:
+                return data
+            else:
+                del self._cache[key]  # Remove expired
+        return None
+    
+    def _set_cache(self, key: str, data: Dict):
+        """Cache response data"""
+        # Limit cache size to prevent memory issues
+        if len(self._cache) > 100:
+            # Remove oldest entries
+            oldest_keys = sorted(self._cache.keys(), key=lambda k: self._cache[k][0])[:50]
+            for k in oldest_keys:
+                del self._cache[k]
+        self._cache[key] = (time.time(), data)
+    
+    def _get_next_api(self) -> str:
+        """Rotate to next API endpoint on failure"""
+        self.current_api_index = (self.current_api_index + 1) % len(self.api_targets)
+        self.base_url = self.api_targets[self.current_api_index]["url"]
+        return self.base_url
+    
+    def _make_request(self, endpoint: str, params: Dict, timeout: int = 10, use_cache: bool = True) -> Optional[requests.Response]:
+        """Make request with automatic fallback to other API instances"""
+        # Check cache first
+        cache_key = self._get_cache_key(endpoint, params)
+        if use_cache:
+            cached = self._get_cached(cache_key)
+            if cached:
+                # Return a mock response with cached data
+                class CachedResponse:
+                    status_code = 200
+                    def json(self):
+                        return cached
+                return CachedResponse()
+        
+        last_error = None
+        tried_apis = set()
+        session = self._get_session()
+        
+        while len(tried_apis) < len(self.api_targets):
+            try:
+                url = f"{self.base_url}{endpoint}"
+                response = session.get(url, params=params, timeout=timeout)
+                if response.status_code == 200:
+                    # Cache successful response
+                    if use_cache:
+                        try:
+                            self._set_cache(cache_key, response.json())
+                        except:
+                            pass
+                    return response
+                elif response.status_code in [500, 502, 503, 504, 429]:
+                    # Server error, try next API
+                    tried_apis.add(self.base_url)
+                    self._get_next_api()
+                else:
+                    return response  # Return non-5xx errors for handling
+            except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
+                last_error = e
+                tried_apis.add(self.base_url)
+                self._get_next_api()
+            except Exception as e:
+                last_error = e
+                tried_apis.add(self.base_url)
+                self._get_next_api()
+        
+        print(f"❌ All Tidal API endpoints failed. Last error: {last_error}", file=sys.stderr)
+        return None
         
     def search_all(self, query: str, limit: int = 20) -> Dict[str, Any]:
         """
         Search across Tidal music library using hifi-api
+        Extracts tracks, albums, and artists from track search results
+        Note: The hifi-api only supports track search, so we extract album/artist 
+        info from track results
         """
         try:
             if not HAS_REQUESTS:
@@ -1255,69 +1389,64 @@ class TidalService:
                 'videos': []
             }
             
-            # Search for tracks
+            # Search for tracks (songs) - the main API endpoint
+            # We also extract albums and artists from track results
+            seen_albums = set()
+            seen_artists = set()
+            
             try:
-                response = requests.get(f"{self.base_url}/search/", params={
-                    's': query  # 's' param for track search
-                }, timeout=15)
-                if response.status_code == 200:
+                response = self._make_request("/search/", {'s': query}, timeout=10)
+                if response and response.status_code == 200:
                     data = response.json()
+                    # Handle different response formats
+                    items = []
                     if data.get('data'):
                         items = data['data'].get('items', [])
-                        for track in items[:limit]:
-                            formatted_track = self._format_tidal_track(track)
-                            if formatted_track:
-                                results['songs'].append(formatted_track)
+                    elif data.get('items'):
+                        items = data['items']
+                    elif isinstance(data, list):
+                        items = data
+                    
+                    for track in items[:limit * 2]:  # Get more items to extract albums/artists
+                        # Format track as song
+                        formatted_track = self._format_tidal_track(track)
+                        if formatted_track and len(results['songs']) < limit:
+                            results['songs'].append(formatted_track)
+                        
+                        # Extract album from track
+                        album_data = track.get('album', {})
+                        if album_data and album_data.get('id'):
+                            album_id = str(album_data.get('id'))
+                            if album_id not in seen_albums and len(results['albums']) < limit:
+                                seen_albums.add(album_id)
+                                formatted_album = self._format_tidal_album(album_data)
+                                if formatted_album:
+                                    results['albums'].append(formatted_album)
+                        
+                        # Extract artist from track
+                        artist_data = track.get('artist', {})
+                        if artist_data and artist_data.get('id'):
+                            artist_id = str(artist_data.get('id'))
+                            if artist_id not in seen_artists and len(results['artists']) < limit:
+                                seen_artists.add(artist_id)
+                                formatted_artist = self._format_tidal_artist(artist_data)
+                                if formatted_artist:
+                                    results['artists'].append(formatted_artist)
+                        
+                        # Also check artists array (multiple artists)
+                        for artist in track.get('artists', []):
+                            if artist and artist.get('id'):
+                                artist_id = str(artist.get('id'))
+                                if artist_id not in seen_artists and len(results['artists']) < limit:
+                                    seen_artists.add(artist_id)
+                                    formatted_artist = self._format_tidal_artist(artist)
+                                    if formatted_artist:
+                                        results['artists'].append(formatted_artist)
+                        
             except Exception as e:
                 print(f"Error searching Tidal tracks: {e}", file=sys.stderr)
             
-            # Search for artists
-            try:
-                response = requests.get(f"{self.base_url}/search/", params={
-                    'a': query  # 'a' param for artist search
-                }, timeout=15)
-                if response.status_code == 200:
-                    data = response.json()
-                    if data.get('data') and data['data'].get('artists'):
-                        artists = data['data']['artists'].get('items', [])
-                        for artist in artists[:limit]:
-                            formatted_artist = self._format_tidal_artist(artist)
-                            if formatted_artist:
-                                results['artists'].append(formatted_artist)
-            except Exception as e:
-                print(f"Error searching Tidal artists: {e}", file=sys.stderr)
-            
-            # Search for albums
-            try:
-                response = requests.get(f"{self.base_url}/search/", params={
-                    'al': query  # 'al' param for album search
-                }, timeout=15)
-                if response.status_code == 200:
-                    data = response.json()
-                    if data.get('data') and data['data'].get('albums'):
-                        albums = data['data']['albums'].get('items', [])
-                        for album in albums[:limit]:
-                            formatted_album = self._format_tidal_album(album)
-                            if formatted_album:
-                                results['albums'].append(formatted_album)
-            except Exception as e:
-                print(f"Error searching Tidal albums: {e}", file=sys.stderr)
-            
-            # Search for playlists
-            try:
-                response = requests.get(f"{self.base_url}/search/", params={
-                    'p': query  # 'p' param for playlist search
-                }, timeout=15)
-                if response.status_code == 200:
-                    data = response.json()
-                    if data.get('data') and data['data'].get('playlists'):
-                        playlists = data['data']['playlists'].get('items', [])
-                        for playlist in playlists[:limit]:
-                            formatted_playlist = self._format_tidal_playlist(playlist)
-                            if formatted_playlist:
-                                results['playlists'].append(formatted_playlist)
-            except Exception as e:
-                print(f"Error searching Tidal playlists: {e}", file=sys.stderr)
+            print(f"🔍 Tidal search: {len(results['songs'])} songs, {len(results['albums'])} albums, {len(results['artists'])} artists", file=sys.stderr)
             
             return {
                 'success': True,
@@ -1350,6 +1479,25 @@ class TidalService:
             elif track.get('artists') and len(track['artists']) > 0:
                 artist_name = ', '.join([a.get('name', '') for a in track['artists'] if a.get('name')])
             
+            # Get audio quality info from track metadata
+            audio_quality = track.get('audioQuality', '')
+            # Normalize quality names
+            if audio_quality in ['HI_RES_LOSSLESS', 'HI_RES', 'LOSSLESS', 'HIGH', 'LOW']:
+                pass  # Already normalized
+            elif 'MASTER' in str(audio_quality).upper() or 'MQA' in str(audio_quality).upper():
+                audio_quality = 'HI_RES_LOSSLESS'
+            elif 'HIRES' in str(audio_quality).upper():
+                audio_quality = 'HI_RES'
+            
+            # Check for HiRes availability from mediaMetadata if present
+            media_metadata = track.get('mediaMetadata', {})
+            if media_metadata:
+                tags = media_metadata.get('tags', [])
+                if 'HIRES_LOSSLESS' in tags or 'MQA' in tags:
+                    audio_quality = 'HI_RES_LOSSLESS'
+                elif 'LOSSLESS' in tags:
+                    audio_quality = 'LOSSLESS'
+            
             return {
                 'id': str(track.get('id', '')),
                 'type': 'songs',
@@ -1362,7 +1510,8 @@ class TidalService:
                 'browseId': None,
                 'year': None,
                 'playCount': str(track.get('popularity', '')) if track.get('popularity') else None,
-                'musicSource': 'tidal'
+                'musicSource': 'tidal',
+                'audioQuality': audio_quality if audio_quality else None
             }
         except Exception as e:
             logger.error(f"Error formatting Tidal track: {e}")
@@ -1461,7 +1610,11 @@ class TidalService:
             return None
     
     def get_stream_info(self, track_id: str) -> Dict[str, Any]:
-        """Get Tidal stream info using hifi-api /track/ endpoint"""
+        """Get Tidal stream info using hifi-api /track/ endpoint
+        
+        Tries quality levels in order: LOSSLESS → HI_RES_LOSSLESS → HI_RES → HIGH → LOW
+        LOSSLESS (CD quality) is tried first for better compatibility.
+        """
         try:
             if not HAS_REQUESTS:
                 return {
@@ -1469,37 +1622,29 @@ class TidalService:
                     'error': 'requests library not available - Tidal streaming not supported'
                 }
             
-            print(f"🎵 Getting stream info for Tidal track ID: {track_id}", file=sys.stderr)
+            # Try each quality level starting from highest
+            response = None
+            used_quality = None
             
-            # Get track playback info - supports HI_RES_LOSSLESS quality
-            response = requests.get(f"{self.base_url}/track/", params={
-                'id': track_id,
-                'quality': 'HI_RES_LOSSLESS'  # Request highest quality
-            }, timeout=15)
-            
-            print(f"🎵 Tidal API response status: {response.status_code}", file=sys.stderr)
-            
-            if response.status_code != 200:
-                # Try with lower quality fallback
-                response = requests.get(f"{self.base_url}/track/", params={
+            for quality in self.QUALITY_LEVELS:
+                response = self._make_request("/track/", {
                     'id': track_id,
-                    'quality': 'LOSSLESS'
-                }, timeout=15)
+                    'quality': quality
+                }, timeout=10, use_cache=False)  # Don't cache stream URLs
                 
-                if response.status_code != 200:
-                    return {
-                        'success': False,
-                        'error': f'Failed to fetch track: HTTP {response.status_code}'
-                    }
+                if response and response.status_code == 200:
+                    data = response.json()
+                    if data.get('data') and data['data'].get('manifest'):
+                        used_quality = quality
+                        break
             
-            data = response.json()
-            
-            if not data.get('data'):
+            if not response or not used_quality:
                 return {
                     'success': False,
-                    'error': 'Track not found or no playback data available'
+                    'error': 'Failed to get stream at any quality level'
                 }
             
+            data = response.json()
             track_data = data['data']
             
             # Get stream URL from manifest
@@ -1513,27 +1658,33 @@ class TidalService:
                     decoded_manifest = base64.b64decode(manifest).decode('utf-8')
                     
                     if 'application/vnd.tidal.bts' in manifest_type:
-                        # JSON manifest format (for LOSSLESS/AAC)
+                        # JSON manifest format (for LOSSLESS/HIGH/LOW)
                         manifest_json = json.loads(decoded_manifest)
                         urls = manifest_json.get('urls', [])
                         if urls:
                             stream_url = urls[0]
+                            
                     elif 'application/dash+xml' in manifest_type:
-                        # DASH MPD manifest (for HI_RES_LOSSLESS)
-                        # Extract the initialization URL from MPD
-                        # For now, we need to handle DASH differently
-                        # Use regex to find the media URL in MPD
+                        # DASH MPD manifest (for HI_RES_LOSSLESS/HI_RES)
                         import re
-                        media_match = re.search(r'initialization="([^"]+)"', decoded_manifest)
-                        if media_match:
-                            stream_url = media_match.group(1)
+                        
+                        # Try to find BaseURL first (direct stream URL)
+                        base_url_match = re.search(r'<BaseURL>([^<]+)</BaseURL>', decoded_manifest)
+                        if base_url_match:
+                            stream_url = base_url_match.group(1)
                         else:
-                            # Try to find any URL in the manifest
-                            url_match = re.search(r'https?://[^\s<>"]+\.(?:mp4|flac|m4a)', decoded_manifest)
-                            if url_match:
-                                stream_url = url_match.group(0)
+                            # Try initialization URL
+                            media_match = re.search(r'initialization="([^"]+)"', decoded_manifest)
+                            if media_match:
+                                stream_url = media_match.group(1)
+                            else:
+                                # Try to find any FLAC/MP4/M4A URL in the manifest
+                                url_match = re.search(r'https?://[^\s<>"]+\.(?:flac|mp4|m4a)', decoded_manifest)
+                                if url_match:
+                                    stream_url = url_match.group(0)
+                                    
                 except Exception as e:
-                    print(f"🎵 Error decoding manifest: {e}", file=sys.stderr)
+                    pass  # Silently handle manifest errors
             
             if not stream_url:
                 return {
@@ -1542,20 +1693,32 @@ class TidalService:
                 }
             
             # Get track info
-            info_response = requests.get(f"{self.base_url}/info/", params={
-                'id': track_id
-            }, timeout=10)
+            info_response = self._make_request("/info/", {'id': track_id}, timeout=10)
             
             title = ''
             duration = 0
             
-            if info_response.status_code == 200:
+            if info_response and info_response.status_code == 200:
                 info_data = info_response.json()
                 if info_data.get('data'):
                     title = info_data['data'].get('title', '')
                     duration = info_data['data'].get('duration', 0)
             
-            quality = track_data.get('audioQuality', 'LOSSLESS')
+            # Get actual quality from response
+            actual_quality = track_data.get('audioQuality', used_quality)
+            bit_depth = track_data.get('bitDepth', '')
+            sample_rate = track_data.get('sampleRate', '')
+            
+            quality_info = actual_quality
+            if bit_depth and sample_rate:
+                quality_info = f"{actual_quality} ({bit_depth}-bit/{sample_rate/1000:.1f}kHz)"
+            
+            # Determine mimeType based on quality
+            mime_type = 'audio/flac'  # Default for lossless
+            if actual_quality in ['HIGH', 'LOW']:
+                mime_type = 'audio/mp4'  # AAC in MP4 container
+            elif actual_quality in ['LOSSLESS', 'HI_RES', 'HI_RES_LOSSLESS']:
+                mime_type = 'audio/flac'
             
             return {
                 'success': True,
@@ -1563,12 +1726,137 @@ class TidalService:
                     'url': stream_url,
                     'title': title,
                     'duration': int(duration),
-                    'quality': quality
+                    'quality': actual_quality,
+                    'qualityInfo': quality_info,
+                    'bitDepth': bit_depth,
+                    'sampleRate': sample_rate,
+                    'mimeType': mime_type
                 }
             }
             
         except Exception as e:
             logger.error(f"Tidal stream extraction failed: {e}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
+    def get_stream_info_for_download(self, track_id: str) -> Dict[str, Any]:
+        """Get Tidal stream info optimized for downloading (Hi-Res first)
+        
+        Uses DOWNLOAD_QUALITY_LEVELS which prioritizes:
+        HI_RES_LOSSLESS → HI_RES → LOSSLESS → HIGH → LOW
+        """
+        try:
+            if not HAS_REQUESTS:
+                return {
+                    'success': False,
+                    'error': 'requests library not available - Tidal downloading not supported'
+                }
+            
+            # Try each quality level starting from Hi-Res (highest)
+            response = None
+            used_quality = None
+            
+            for quality in self.DOWNLOAD_QUALITY_LEVELS:
+                response = self._make_request("/track/", {
+                    'id': track_id,
+                    'quality': quality
+                }, timeout=10, use_cache=False)  # Don't cache stream URLs
+                
+                if response and response.status_code == 200:
+                    data = response.json()
+                    if data.get('data') and data['data'].get('manifest'):
+                        used_quality = quality
+                        break
+            
+            if not response or not used_quality:
+                return {
+                    'success': False,
+                    'error': 'Failed to get download stream at any quality level'
+                }
+            
+            # Process the response same as get_stream_info
+            data = response.json()
+            track_data = data['data']
+            
+            # Get stream URL from manifest (same logic as get_stream_info)
+            stream_url = ''
+            manifest_base64 = track_data.get('manifest', '')
+            manifest_type = track_data.get('manifestMimeType', '')
+            
+            if manifest_base64:
+                try:
+                    import base64
+                    decoded_manifest = base64.b64decode(manifest_base64).decode('utf-8')
+                    
+                    if 'application/json' in manifest_type or 'application/vnd.tidal.bts' in manifest_type or decoded_manifest.startswith('{'):
+                        manifest_json = json.loads(decoded_manifest)
+                        urls = manifest_json.get('urls', [])
+                        if urls:
+                            stream_url = urls[0]
+                    elif 'application/dash+xml' in manifest_type:
+                        import re
+                        base_url_match = re.search(r'<BaseURL>([^<]+)</BaseURL>', decoded_manifest)
+                        if base_url_match:
+                            stream_url = base_url_match.group(1)
+                        else:
+                            media_match = re.search(r'initialization="([^"]+)"', decoded_manifest)
+                            if media_match:
+                                stream_url = media_match.group(1)
+                            else:
+                                url_match = re.search(r'https?://[^\s<>"]+\.(?:flac|mp4|m4a)', decoded_manifest)
+                                if url_match:
+                                    stream_url = url_match.group(0)
+                except Exception as e:
+                    pass  # Silently handle manifest errors
+            
+            if not stream_url:
+                return {
+                    'success': False,
+                    'error': 'Could not extract stream URL for download'
+                }
+            
+            # Get track info
+            info_response = self._make_request("/info/", {'id': track_id}, timeout=10)
+            
+            title = ''
+            duration = 0
+            
+            if info_response and info_response.status_code == 200:
+                info_data = info_response.json()
+                if info_data.get('data'):
+                    title = info_data['data'].get('title', '')
+                    duration = info_data['data'].get('duration', 0)
+            
+            actual_quality = track_data.get('audioQuality', used_quality)
+            bit_depth = track_data.get('bitDepth', '')
+            sample_rate = track_data.get('sampleRate', '')
+            
+            quality_info = actual_quality
+            if bit_depth and sample_rate:
+                quality_info = f"{actual_quality} ({bit_depth}-bit/{sample_rate/1000:.1f}kHz)"
+            
+            mime_type = 'audio/flac'
+            if actual_quality in ['HIGH', 'LOW']:
+                mime_type = 'audio/mp4'
+            
+            return {
+                'success': True,
+                'data': {
+                    'url': stream_url,
+                    'title': title,
+                    'duration': int(duration),
+                    'quality': actual_quality,
+                    'qualityInfo': quality_info,
+                    'bitDepth': bit_depth,
+                    'sampleRate': sample_rate,
+                    'mimeType': mime_type
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Tidal download stream extraction failed: {e}")
             return {
                 'success': False,
                 'error': str(e)
@@ -1583,14 +1871,12 @@ class TidalService:
                     'error': 'requests library not available'
                 }
             
-            response = requests.get(f"{self.base_url}/album/", params={
-                'id': album_id
-            }, timeout=15)
+            response = self._make_request("/album/", {'id': album_id}, timeout=15)
             
-            if response.status_code != 200:
+            if not response or response.status_code != 200:
                 return {
                     'success': False,
-                    'error': f'Failed to fetch album: HTTP {response.status_code}'
+                    'error': f'Failed to fetch album: HTTP {response.status_code if response else "no response"}'
                 }
             
             data = response.json()
@@ -1603,9 +1889,9 @@ class TidalService:
             album_data = data['data']
             tracks = []
             
-            # Get tracks from album items
+            # Get tracks from album items (limit to 20)
             items = album_data.get('items', [])
-            for item in items:
+            for item in items[:20]:  # Limit to 20 tracks
                 # Handle both direct track and item wrapper
                 track = item.get('item', item)
                 if track.get('type') == 'track' or track.get('id'):
@@ -1634,14 +1920,12 @@ class TidalService:
                     'error': 'requests library not available'
                 }
             
-            response = requests.get(f"{self.base_url}/playlist/", params={
-                'id': playlist_id
-            }, timeout=15)
+            response = self._make_request("/playlist/", {'id': playlist_id}, timeout=15)
             
-            if response.status_code != 200:
+            if not response or response.status_code != 200:
                 return {
                     'success': False,
-                    'error': f'Failed to fetch playlist: HTTP {response.status_code}'
+                    'error': f'Failed to fetch playlist: HTTP {response.status_code if response else "no response"}'
                 }
             
             data = response.json()
@@ -1652,7 +1936,7 @@ class TidalService:
                 }
             
             tracks = []
-            for item in data['items']:
+            for item in data['items'][:20]:  # Limit to 20 tracks
                 track = item.get('item', item)
                 formatted_track = self._format_tidal_track(track)
                 if formatted_track:
@@ -1680,22 +1964,20 @@ class TidalService:
                 }
             
             # Use 'f' parameter to fetch artist with albums and tracks
-            response = requests.get(f"{self.base_url}/artist/", params={
-                'f': artist_id
-            }, timeout=15)
+            response = self._make_request("/artist/", {'f': artist_id}, timeout=15)
             
-            if response.status_code != 200:
+            if not response or response.status_code != 200:
                 return {
                     'success': False,
-                    'error': f'Failed to fetch artist: HTTP {response.status_code}'
+                    'error': f'Failed to fetch artist: HTTP {response.status_code if response else "no response"}'
                 }
             
             data = response.json()
             tracks = []
             
-            # Get tracks from response
+            # Get tracks from response (limit to 20)
             if data.get('tracks'):
-                for track in data['tracks']:
+                for track in data['tracks'][:20]:  # Limit to 20 tracks
                     formatted_track = self._format_tidal_track(track)
                     if formatted_track:
                         tracks.append(formatted_track)
@@ -1722,11 +2004,9 @@ class TidalService:
                 }
             
             # First get track info to find mix ID
-            response = requests.get(f"{self.base_url}/info/", params={
-                'id': track_id
-            }, timeout=10)
+            response = self._make_request("/info/", {'id': track_id}, timeout=10)
             
-            if response.status_code != 200:
+            if not response or response.status_code != 200:
                 return self.get_song_suggestions(track_id)
             
             data = response.json()
@@ -1739,11 +2019,9 @@ class TidalService:
             
             if track_mix_id:
                 # Get the mix tracks
-                mix_response = requests.get(f"{self.base_url}/mix/", params={
-                    'id': track_mix_id
-                }, timeout=15)
+                mix_response = self._make_request("/mix/", {'id': track_mix_id}, timeout=15)
                 
-                if mix_response.status_code == 200:
+                if mix_response and mix_response.status_code == 200:
                     mix_data = mix_response.json()
                     tracks = []
                     for item in mix_data.get('items', []):
@@ -1777,11 +2055,9 @@ class TidalService:
                 }
             
             # Get track info first
-            response = requests.get(f"{self.base_url}/info/", params={
-                'id': track_id
-            }, timeout=10)
+            response = self._make_request("/info/", {'id': track_id}, timeout=10)
             
-            if response.status_code != 200:
+            if not response or response.status_code != 200:
                 return {
                     'success': False,
                     'error': 'Could not get track info for suggestions'
@@ -1839,14 +2115,12 @@ class TidalService:
                     'error': 'requests library not available'
                 }
             
-            response = requests.get(f"{self.base_url}/lyrics/", params={
-                'id': track_id
-            }, timeout=10)
+            response = self._make_request("/lyrics/", {'id': track_id}, timeout=10)
             
-            if response.status_code != 200:
+            if not response or response.status_code != 200:
                 return {
                     'success': False,
-                    'error': f'Lyrics not available: HTTP {response.status_code}'
+                    'error': f'Lyrics not available: HTTP {response.status_code if response else "no response"}'
                 }
             
             data = response.json()
@@ -1875,7 +2149,9 @@ class TidalService:
             }
     
     def get_home(self) -> Dict[str, Any]:
-        """Get Tidal home feed with trending content"""
+        """Get Tidal home feed with curated high-quality content
+        OPTIMIZED: Reduced from 8 API calls to 3 for better performance
+        """
         try:
             if not HAS_REQUESTS:
                 return {
@@ -1883,47 +2159,41 @@ class TidalService:
                     'error': 'requests library not available'
                 }
             
-            print("🏠 Fetching Tidal home feed...", file=sys.stderr)
-            
             sections = []
             
-            # Get trending by searching popular terms
-            trending_queries = ['top hits', 'new music', 'popular']
+            # OPTIMIZED: Only 3 curated sections instead of 8
+            curated_sections = [
+                {'query': 'hi-res lossless', 'title': '🎧 Hi-Res Lossless'},
+                {'query': 'top hits 2024', 'title': '🔥 Top Hits'},
+                {'query': 'new releases', 'title': '🆕 New Releases'},
+            ]
             
-            for query in trending_queries:
+            for section_info in curated_sections:
                 try:
-                    response = requests.get(f"{self.base_url}/search/", params={
-                        's': query
-                    }, timeout=15)
+                    response = self._make_request("/search/", {'s': section_info['query']}, timeout=10)
                     
-                    if response.status_code == 200:
+                    if response and response.status_code == 200:
                         data = response.json()
+                        items = []
                         if data.get('data'):
                             items = data['data'].get('items', [])
-                            tracks = []
-                            for track in items[:15]:
-                                formatted_track = self._format_tidal_track(track)
-                                if formatted_track:
-                                    tracks.append(formatted_track)
+                        elif data.get('items'):
+                            items = data['items']
+                        
+                        tracks = []
+                        for track in items[:12]:  # Reduced from 15
+                            formatted_track = self._format_tidal_track(track)
+                            if formatted_track:
+                                tracks.append(formatted_track)
+                        
+                        if tracks and len(tracks) >= 3:
+                            sections.append({
+                                'title': section_info['title'],
+                                'contents': tracks
+                            })
                             
-                            if tracks:
-                                section_title = query.replace('_', ' ').title()
-                                sections.append({
-                                    'title': section_title,
-                                    'contents': tracks
-                                })
-                                break  # Only need one successful section for now
                 except Exception as e:
-                    print(f"⚠️ Error fetching Tidal section: {e}", file=sys.stderr)
-            
-            if not sections:
-                # Fallback empty sections
-                return {
-                    'success': True,
-                    'data': []
-                }
-            
-            print(f"🏠 Retrieved {len(sections)} Tidal home sections", file=sys.stderr)
+                    pass  # Silently skip failed sections
             
             return {
                 'success': True,
@@ -1947,25 +2217,27 @@ class TidalService:
                 }
             
             # Search for chart-like content
-            response = requests.get(f"{self.base_url}/search/", params={
-                's': 'top hits'
-            }, timeout=15)
+            response = self._make_request("/search/", {'s': 'top hits'}, timeout=15)
             
-            if response.status_code != 200:
+            if not response or response.status_code != 200:
                 return {
                     'success': False,
-                    'error': f'Failed to fetch charts: HTTP {response.status_code}'
+                    'error': f'Failed to fetch charts: HTTP {response.status_code if response else "no response"}'
                 }
             
             data = response.json()
             songs = []
             
+            items = []
             if data.get('data'):
                 items = data['data'].get('items', [])
-                for track in items[:50]:
-                    formatted_track = self._format_tidal_track(track)
-                    if formatted_track:
-                        songs.append(formatted_track)
+            elif data.get('items'):
+                items = data['items']
+            
+            for track in items[:50]:
+                formatted_track = self._format_tidal_track(track)
+                if formatted_track:
+                    songs.append(formatted_track)
             
             return {
                 'success': True,
@@ -2034,25 +2306,27 @@ class TidalService:
             
             print(f"🎭 Fetching Tidal playlists for mood: {params}", file=sys.stderr)
             
-            response = requests.get(f"{self.base_url}/search/", params={
-                's': params
-            }, timeout=15)
+            response = self._make_request("/search/", {'s': params}, timeout=15)
             
-            if response.status_code != 200:
+            if not response or response.status_code != 200:
                 return {
                     'success': False,
-                    'error': f'Failed to fetch mood playlists: HTTP {response.status_code}'
+                    'error': f'Failed to fetch mood playlists: HTTP {response.status_code if response else "no response"}'
                 }
             
             data = response.json()
             songs = []
             
+            items = []
             if data.get('data'):
                 items = data['data'].get('items', [])
-                for track in items[:30]:
-                    formatted_track = self._format_tidal_track(track)
-                    if formatted_track:
-                        songs.append(formatted_track)
+            elif data.get('items'):
+                items = data['items']
+            
+            for track in items[:30]:
+                formatted_track = self._format_tidal_track(track)
+                if formatted_track:
+                    songs.append(formatted_track)
             
             return {
                 'success': True,
@@ -3599,6 +3873,15 @@ def handle_request(request_data: Dict[str, Any]) -> Dict[str, Any]:
         elif action == 'stream':
             video_id = request_data.get('videoId', '')
             return service.get_stream_info(video_id)
+        
+        elif action == 'download_stream':
+            video_id = request_data.get('videoId', '')
+            # Use download-specific method for Tidal (Hi-Res first)
+            if isinstance(service, TidalService):
+                return service.get_stream_info_for_download(video_id)
+            else:
+                # Other sources use regular stream info
+                return service.get_stream_info(video_id)
             
         elif action == 'album_tracks':
             browse_id = request_data.get('browseId', '')
