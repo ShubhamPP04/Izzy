@@ -45,6 +45,7 @@ struct ServiceRequest: Codable {
     let browseId: String?
     let playlistId: String?
     let limit: Int?
+    let offset: Int?
     let musicSource: String?
     let aiApiKey: String?
     let params: String?
@@ -56,6 +57,7 @@ struct ServiceRequest: Codable {
          browseId: String? = nil,
          playlistId: String? = nil,
          limit: Int? = nil,
+         offset: Int? = nil,
          musicSource: String? = nil,
          aiApiKey: String? = nil,
          params: String? = nil,
@@ -66,6 +68,7 @@ struct ServiceRequest: Codable {
         self.browseId = browseId
         self.playlistId = playlistId
         self.limit = limit
+        self.offset = offset
         self.musicSource = musicSource
         self.aiApiKey = aiApiKey
         self.params = params
@@ -602,6 +605,14 @@ extension PythonServiceManager {
         return try await sendRequest(request, responseType: [SearchResult].self)
     }
     
+    /// Get artist songs with pagination (for Tidal Load More)
+    func getArtistSongsWithOffset(browseId: String, offset: Int, limit: Int = 20) async throws -> [SearchResult] {
+        let currentSource = UserDefaults.standard.string(forKey: "musicSource") ?? "youtube_music"
+        
+        let request = ServiceRequest(action: "artist_songs_paginated", browseId: browseId, limit: limit, offset: offset, musicSource: currentSource)
+        return try await sendRequest(request, responseType: [SearchResult].self)
+    }
+    
     func getWatchPlaylist(videoId: String, playlistId: String? = nil) async throws -> [SearchResult] {
         // Get the current music source from UserDefaults
         let currentSource = UserDefaults.standard.string(forKey: "musicSource") ?? "youtube_music"
@@ -616,6 +627,18 @@ extension PythonServiceManager {
         
         let request = ServiceRequest(action: "song_suggestions", videoId: videoId, musicSource: currentSource)
         return try await sendRequest(request, responseType: [SearchResult].self)
+    }
+    
+    /// Load more Tidal songs with pagination (Tidal only)
+    func loadMoreTidalSongs(query: String, offset: Int, limit: Int = 20) async throws -> LoadMoreSongsResponse {
+        let request = ServiceRequest(
+            action: "load_more_songs",
+            query: query,
+            limit: limit,
+            offset: offset,
+            musicSource: "tidal"
+        )
+        return try await sendRequest(request, responseType: LoadMoreSongsResponse.self)
     }
     
     // MARK: - Home & Discovery Methods

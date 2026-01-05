@@ -21,9 +21,9 @@ class MusicSearchManager: ObservableObject {
     private var searchCancellable: AnyCancellable?
     private let searchDebouncer = Debouncer(delay: 0.3)
     
-    // Cache for recent searches
+    // Cache for recent searches (3 minute timeout to avoid stale results)
     private var searchCache: [String: (results: MusicSearchResults, timestamp: Date)] = [:]
-    private let cacheTimeout: TimeInterval = 600 // 10 minutes
+    private let cacheTimeout: TimeInterval = 180 // 3 minutes
     
     init() {
         // Initialize Python service asynchronously to avoid blocking app startup
@@ -88,14 +88,20 @@ class MusicSearchManager: ObservableObject {
                 print("🎵 Song \(index + 1): \(song.title) by \(song.artist ?? "Unknown") - VideoID: \(song.videoId ?? "None")")
             }
             
-            // Cache the results with music source in key
-            searchCache[cacheKey] = (results: results, timestamp: Date())
-            cleanupOldCache()
+            // Cache the results with music source in key - only if we got actual results
+            if !results.isEmpty {
+                searchCache[cacheKey] = (results: results, timestamp: Date())
+                cleanupOldCache()
+            }
             
             await MainActor.run {
                 self.searchResults = results
                 self.isSearching = false
                 self.resetSelection()
+                // Track query and reset pagination for Tidal
+                self.currentSearchQuery = query
+                self.tidalSongOffset = 0
+                self.tidalHasMoreSongs = currentMusicSource == "tidal" && results.songs.count >= 20
             }
             
         } catch {
@@ -242,6 +248,55 @@ class MusicSearchManager: ObservableObject {
     
     func loadArtistSongs(browseId: String) async throws -> [SearchResult] {
         return try await pythonService.getArtistSongs(browseId: browseId)
+    }
+    
+    /// Load more artist songs with pagination (for Tidal)
+    func loadMoreArtistSongs(browseId: String, offset: Int) async throws -> [SearchResult] {
+        return try await pythonService.getArtistSongsWithOffset(browseId: browseId, offset: offset, limit: 20)
+    }
+    
+    // MARK: - Tidal Load More Songs
+    
+    /// Current search query for loading more results (Tidal only)
+    private(set) var currentSearchQuery: String = ""
+    
+    /// Whether Tidal has more songs to load
+    @Published var tidalHasMoreSongs: Bool = false
+    
+    /// Current offset for Tidal song pagination
+    private var tidalSongOffset: Int = 0
+    
+    /// Load more Tidal songs (appends to existing results)
+    func loadMoreTidalSongs() async {
+        let currentMusicSource = UserDefaults.standard.string(forKey: "musicSource") ?? "youtube_music"
+        guard currentMusicSource == "tidal", !currentSearchQuery.isEmpty else { return }
+        
+        do {
+            let response = try await pythonService.loadMoreTidalSongs(
+                query: currentSearchQuery,
+                offset: tidalSongOffset + 20,
+                limit: 20
+            )
+            
+            await MainActor.run {
+                // Get existing song IDs to avoid duplicates
+                let existingIds = Set(self.searchResults.songs.compactMap { $0.videoId })
+                
+                // Filter out duplicates before appending
+                let newSongs = response.songs.filter { song in
+                    guard let videoId = song.videoId else { return true }
+                    return !existingIds.contains(videoId)
+                }
+                
+                self.searchResults.songs.append(contentsOf: newSongs)
+                self.tidalHasMoreSongs = response.hasMore && !newSongs.isEmpty
+                self.tidalSongOffset += 20
+                
+                print("📥 Loaded \(newSongs.count) new songs (filtered \(response.songs.count - newSongs.count) duplicates, total: \(self.searchResults.songs.count))")
+            }
+        } catch {
+            print("❌ Failed to load more Tidal songs: \(error)")
+        }
     }
 }
 

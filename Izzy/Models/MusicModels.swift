@@ -315,6 +315,13 @@ struct StreamInfo: Codable {
     }
 }
 
+// MARK: - Load More Songs Response (Tidal pagination)
+
+struct LoadMoreSongsResponse: Codable {
+    let songs: [SearchResult]
+    let hasMore: Bool
+}
+
 // MARK: - Favorite Song Model
 
 struct FavoriteSong: Identifiable, Codable, Equatable {

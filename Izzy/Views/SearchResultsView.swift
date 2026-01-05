@@ -29,6 +29,9 @@ struct SearchResultsView: View {
     @State private var playlistTracks: [String: [SearchResult]] = [:]
     @State private var artistSongs: [String: [SearchResult]] = [:]
     @State private var expandedCategories: Set<SearchResultType> = []
+    @State private var artistHasMoreSongs: [String: Bool] = [:]  // Track artists with more songs
+    @State private var isLoadingMoreArtist: [String: Bool] = [:]  // Track loading state per artist
+    @State private var artistSongOffsets: [String: Int] = [:]  // Track offsets per artist
     
     private let maxResultsToShow = 8
     
@@ -54,7 +57,9 @@ struct SearchResultsView: View {
                         albumTracks: albumTracks,
                         playlistTracks: playlistTracks,
                         artistSongs: artistSongs,
-                        searchState: searchState, // Pass searchState down
+                        searchState: searchState,
+                        artistHasMoreSongs: artistHasMoreSongs,
+                        isLoadingMoreArtist: isLoadingMoreArtist,
                         onResultTap: { result, context in
                             handleResultSelection(result, context: context)
                         },
@@ -69,6 +74,9 @@ struct SearchResultsView: View {
                         },
                         onShowAllTap: { category in
                             handleShowAllTap(category)
+                        },
+                        onLoadMoreArtistSongs: { artist in
+                            handleLoadMoreArtistSongs(artist)
                         }
                     )
                 }
@@ -210,6 +218,8 @@ struct SearchResultsView: View {
             // Collapse
             expandedArtists.remove(artist.id)
             artistSongs.removeValue(forKey: artist.id)
+            artistHasMoreSongs.removeValue(forKey: artist.id)
+            artistSongOffsets.removeValue(forKey: artist.id)
         } else {
             // Expand
             expandedArtists.insert(artist.id)
@@ -239,6 +249,10 @@ struct SearchResultsView: View {
                     }
                     await MainActor.run {
                         artistSongs[artist.id] = songsWithArtistArt
+                        // Set hasMoreSongs for Tidal when initial load returns 20 songs
+                        let currentMusicSource = UserDefaults.standard.string(forKey: "musicSource") ?? "youtube_music"
+                        artistHasMoreSongs[artist.id] = currentMusicSource == "tidal" && songs.count >= 20
+                        artistSongOffsets[artist.id] = 0
                     }
                 } catch {
                     print("Failed to load artist songs: \(error)")
@@ -252,6 +266,65 @@ struct SearchResultsView: View {
             expandedCategories.remove(category)
         } else {
             expandedCategories.insert(category)
+        }
+    }
+    
+    private func handleLoadMoreArtistSongs(_ artist: SearchResult) {
+        guard isLoadingMoreArtist[artist.id] != true else { return }
+        guard let browseId = artist.browseId else { return }
+        
+        isLoadingMoreArtist[artist.id] = true
+        let currentOffset = artistSongOffsets[artist.id] ?? 0
+        
+        Task {
+            do {
+                let moreSongs = try await musicSearchManager.loadMoreArtistSongs(
+                    browseId: browseId,
+                    offset: currentOffset + 20
+                )
+                
+                await MainActor.run {
+                    // Get existing song IDs to avoid duplicates
+                    let existingSongs = artistSongs[artist.id] ?? []
+                    let existingIds = Set(existingSongs.compactMap { $0.videoId })
+                    
+                    // Filter out duplicates and add artist thumbnail
+                    let newSongs = moreSongs.filter { song in
+                        guard let videoId = song.videoId else { return true }
+                        return !existingIds.contains(videoId)
+                    }.map { song -> SearchResult in
+                        var updatedSong = song
+                        if updatedSong.thumbnailURL == nil || updatedSong.thumbnailURL?.isEmpty == true {
+                            updatedSong = SearchResult(
+                                id: song.id,
+                                type: song.type,
+                                title: song.title,
+                                artist: song.artist,
+                                thumbnailURL: artist.thumbnailURL,
+                                duration: song.duration,
+                                explicit: song.explicit,
+                                videoId: song.videoId,
+                                browseId: song.browseId,
+                                year: song.year,
+                                playCount: song.playCount
+                            )
+                        }
+                        return updatedSong
+                    }
+                    
+                    artistSongs[artist.id] = existingSongs + newSongs
+                    artistSongOffsets[artist.id] = currentOffset + 20
+                    artistHasMoreSongs[artist.id] = moreSongs.count >= 20 && !newSongs.isEmpty
+                    isLoadingMoreArtist[artist.id] = false
+                    
+                    print("📥 Loaded \(newSongs.count) more songs for artist \(artist.title)")
+                }
+            } catch {
+                await MainActor.run {
+                    isLoadingMoreArtist[artist.id] = false
+                }
+                print("❌ Failed to load more artist songs: \(error)")
+            }
         }
     }
 }
@@ -270,12 +343,15 @@ struct SearchCategorySection: View {
     let albumTracks: [String: [SearchResult]]
     let playlistTracks: [String: [SearchResult]]
     let artistSongs: [String: [SearchResult]]
-    var searchState: SearchState? // Add this parameter
+    var searchState: SearchState?
+    let artistHasMoreSongs: [String: Bool]  // Track which artists have more songs
+    let isLoadingMoreArtist: [String: Bool]  // Track which artists are loading more
     let onResultTap: (SearchResult, PlaybackContext) -> Void
     let onAlbumExpand: (SearchResult) -> Void
     let onPlaylistExpand: (SearchResult) -> Void
     let onArtistExpand: (SearchResult) -> Void
     let onShowAllTap: (SearchResultType) -> Void
+    let onLoadMoreArtistSongs: (SearchResult) -> Void  // Load more for specific artist
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -361,6 +437,41 @@ struct SearchCategorySection: View {
                                         }
                                     )
                                     .padding(.leading, 20)
+                                }
+                                
+                                // Load More button for artist songs (Tidal only)
+                                if result.type == .artist && artistHasMoreSongs[result.id] == true && !isLoadingMoreArtist[result.id, default: false] {
+                                    Button(action: {
+                                        onLoadMoreArtistSongs(result)
+                                    }) {
+                                        HStack {
+                                            Image(systemName: "arrow.down.circle")
+                                                .font(.system(size: 14))
+                                            Text("Load More Songs")
+                                                .font(.system(size: 13, weight: .medium))
+                                        }
+                                        .foregroundColor(.blue)
+                                        .padding(.vertical, 8)
+                                        .frame(maxWidth: .infinity)
+                                        .background(Color.blue.opacity(0.1))
+                                        .cornerRadius(8)
+                                    }
+                                    .buttonStyle(PlainButtonStyle())
+                                    .padding(.leading, 20)
+                                    .padding(.top, 4)
+                                }
+                                
+                                // Loading indicator for artist songs
+                                if result.type == .artist && isLoadingMoreArtist[result.id, default: false] {
+                                    HStack {
+                                        ProgressView()
+                                            .scaleEffect(0.8)
+                                        Text("Loading more songs...")
+                                            .font(.system(size: 12))
+                                            .foregroundColor(.secondary)
+                                    }
+                                    .padding(.leading, 20)
+                                    .padding(.vertical, 8)
                                 }
                             }
                             .padding(.top, 4)

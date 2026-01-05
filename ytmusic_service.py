@@ -1271,9 +1271,9 @@ class TidalService:
         # Preferred quality - LOSSLESS for best compatibility
         self.preferred_quality = 'LOSSLESS'
         
-        # Simple cache to reduce API calls (cache for 5 minutes)
+        # Simple cache to reduce API calls (cache for 2 minutes - shorter to avoid stale responses)
         self._cache = {}
-        self._cache_ttl = 300  # 5 minutes
+        self._cache_ttl = 120  # 2 minutes
         
         # Reuse session for connection pooling (reduces CPU/memory)
         self._session = None
@@ -1342,10 +1342,13 @@ class TidalService:
                 url = f"{self.base_url}{endpoint}"
                 response = session.get(url, params=params, timeout=timeout)
                 if response.status_code == 200:
-                    # Cache successful response
+                    # Only cache responses that have actual data
                     if use_cache:
                         try:
-                            self._set_cache(cache_key, response.json())
+                            resp_data = response.json()
+                            # Only cache if there's actual data
+                            if resp_data.get('data') and resp_data['data'].get('items'):
+                                self._set_cache(cache_key, resp_data)
                         except:
                             pass
                     return response
@@ -1455,6 +1458,59 @@ class TidalService:
             
         except Exception as e:
             logger.error(f"Tidal search failed: {e}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
+    def load_more_songs(self, query: str, offset: int = 0, limit: int = 20) -> Dict[str, Any]:
+        """
+        Load more Tidal songs with pagination support.
+        This is specifically for the "Load More" feature in search results.
+        """
+        try:
+            if not HAS_REQUESTS:
+                return {
+                    'success': False,
+                    'error': 'requests library not available'
+                }
+            
+            songs = []
+            
+            # Make request with offset parameter
+            response = self._make_request("/search/", {
+                's': query,
+                'offset': offset,
+                'limit': limit
+            }, timeout=10)
+            
+            if response and response.status_code == 200:
+                data = response.json()
+                items = []
+                if data.get('data'):
+                    items = data['data'].get('items', [])
+                elif data.get('items'):
+                    items = data['items']
+                elif isinstance(data, list):
+                    items = data
+                
+                for track in items[:limit]:
+                    formatted_track = self._format_tidal_track(track)
+                    if formatted_track:
+                        songs.append(formatted_track)
+            
+            print(f"🔍 Tidal load more (offset={offset}): {len(songs)} more songs", file=sys.stderr)
+            
+            return {
+                'success': True,
+                'data': {
+                    'songs': songs,
+                    'hasMore': len(songs) >= limit  # Indicate if there might be more results
+                }
+            }
+            
+        except Exception as e:
+            logger.error(f"Tidal load more failed: {e}")
             return {
                 'success': False,
                 'error': str(e)
@@ -1975,9 +2031,15 @@ class TidalService:
             data = response.json()
             tracks = []
             
-            # Get tracks from response (limit to 20)
+            # Get tracks from response, sort by popularity, and limit to 20
             if data.get('tracks'):
-                for track in data['tracks'][:20]:  # Limit to 20 tracks
+                # Sort by popularity (descending) - higher popularity first
+                sorted_tracks = sorted(
+                    data['tracks'],
+                    key=lambda t: t.get('popularity', 0) or 0,
+                    reverse=True
+                )
+                for track in sorted_tracks[:20]:  # Limit to 20 tracks
                     formatted_track = self._format_tidal_track(track)
                     if formatted_track:
                         tracks.append(formatted_track)
@@ -1989,6 +2051,57 @@ class TidalService:
             
         except Exception as e:
             logger.error(f"Tidal artist songs failed: {e}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
+    def get_artist_songs_paginated(self, artist_id: str, offset: int = 0, limit: int = 20) -> Dict[str, Any]:
+        """Get songs from a Tidal artist with pagination support"""
+        try:
+            if not HAS_REQUESTS:
+                return {
+                    'success': False,
+                    'error': 'requests library not available'
+                }
+            
+            # Use 'f' parameter to fetch artist with albums and tracks
+            response = self._make_request("/artist/", {'f': artist_id}, timeout=15, use_cache=False)
+            
+            if not response or response.status_code != 200:
+                return {
+                    'success': False,
+                    'error': f'Failed to fetch artist: HTTP {response.status_code if response else "no response"}'
+                }
+            
+            data = response.json()
+            tracks = []
+            
+            # Get tracks from response with offset and limit
+            if data.get('tracks'):
+                # Sort by popularity (descending) before pagination
+                sorted_tracks = sorted(
+                    data['tracks'],
+                    key=lambda t: t.get('popularity', 0) or 0,
+                    reverse=True
+                )
+                # Apply offset and limit for pagination
+                paginated_tracks = sorted_tracks[offset:offset + limit]
+                
+                for track in paginated_tracks:
+                    formatted_track = self._format_tidal_track(track)
+                    if formatted_track:
+                        tracks.append(formatted_track)
+            
+            print(f"🔍 Tidal artist songs (offset={offset}): {len(tracks)} songs", file=sys.stderr)
+            
+            return {
+                'success': True,
+                'data': tracks
+            }
+            
+        except Exception as e:
+            logger.error(f"Tidal artist songs paginated failed: {e}")
             return {
                 'success': False,
                 'error': str(e)
@@ -3903,6 +4016,30 @@ def handle_request(request_data: Dict[str, Any]) -> Dict[str, Any]:
         elif action == 'song_suggestions':
             video_id = request_data.get('videoId', '')
             return service.get_song_suggestions(video_id)
+        
+        elif action == 'load_more_songs':
+            # Only Tidal supports this currently
+            if isinstance(service, TidalService):
+                query = request_data.get('query', '')
+                offset = request_data.get('offset', 0)
+                limit = request_data.get('limit', 20)
+                return service.load_more_songs(query, offset, limit)
+            else:
+                return {
+                    'success': False,
+                    'error': 'Load more songs not supported for this music source'
+                }
+        
+        elif action == 'artist_songs_paginated':
+            # Paginated artist songs (Tidal only currently)
+            browse_id = request_data.get('browseId', '')
+            offset = request_data.get('offset', 0)
+            limit = request_data.get('limit', 20)
+            if isinstance(service, TidalService):
+                return service.get_artist_songs_paginated(browse_id, offset, limit)
+            else:
+                # Other services don't support pagination, just return regular artist songs
+                return service.get_artist_songs(browse_id)
 
         elif action == 'ai_search':
             query = request_data.get('query', '')

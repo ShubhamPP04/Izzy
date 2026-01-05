@@ -167,8 +167,12 @@ class MiniPlayerManager: ObservableObject {
         progressTimer?.invalidate()
         progressTimer = nil
         
-        miniPlayerWindow?.close()
-        miniPlayerWindow = nil
+        // Just hide the window, don't close it
+        // Closing triggers app termination for accessory apps (no dock icon)
+        if let window = miniPlayerWindow {
+            window.orderOut(nil)
+        }
+        // Note: We keep miniPlayerWindow reference so it can be shown again quickly
     }
     
     private func setupMiniPlayerContent() {
