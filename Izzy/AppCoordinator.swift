@@ -15,12 +15,14 @@ class AppCoordinator: ObservableObject {
     private let hotkeyManager = GlobalHotkeyManager()
     private var appIsActive = false
     private var updateCheckTimer: Timer?
+    private var memoryManagementTimer: Timer?
     private var cancellables = Set<AnyCancellable>()
     
     init() {
         setupCoordination()
         setupAppActivityObserver()
         startPeriodicUpdateChecks()
+        startMemoryManagement()
         // Initialize menu bar on app start
         initializeMenuBar()
     }
@@ -91,6 +93,16 @@ class AppCoordinator: ObservableObject {
         }
     }
     
+    // Periodic memory management to prevent slowdowns
+    private func startMemoryManagement() {
+        // Clear image cache every 10 minutes (600 seconds)
+        memoryManagementTimer = Timer.scheduledTimer(withTimeInterval: 600, repeats: true) { _ in
+            // Clear URL cache (AsyncImage caching)
+            URLCache.shared.removeAllCachedResponses()
+            print("🧹 Cleared image cache for performance")
+        }
+    }
+    
     func createSearchView() -> some View {
         // Return the music search view with liquid glass background
         ZStack {
@@ -156,11 +168,13 @@ class AppCoordinator: ObservableObject {
         searchState.playbackManager.savePlaybackState()
         // Invalidate the update check timer
         updateCheckTimer?.invalidate()
+        memoryManagementTimer?.invalidate()
     }
     
     deinit {
         NotificationCenter.default.removeObserver(self)
         updateCheckTimer?.invalidate()
+        memoryManagementTimer?.invalidate()
         cancellables.removeAll()
     }
 }

@@ -12,6 +12,13 @@ import AppKit
 struct IzzyApp: App {
     @StateObject private var appCoordinator = AppCoordinator()
     
+    init() {
+        // Configure URLCache with limits to prevent memory bloat from AsyncImage
+        // 50MB memory cache, 100MB disk cache
+        let cache = URLCache(memoryCapacity: 50 * 1024 * 1024, diskCapacity: 100 * 1024 * 1024)
+        URLCache.shared = cache
+    }
+    
     var body: some Scene {
         WindowGroup {
             // Create an empty, invisible view that immediately hides itself
