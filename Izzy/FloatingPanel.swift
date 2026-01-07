@@ -80,6 +80,10 @@ final class FloatingPanel: NSPanel, NSWindowDelegate {
         // Make sure window accepts first responder
         acceptsMouseMovedEvents = true
         ignoresMouseEvents = false
+        
+        // 🔑 CRITICAL: Enable automatic window position persistence
+        // This uses macOS built-in mechanism to save/restore position automatically
+        self.setFrameAutosaveName("IzzyFloatingPanel")
     }
     
     // MARK: - Keyboard Shortcuts for Playback Control
@@ -213,6 +217,10 @@ final class FloatingPanel: NSPanel, NSWindowDelegate {
     
     // MARK: - Window State Tracking
     override func orderOut(_ sender: Any?) {
+        // Save window position before hiding
+        if let wm = windowManager {
+            wm.saveWindowPosition(self)
+        }
         super.orderOut(sender)
         // Notify WindowManager when window is hidden by system (clicking on background app)
         if let wm = windowManager {
@@ -233,6 +241,10 @@ final class FloatingPanel: NSPanel, NSWindowDelegate {
     }
     
     override func orderBack(_ sender: Any?) {
+        // Save window position before hiding
+        if let wm = windowManager {
+            wm.saveWindowPosition(self)
+        }
         super.orderBack(sender)
         // Notify WindowManager when window is moved to back
         if let wm = windowManager {
@@ -244,8 +256,10 @@ final class FloatingPanel: NSPanel, NSWindowDelegate {
     
     // MARK: - NSWindowDelegate
     func windowDidResignKey(_ notification: Notification) {
-        print("🔄 Window resigned key (lost focus) - syncing state to hidden")
+        print("🔄 Window resigned key (lost focus) - saving position and syncing state")
+        // Save window position before syncing to hidden
         if let wm = windowManager {
+            wm.saveWindowPosition(self)
             DispatchQueue.main.async {
                 wm.syncVisibilityState(false)
             }

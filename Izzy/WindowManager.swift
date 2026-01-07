@@ -94,18 +94,17 @@ class WindowManager: ObservableObject {
                 print("📱 Showing existing panel")
                 isVisible = true
 
-                // Immediate activation sequence for better responsiveness
-                NSApp.activate(ignoringOtherApps: true)
-                panel.orderFront(nil)
-                panel.makeKeyAndOrderFront(nil)
-
-                // Restore position instead of centering
+                // Only center if explicitly requested
                 if shouldCenterWindow {
                     panel.center()
                     shouldCenterWindow = false
-                } else {
-                    restoreWindowPosition(panel)
                 }
+                // Position is auto-restored by setFrameAutosaveName
+
+                // Now show the window
+                NSApp.activate(ignoringOtherApps: true)
+                panel.orderFront(nil)
+                panel.makeKeyAndOrderFront(nil)
 
                 // Ensure focus
                 DispatchQueue.main.async {
@@ -125,17 +124,16 @@ class WindowManager: ObservableObject {
         // Update visibility state immediately
         isVisible = true
 
-        // Optimized activation sequence
-        NSApp.activate(ignoringOtherApps: true)
-        panel.makeKeyAndOrderFront(nil)
-
-        // Restore position or center on first launch
+        // Only center if explicitly requested
         if shouldCenterWindow {
             panel.center()
             shouldCenterWindow = false
-        } else {
-            restoreWindowPosition(panel)
         }
+        // Position is auto-restored by setFrameAutosaveName
+
+        // Now show the window at the correct position
+        NSApp.activate(ignoringOtherApps: true)
+        panel.makeKeyAndOrderFront(nil)
 
         // Store reference
         floatingPanel = panel

@@ -1289,6 +1289,16 @@ class TidalService:
             })
         return self._session
     
+    def _reset_session(self):
+        """Reset the session to get fresh connections"""
+        if self._session is not None:
+            try:
+                self._session.close()
+            except:
+                pass
+            self._session = None
+        print("🔄 Tidal session reset for fresh connection", file=sys.stderr)
+    
     def _get_cache_key(self, endpoint: str, params: Dict) -> str:
         """Generate cache key"""
         return f"{endpoint}:{json.dumps(params, sort_keys=True)}"
@@ -1305,12 +1315,13 @@ class TidalService:
     
     def _set_cache(self, key: str, data: Dict):
         """Cache response data"""
-        # Limit cache size to prevent memory issues
-        if len(self._cache) > 100:
-            # Remove oldest entries
-            oldest_keys = sorted(self._cache.keys(), key=lambda k: self._cache[k][0])[:50]
+        # Limit cache size to prevent memory issues - max 30 entries
+        if len(self._cache) > 30:
+            # Remove oldest entries - keep only 15
+            oldest_keys = sorted(self._cache.keys(), key=lambda k: self._cache[k][0])[:15]
             for k in oldest_keys:
                 del self._cache[k]
+            print(f"🧹 Tidal cache cleanup: removed {len(oldest_keys)} old entries", file=sys.stderr)
         self._cache[key] = (time.time(), data)
     
     def _get_next_api(self) -> str:
@@ -1362,12 +1373,19 @@ class TidalService:
                 last_error = e
                 tried_apis.add(self.base_url)
                 self._get_next_api()
+                # Reset session on connection issues to get fresh connection
+                self._reset_session()
             except Exception as e:
                 last_error = e
                 tried_apis.add(self.base_url)
                 self._get_next_api()
+                # Reset session on any error
+                self._reset_session()
         
+        # All APIs failed - reset session and clear cache for fresh start
         print(f"❌ All Tidal API endpoints failed. Last error: {last_error}", file=sys.stderr)
+        self._reset_session()
+        self._cache.clear()  # Clear cache so next request tries fresh
         return None
         
     def search_all(self, query: str, limit: int = 20) -> Dict[str, Any]:

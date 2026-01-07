@@ -119,6 +119,19 @@ class MusicSearchManager: ObservableObject {
     private func cleanupOldCache() {
         let cutoffTime = Date().addingTimeInterval(-cacheTimeout)
         searchCache = searchCache.filter { $0.value.timestamp > cutoffTime }
+        
+        // Limit cache size to prevent memory growth - max 20 entries
+        if searchCache.count > 20 {
+            // Sort by timestamp and keep only newest 10
+            let sortedKeys = searchCache.keys.sorted { key1, key2 in
+                (searchCache[key1]?.timestamp ?? Date.distantPast) < (searchCache[key2]?.timestamp ?? Date.distantPast)
+            }
+            // Remove oldest entries
+            for key in sortedKeys.prefix(searchCache.count - 10) {
+                searchCache.removeValue(forKey: key)
+            }
+            print("🧹 Search cache cleanup: kept 10 newest entries")
+        }
     }
     
     func clearResults() {
@@ -253,6 +266,11 @@ class MusicSearchManager: ObservableObject {
     /// Load more artist songs with pagination (for Tidal)
     func loadMoreArtistSongs(browseId: String, offset: Int) async throws -> [SearchResult] {
         return try await pythonService.getArtistSongsWithOffset(browseId: browseId, offset: offset, limit: 20)
+    }
+    
+    /// Load more playlist tracks with pagination (All sources)
+    func loadMorePlaylistTracks(playlistId: String, offset: Int) async throws -> [SearchResult] {
+        return try await pythonService.getPlaylistTracksWithOffset(playlistId: playlistId, offset: offset, limit: 20)
     }
     
     // MARK: - Tidal Load More Songs

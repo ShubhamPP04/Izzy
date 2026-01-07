@@ -312,19 +312,40 @@ class PythonServiceManager: ObservableObject {
     // MARK: - Request Handling
     
     func sendRequest<T: Codable>(_ request: ServiceRequest, responseType: T.Type) async throws -> T {
-        if !isServiceRunning {
-            try await restartService()
-        }
+        // Retry logic: try up to 3 times, restarting service on failure
+        var lastError: Error = ServiceError.processNotRunning
         
-        return try await withCheckedThrowingContinuation { continuation in
-            serviceQueue.async { [weak self] in
-                guard let self = self else {
-                    continuation.resume(throwing: ServiceError.processNotRunning)
-                    return
+        for attempt in 1...3 {
+            // Ensure service is running
+            if !isServiceRunning {
+                print("🔄 Attempt \(attempt): Python service not running, restarting...")
+                try await restartService()
+            }
+            
+            do {
+                return try await withCheckedThrowingContinuation { continuation in
+                    serviceQueue.async { [weak self] in
+                        guard let self = self else {
+                            continuation.resume(throwing: ServiceError.processNotRunning)
+                            return
+                        }
+                        self.performRequest(request, responseType: responseType, continuation: continuation)
+                    }
                 }
-                self.performRequest(request, responseType: responseType, continuation: continuation)
+            } catch {
+                lastError = error
+                print("❌ Attempt \(attempt) failed: \(error)")
+                
+                // On failure, mark service as not running to force restart
+                if attempt < 3 {
+                    print("🔄 Restarting service for retry...")
+                    cleanup()
+                    try? await Task.sleep(nanoseconds: 500_000_000) // Wait 0.5s before retry
+                }
             }
         }
+        
+        throw lastError
     }
     
     private func performRequest<T: Codable>(
@@ -535,10 +556,10 @@ class PythonServiceManager: ObservableObject {
 extension PythonServiceManager {
     
     func searchMusic(query: String, limit: Int = 20) async throws -> MusicSearchResults {
-        // Return empty results if service is not running to prevent crashes
-        guard isServiceRunning else {
-            print("Service not running, returning empty results")
-            return MusicSearchResults()
+        // Ensure service is running - restart if needed
+        if !isServiceRunning {
+            print("🔄 Python service not running, restarting...")
+            try ensureServiceRunning()
         }
         
         // Get the current music source from UserDefaults
@@ -610,6 +631,14 @@ extension PythonServiceManager {
         let currentSource = UserDefaults.standard.string(forKey: "musicSource") ?? "youtube_music"
         
         let request = ServiceRequest(action: "artist_songs_paginated", browseId: browseId, limit: limit, offset: offset, musicSource: currentSource)
+        return try await sendRequest(request, responseType: [SearchResult].self)
+    }
+    
+    /// Get playlist tracks with pagination (All sources)
+    func getPlaylistTracksWithOffset(playlistId: String, offset: Int, limit: Int = 20) async throws -> [SearchResult] {
+        let currentSource = UserDefaults.standard.string(forKey: "musicSource") ?? "youtube_music"
+        
+        let request = ServiceRequest(action: "playlist_tracks_paginated", playlistId: playlistId, limit: limit, offset: offset, musicSource: currentSource)
         return try await sendRequest(request, responseType: [SearchResult].self)
     }
     

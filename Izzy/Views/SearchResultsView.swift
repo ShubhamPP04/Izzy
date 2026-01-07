@@ -13,6 +13,7 @@ enum PlaybackContext {
     case general
     case album(String)
     case playlist(String)
+    case artist(String)
 }
 
 struct SearchResultsView: View {
@@ -32,6 +33,11 @@ struct SearchResultsView: View {
     @State private var artistHasMoreSongs: [String: Bool] = [:]  // Track artists with more songs
     @State private var isLoadingMoreArtist: [String: Bool] = [:]  // Track loading state per artist
     @State private var artistSongOffsets: [String: Int] = [:]  // Track offsets per artist
+    
+    // Playlist Load More state
+    @State private var playlistHasMore: [String: Bool] = [:]  // Track playlists with more tracks
+    @State private var isLoadingMorePlaylist: [String: Bool] = [:]  // Track loading state per playlist
+    @State private var playlistOffsets: [String: Int] = [:]  // Track offsets per playlist
     
     private let maxResultsToShow = 8
     
@@ -60,6 +66,8 @@ struct SearchResultsView: View {
                         searchState: searchState,
                         artistHasMoreSongs: artistHasMoreSongs,
                         isLoadingMoreArtist: isLoadingMoreArtist,
+                        playlistHasMore: playlistHasMore,
+                        isLoadingMorePlaylist: isLoadingMorePlaylist,
                         onResultTap: { result, context in
                             handleResultSelection(result, context: context)
                         },
@@ -77,6 +85,9 @@ struct SearchResultsView: View {
                         },
                         onLoadMoreArtistSongs: { artist in
                             handleLoadMoreArtistSongs(artist)
+                        },
+                        onLoadMorePlaylistTracks: { playlist in
+                            handleLoadMorePlaylistTracks(playlist)
                         }
                     )
                 }
@@ -126,6 +137,50 @@ struct SearchResultsView: View {
                 // Create queue from playlist tracks
                 if let playlistTrackResults = playlistTracks[playlistId] {
                     allTracks = playlistTrackResults.map { Track(from: $0) }
+                    
+                    // CRITICAL FIX: Find the exact matching track from playlist
+                    // The clicked track might have different ID, so match by videoId
+                    if let matchingTrackResult = playlistTrackResults.first(where: { $0.videoId == result.videoId }) {
+                        // Use the track from the playlist to ensure correct playback
+                        let correctedTrack = Track(from: matchingTrackResult)
+                        print("🎵 Found matching track in playlist: \(correctedTrack.title)")
+                        
+                        // Update track reference to use the one from playlist
+                        playbackManager.currentTrack = correctedTrack
+                        
+                        // Play with corrected track
+                        await playbackManager.play(track: correctedTrack, fromQueue: allTracks)
+                        print("🎵 Playback started with corrected playlist track")
+                        return
+                    }
+                    // If no match found, fall through to use original track
+                    print("⚠️ Could not find matching track in playlist, using original")
+                } else {
+                    allTracks = [track] // Fallback to single track
+                }
+                
+            case .artist(let artistId):
+                // Create queue from artist songs
+                if let artistSongResults = artistSongs[artistId] {
+                    allTracks = artistSongResults.map { Track(from: $0) }
+                    
+                    // CRITICAL FIX: Find the exact matching track from artist songs
+                    // The clicked track might have different ID, so match by videoId
+                    if let matchingTrackResult = artistSongResults.first(where: { $0.videoId == result.videoId }) {
+                        // Use the track from the artist songs to ensure correct playback
+                        let correctedTrack = Track(from: matchingTrackResult)
+                        print("🎵 Found matching track in artist songs: \(correctedTrack.title)")
+                        
+                        // Update track reference to use the one from artist songs
+                        playbackManager.currentTrack = correctedTrack
+                        
+                        // Play with corrected track
+                        await playbackManager.play(track: correctedTrack, fromQueue: allTracks)
+                        print("🎵 Playback started with corrected artist track")
+                        return
+                    }
+                    // If no match found, fall through to use original track
+                    print("⚠️ Could not find matching track in artist songs, using original")
                 } else {
                     allTracks = [track] // Fallback to single track
                 }
@@ -194,6 +249,8 @@ struct SearchResultsView: View {
             // Collapse
             expandedPlaylists.remove(playlist.id)
             playlistTracks.removeValue(forKey: playlist.id)
+            playlistHasMore.removeValue(forKey: playlist.id)
+            playlistOffsets.removeValue(forKey: playlist.id)
         } else {
             // Expand
             expandedPlaylists.insert(playlist.id)
@@ -203,6 +260,9 @@ struct SearchResultsView: View {
                     let tracks = try await musicSearchManager.loadPlaylistTracks(playlistId: playlistId)
                     await MainActor.run {
                         playlistTracks[playlist.id] = tracks
+                        // Set pagination state - if we got 20 tracks, there might be more
+                        playlistHasMore[playlist.id] = tracks.count >= 20
+                        playlistOffsets[playlist.id] = 0
                     }
                 } catch {
                     print("Failed to load playlist tracks: \(error)")
@@ -327,6 +387,47 @@ struct SearchResultsView: View {
             }
         }
     }
+    
+    private func handleLoadMorePlaylistTracks(_ playlist: SearchResult) {
+        guard isLoadingMorePlaylist[playlist.id] != true else { return }
+        guard let playlistId = playlist.browseId else { return }
+        
+        isLoadingMorePlaylist[playlist.id] = true
+        let currentOffset = playlistOffsets[playlist.id] ?? 0
+        
+        Task {
+            do {
+                let moreTracks = try await musicSearchManager.loadMorePlaylistTracks(
+                    playlistId: playlistId,
+                    offset: currentOffset + 20
+                )
+                
+                await MainActor.run {
+                    // Get existing track IDs to avoid duplicates
+                    let existingTracks = playlistTracks[playlist.id] ?? []
+                    let existingIds = Set(existingTracks.compactMap { $0.videoId })
+                    
+                    // Filter out duplicates
+                    let newTracks = moreTracks.filter { track in
+                        guard let videoId = track.videoId else { return true }
+                        return !existingIds.contains(videoId)
+                    }
+                    
+                    playlistTracks[playlist.id] = existingTracks + newTracks
+                    playlistOffsets[playlist.id] = currentOffset + 20
+                    playlistHasMore[playlist.id] = moreTracks.count >= 20 && !newTracks.isEmpty
+                    isLoadingMorePlaylist[playlist.id] = false
+                    
+                    print("📥 Loaded \(newTracks.count) more tracks for playlist \(playlist.title)")
+                }
+            } catch {
+                await MainActor.run {
+                    isLoadingMorePlaylist[playlist.id] = false
+                }
+                print("❌ Failed to load more playlist tracks: \(error)")
+            }
+        }
+    }
 }
 
 struct SearchCategorySection: View {
@@ -346,12 +447,15 @@ struct SearchCategorySection: View {
     var searchState: SearchState?
     let artistHasMoreSongs: [String: Bool]  // Track which artists have more songs
     let isLoadingMoreArtist: [String: Bool]  // Track which artists are loading more
+    let playlistHasMore: [String: Bool]  // Track which playlists have more tracks
+    let isLoadingMorePlaylist: [String: Bool]  // Track which playlists are loading more
     let onResultTap: (SearchResult, PlaybackContext) -> Void
     let onAlbumExpand: (SearchResult) -> Void
     let onPlaylistExpand: (SearchResult) -> Void
     let onArtistExpand: (SearchResult) -> Void
     let onShowAllTap: (SearchResultType) -> Void
     let onLoadMoreArtistSongs: (SearchResult) -> Void  // Load more for specific artist
+    let onLoadMorePlaylistTracks: (SearchResult) -> Void  // Load more for specific playlist
     
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -429,7 +533,7 @@ struct SearchCategorySection: View {
                                             } else if result.type == .playlist {
                                                 context = .playlist(result.id)
                                             } else if result.type == .artist {
-                                                context = .general // Artists don't have a specific context yet
+                                                context = .artist(result.id)
                                             } else {
                                                 context = .general
                                             }
@@ -461,12 +565,47 @@ struct SearchCategorySection: View {
                                     .padding(.top, 4)
                                 }
                                 
+                                // Load More button for playlist tracks (All sources)
+                                if result.type == .playlist && playlistHasMore[result.id] == true && !isLoadingMorePlaylist[result.id, default: false] {
+                                    Button(action: {
+                                        onLoadMorePlaylistTracks(result)
+                                    }) {
+                                        HStack {
+                                            Image(systemName: "arrow.down.circle")
+                                                .font(.system(size: 14))
+                                            Text("Load More Tracks")
+                                                .font(.system(size: 13, weight: .medium))
+                                        }
+                                        .foregroundColor(.blue)
+                                        .padding(.vertical, 8)
+                                        .frame(maxWidth: .infinity)
+                                        .background(Color.blue.opacity(0.1))
+                                        .cornerRadius(8)
+                                    }
+                                    .buttonStyle(PlainButtonStyle())
+                                    .padding(.leading, 20)
+                                    .padding(.top, 4)
+                                }
+                                
                                 // Loading indicator for artist songs
                                 if result.type == .artist && isLoadingMoreArtist[result.id, default: false] {
                                     HStack {
                                         ProgressView()
                                             .scaleEffect(0.8)
                                         Text("Loading more songs...")
+                                            .font(.system(size: 12))
+                                            .foregroundColor(.secondary)
+                                    }
+                                    .padding(.leading, 20)
+                                    .padding(.vertical, 8)
+                                }
+                                
+                                // Loading indicator for playlist tracks
+                                if result.type == .playlist && isLoadingMorePlaylist[result.id, default: false] {
+                                    HStack {
+                                        ProgressView()
+                                            .scaleEffect(0.8)
+                                        Text("Loading more tracks...")
                                             .font(.system(size: 12))
                                             .foregroundColor(.secondary)
                                     }

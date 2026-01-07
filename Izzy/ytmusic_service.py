@@ -756,6 +756,56 @@ class JioSaavnService:
                 'error': str(e)
             }
     
+    def get_playlist_tracks_paginated(self, playlist_id: str, offset: int = 0, limit: int = 20) -> Dict[str, Any]:
+        """Get tracks from a JioSaavn playlist with pagination support"""
+        try:
+            if not HAS_REQUESTS:
+                return {
+                    'success': False,
+                    'error': 'requests library not available'
+                }
+            
+            response = requests.get(f"{self.base_url}/playlists", params={
+                'id': playlist_id
+            }, timeout=10)
+            
+            if response.status_code != 200:
+                return {
+                    'success': False,
+                    'error': f'Failed to fetch playlist: HTTP {response.status_code}'
+                }
+            
+            data = response.json()
+            if not data.get('success') or not data.get('data'):
+                return {
+                    'success': False,
+                    'error': 'Playlist not found'
+                }
+            
+            playlist_data = data['data']
+            all_songs = playlist_data.get('songs', [])
+            
+            # Apply offset and limit
+            paginated_songs = all_songs[offset:offset + limit]
+            
+            tracks = []
+            for song in paginated_songs:
+                formatted_song = self._format_jiosaavn_song(song)
+                if formatted_song:
+                    tracks.append(formatted_song)
+            
+            return {
+                'success': True,
+                'data': tracks
+            }
+            
+        except Exception as e:
+            logger.error(f"JioSaavn playlist tracks paginated failed: {e}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
     def get_artist_songs(self, browse_id: str) -> Dict[str, Any]:
         """Get songs from a JioSaavn artist using saavn.dev API"""
         try:
@@ -1289,6 +1339,16 @@ class TidalService:
             })
         return self._session
     
+    def _reset_session(self):
+        """Reset the session to get fresh connections"""
+        if self._session is not None:
+            try:
+                self._session.close()
+            except:
+                pass
+            self._session = None
+        print("🔄 Tidal session reset for fresh connection", file=sys.stderr)
+    
     def _get_cache_key(self, endpoint: str, params: Dict) -> str:
         """Generate cache key"""
         return f"{endpoint}:{json.dumps(params, sort_keys=True)}"
@@ -1305,12 +1365,13 @@ class TidalService:
     
     def _set_cache(self, key: str, data: Dict):
         """Cache response data"""
-        # Limit cache size to prevent memory issues
-        if len(self._cache) > 100:
-            # Remove oldest entries
-            oldest_keys = sorted(self._cache.keys(), key=lambda k: self._cache[k][0])[:50]
+        # Limit cache size to prevent memory issues - max 30 entries
+        if len(self._cache) > 30:
+            # Remove oldest entries - keep only 15
+            oldest_keys = sorted(self._cache.keys(), key=lambda k: self._cache[k][0])[:15]
             for k in oldest_keys:
                 del self._cache[k]
+            print(f"🧹 Tidal cache cleanup: removed {len(oldest_keys)} old entries", file=sys.stderr)
         self._cache[key] = (time.time(), data)
     
     def _get_next_api(self) -> str:
@@ -1362,12 +1423,19 @@ class TidalService:
                 last_error = e
                 tried_apis.add(self.base_url)
                 self._get_next_api()
+                # Reset session on connection issues to get fresh connection
+                self._reset_session()
             except Exception as e:
                 last_error = e
                 tried_apis.add(self.base_url)
                 self._get_next_api()
+                # Reset session on any error
+                self._reset_session()
         
+        # All APIs failed - reset session and clear cache for fresh start
         print(f"❌ All Tidal API endpoints failed. Last error: {last_error}", file=sys.stderr)
+        self._reset_session()
+        self._cache.clear()  # Clear cache so next request tries fresh
         return None
         
     def search_all(self, query: str, limit: int = 20) -> Dict[str, Any]:
@@ -2005,6 +2073,53 @@ class TidalService:
             
         except Exception as e:
             logger.error(f"Tidal playlist tracks failed: {e}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
+    def get_playlist_tracks_paginated(self, playlist_id: str, offset: int = 0, limit: int = 20) -> Dict[str, Any]:
+        """Get tracks from a Tidal playlist with pagination support"""
+        try:
+            if not HAS_REQUESTS:
+                return {
+                    'success': False,
+                    'error': 'requests library not available'
+                }
+            
+            response = self._make_request("/playlist/", {'id': playlist_id}, timeout=15, use_cache=False)
+            
+            if not response or response.status_code != 200:
+                return {
+                    'success': False,
+                    'error': f'Failed to fetch playlist: HTTP {response.status_code if response else "no response"}'
+                }
+            
+            data = response.json()
+            if not data.get('items'):
+                return {
+                    'success': False,
+                    'error': 'Playlist not found or empty'
+                }
+            
+            # Apply offset and limit for pagination
+            all_items = data['items']
+            paginated_items = all_items[offset:offset + limit]
+            
+            tracks = []
+            for item in paginated_items:
+                track = item.get('item', item)
+                formatted_track = self._format_tidal_track(track)
+                if formatted_track:
+                    tracks.append(formatted_track)
+            
+            return {
+                'success': True,
+                'data': tracks
+            }
+            
+        except Exception as e:
+            logger.error(f"Tidal playlist tracks paginated failed: {e}")
             return {
                 'success': False,
                 'error': str(e)
@@ -3604,6 +3719,40 @@ class YTMusicService:
                 'error': str(e)
             }
     
+    def get_playlist_tracks_paginated(self, playlist_id: str, offset: int = 0, limit: int = 20) -> Dict[str, Any]:
+        """Get tracks from a playlist with pagination support"""
+        try:
+            if not HAS_YTMUSICAPI or not self.yt:
+                return {
+                    'success': False,
+                    'error': 'ytmusicapi not available - playlist tracks not supported'
+                }
+                
+            playlist_info = self.yt.get_playlist(playlist_id)
+            all_tracks = playlist_info.get('tracks', [])
+            
+            # Apply offset and limit
+            paginated_tracks = all_tracks[offset:offset + limit]
+            
+            formatted_tracks = []
+            for track in paginated_tracks:
+                formatted_track = self._format_single_result(track, 'songs')
+                if formatted_track:
+                    formatted_tracks.append(formatted_track)
+            
+            return {
+                'success': True,
+                'data': formatted_tracks
+            }
+            
+        except Exception as e:
+            logger.error(f"Failed to get playlist tracks paginated: {e}")
+            return {
+                'success': False,
+                'error': str(e)
+            }
+    
+    
     def get_artist_songs(self, browse_id: str) -> Dict[str, Any]:
         """
         Get songs from an artist
@@ -4040,6 +4189,13 @@ def handle_request(request_data: Dict[str, Any]) -> Dict[str, Any]:
             else:
                 # Other services don't support pagination, just return regular artist songs
                 return service.get_artist_songs(browse_id)
+        
+        elif action == 'playlist_tracks_paginated':
+            # Paginated playlist tracks (All sources)
+            playlist_id = request_data.get('playlistId', '')
+            offset = request_data.get('offset', 0)
+            limit = request_data.get('limit', 20)
+            return service.get_playlist_tracks_paginated(playlist_id, offset, limit)
 
         elif action == 'ai_search':
             query = request_data.get('query', '')
