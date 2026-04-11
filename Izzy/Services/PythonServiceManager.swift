@@ -50,6 +50,8 @@ struct ServiceRequest: Codable {
     let aiApiKey: String?
     let params: String?
     let country: String?
+    let trackTitle: String?
+    let artistName: String?
     
     init(action: String,
          query: String? = nil,
@@ -61,7 +63,9 @@ struct ServiceRequest: Codable {
          musicSource: String? = nil,
          aiApiKey: String? = nil,
          params: String? = nil,
-         country: String? = nil) {
+         country: String? = nil,
+         trackTitle: String? = nil,
+         artistName: String? = nil) {
         self.action = action
         self.query = query
         self.videoId = videoId
@@ -73,6 +77,8 @@ struct ServiceRequest: Codable {
         self.aiApiKey = aiApiKey
         self.params = params
         self.country = country
+        self.trackTitle = trackTitle
+        self.artistName = artistName
     }
 }
 
@@ -656,6 +662,20 @@ extension PythonServiceManager {
         
         let request = ServiceRequest(action: "song_suggestions", videoId: videoId, musicSource: currentSource)
         return try await sendRequest(request, responseType: [SearchResult].self)
+    }
+    
+    /// Fetch lyrics for a song by video/track ID, passing title/artist for LRCLIB
+    func getLyrics(videoId: String, title: String? = nil, artist: String? = nil) async throws -> LyricsData {
+        let currentSource = UserDefaults.standard.string(forKey: "musicSource") ?? "youtube_music"
+        
+        let request = ServiceRequest(
+            action: "lyrics",
+            videoId: videoId,
+            musicSource: currentSource,
+            trackTitle: title,
+            artistName: artist
+        )
+        return try await sendRequest(request, responseType: LyricsData.self)
     }
     
     /// Load more Tidal songs with pagination (Tidal only)

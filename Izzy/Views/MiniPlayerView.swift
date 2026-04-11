@@ -277,33 +277,38 @@ struct MiniPlayerView: View {
 // MARK: - Liquid Glass Mini Player Background
 struct LiquidGlassMiniPlayerBackground: View {
     @ObservedObject private var settings = LiquidGlassSettings.shared
-    
+
     var body: some View {
         if settings.isEnabled {
-            ZStack {
-                // Base liquid glass background
-                RoundedRectangle(cornerRadius: 20)
-                    .fill(.clear)
-                    .background(.ultraThinMaterial)
-                
-                // Enhanced glass layers for depth
-                RoundedRectangle(cornerRadius: 20)
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                .white.opacity(0.15),
-                                .white.opacity(0.08),
-                                .clear,
-                                .clear
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
+            if #available(macOS 26.0, *) {
+                GlassEffectContainer(spacing: 0) {
+                    RoundedRectangle(cornerRadius: 20)
+                        .fill(.clear)
+                        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 20))
+                }
+            } else {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 20)
+                        .fill(.clear)
+                        .background(.ultraThinMaterial)
+
+                    RoundedRectangle(cornerRadius: 20)
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    .white.opacity(0.15),
+                                    .white.opacity(0.08),
+                                    .clear,
+                                    .clear,
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
                         )
-                    )
+                }
+                .preferredColorScheme(.dark)
             }
-            .preferredColorScheme(.dark)
         } else {
-            // Standard background when liquid glass is disabled
             RoundedRectangle(cornerRadius: 20)
                 .fill(.ultraThinMaterial)
         }

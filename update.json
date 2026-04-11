@@ -1,8 +1,8 @@
 {
   "latest": {
-    "version": "1.1.9",
-    "build": "18",
-    "releaseDate": "2026-01-04",
+    "version": "1.2.0",
+    "build": "19",
+    "releaseDate": "2026-04-11",
     "downloadURL": "https://github.com/ShubhamPP04/Izzy/releases/latest",
     "releaseNotesURL": "https://github.com/ShubhamPP04/Izzy/releases/latest",
     "minimumOSVersion": "14.0",
@@ -14,10 +14,21 @@
       "Recently played music tracking",
       "Native macOS media key integration",
       "Auto-update functionality",
+      "Native macOS 26 Liquid Glass UI",
       "macOS 14.0+ compatibility"
     ]
   },
   "releaseNotes": [
+    {
+      "version": "1.2.0",
+      "date": "2026-04-11",
+      "changes": [
+        "Native macOS 26 Liquid Glass via Apple's GlassEffectContainer API",
+        "Liquid Glass on main panel, menu bar player, and mini player",
+        "Fixed settings inputs bleeding through tabs when Liquid Glass enabled",
+        "Liquid Glass toggle moved to top of Settings"
+      ]
+    },
     {
       "version": "1.1.9",
       "date": "2026-01-04",

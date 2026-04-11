@@ -250,27 +250,65 @@ struct MenuBarView: View {
                 .padding(16)
             }
         }
-        // Enhanced glassy appearance with vibrancy effect
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(.ultraThinMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(
-                            LinearGradient(
-                                gradient: Gradient(colors: [
-                                    Color.white.opacity(0.3),
-                                    Color.white.opacity(0.1),
-                                    Color.white.opacity(0.3)
-                                ]),
-                                startPoint: .topLeading,
-                                endPoint: .bottomTrailing
-                            ),
-                            lineWidth: 1
-                        )
-                )
-                .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: 5)
-        )
+        // Native Liquid Glass on macOS 26+, material fallback on older systems
+        .modifier(MenuBarGlassModifier())
         .cornerRadius(12)
+    }
+}
+
+// MARK: - Menu Bar Glass Background
+
+struct MenuBarGlassModifier: ViewModifier {
+    @ObservedObject private var settings = LiquidGlassSettings.shared
+
+    func body(content: Content) -> some View {
+        if settings.isEnabled {
+            if #available(macOS 26.0, *) {
+                content
+                    .background {
+                        GlassEffectContainer(spacing: 0) {
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(.clear)
+                                .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 12))
+                        }
+                    }
+            } else {
+                content
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(.clear)
+                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(
+                                        LinearGradient(
+                                            colors: [.white.opacity(0.3), .white.opacity(0.1), .white.opacity(0.3)],
+                                            startPoint: .topLeading,
+                                            endPoint: .bottomTrailing
+                                        ),
+                                        lineWidth: 1
+                                    )
+                            )
+                    )
+            }
+        } else {
+            content
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(.ultraThinMaterial)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(
+                                    LinearGradient(
+                                        colors: [.white.opacity(0.3), .white.opacity(0.1), .white.opacity(0.3)],
+                                        startPoint: .topLeading,
+                                        endPoint: .bottomTrailing
+                                    ),
+                                    lineWidth: 1
+                                )
+                        )
+                        .shadow(color: .black.opacity(0.2), radius: 10, x: 0, y: 5)
+                )
+        }
     }
 }

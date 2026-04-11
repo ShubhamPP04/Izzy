@@ -40,6 +40,7 @@ class PlaybackManager: ObservableObject {
     @Published var currentTrack: Track?
     @Published var playbackState: PlaybackState = .stopped
     @Published var currentTime: TimeInterval = 0
+    @Published var showLyrics: Bool = false
     @Published var duration: TimeInterval = 0
     @Published var isBuffering: Bool = false
     @Published var volume: Float = 0.7 {

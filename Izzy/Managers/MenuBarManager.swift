@@ -184,16 +184,25 @@ class SimpleMenuBarManager: ObservableObject {
     
     private func setupPopover() {
         guard let searchState = searchState else { return }
-        
+
         popover = NSPopover()
         popover?.contentSize = NSSize(width: 360, height: 140)
         popover?.behavior = .transient
-        
+
+        // Make popover window transparent so native Liquid Glass can show through
+        if LiquidGlassSettings.shared.isEnabled {
+            popover?.appearance = NSAppearance(named: .darkAqua)
+        }
+
         let contentView = SimpleMenuBarView(manager: self, searchState: searchState) { [weak self] in
             self?.popover?.performClose(nil)
         }
-        
-        popover?.contentViewController = NSHostingController(rootView: contentView)
+
+        let hostingController = NSHostingController(rootView: contentView)
+        // Clear the hosting view background so glass renders correctly
+        hostingController.view.wantsLayer = true
+        hostingController.view.layer?.backgroundColor = NSColor.clear.cgColor
+        popover?.contentViewController = hostingController
     }
     
     @objc private func statusItemClicked() {
@@ -367,15 +376,7 @@ struct SimpleMenuBarView: View {
             }
         }
         .padding(16)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                // Glassy appearance with material effect
-                .fill(.ultraThinMaterial)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 12)
-                        .stroke(Color.white.opacity(0.2), lineWidth: 1)
-                )
-        )
+        .modifier(SimpleMenuBarGlassModifier())
         .shadow(color: .black.opacity(0.3), radius: 8, x: 0, y: 4)
     }
     
@@ -394,5 +395,48 @@ struct SimpleMenuBarView: View {
         let minutes = Int(seconds) / 60
         let remainingSeconds = Int(seconds) % 60
         return String(format: "%d:%02d", minutes, remainingSeconds)
+    }
+}
+
+// MARK: - Simple Menu Bar Glass Modifier
+
+private struct SimpleMenuBarGlassModifier: ViewModifier {
+    @ObservedObject private var settings = LiquidGlassSettings.shared
+
+    func body(content: Content) -> some View {
+        if settings.isEnabled {
+            if #available(macOS 26.0, *) {
+                content
+                    .background {
+                        GlassEffectContainer(spacing: 0) {
+                            RoundedRectangle(cornerRadius: 12)
+                                .fill(.clear)
+                                .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 12))
+                        }
+                    }
+            } else {
+                content
+                    .background(
+                        RoundedRectangle(cornerRadius: 12)
+                            .fill(.clear)
+                            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 12)
+                                    .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                            )
+                    )
+                    .preferredColorScheme(.dark)
+            }
+        } else {
+            content
+                .background(
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(.ultraThinMaterial)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 12)
+                                .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                        )
+                )
+        }
     }
 }

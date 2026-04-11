@@ -10,6 +10,7 @@ import SwiftUI
 struct MusicSearchView: View {
     @ObservedObject var searchState: SearchState
     @ObservedObject var windowManager: WindowManager
+    @ObservedObject private var playbackManager: PlaybackManager
     @State private var selectedTab: Int
     @State private var isSearchBarFocused: Bool = false
     @State private var isAISearchPromptFocused: Bool = false
@@ -27,6 +28,7 @@ struct MusicSearchView: View {
     init(searchState: SearchState, windowManager: WindowManager) {
         self.searchState = searchState
         self.windowManager = windowManager
+        self.playbackManager = searchState.playbackManager
         // Use the tab from SearchState which already handles startup logic
         _selectedTab = State(initialValue: searchState.persistentSelectedTab)
     }
@@ -56,7 +58,8 @@ struct MusicSearchView: View {
                     alignment: .top
                 )
             
-            // Content based on selected tab - Using opacity-based switching to preserve scroll positions
+            // Content based on selected tab - Using opacity-based switching to preserve scroll positions.
+            // Each inactive tab has allowsHitTesting(false) so hidden inputs cannot receive focus.
             ZStack {
                 // Home Content
                 HomeView(
@@ -67,6 +70,7 @@ struct MusicSearchView: View {
                 )
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .opacity(selectedTab == 0 ? 1 : 0)
+                .allowsHitTesting(selectedTab == 0)
                 
                 // Search Content
                 VStack(spacing: 0) {
@@ -100,6 +104,7 @@ struct MusicSearchView: View {
                     }
                 }
                 .opacity(selectedTab == 1 ? 1 : 0)
+                .allowsHitTesting(selectedTab == 1)
 
                 if showAISearch {
                     AISearchView(
@@ -111,42 +116,57 @@ struct MusicSearchView: View {
                     )
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .opacity(selectedTab == 7 ? 1 : 0)
+                    .allowsHitTesting(selectedTab == 7)
                 }
                 
                 // Favorites Content
                 FavoritesView(searchState: searchState, scrollOffset: $favoritesScrollOffset)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .opacity(selectedTab == 2 ? 1 : 0)
+                    .allowsHitTesting(selectedTab == 2)
                 
                 // Recently Played Content
                 RecentlyPlayedView(searchState: searchState, scrollOffset: $recentlyPlayedScrollOffset)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .opacity(selectedTab == 3 ? 1 : 0)
+                    .allowsHitTesting(selectedTab == 3)
                 
                 // Playlists Content
                 PlaylistView(searchState: searchState, scrollOffset: $playlistsScrollOffset)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .opacity(selectedTab == 5 ? 1 : 0)
+                    .allowsHitTesting(selectedTab == 5)
                 
                 // Up Next Content
                 UpNextView(searchState: searchState, scrollOffset: $upNextScrollOffset)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .opacity(selectedTab == 6 ? 1 : 0)
+                    .allowsHitTesting(selectedTab == 6)
                 
                 // Settings Content
                 SettingsView(searchState: searchState, windowManager: windowManager, scrollOffset: $settingsScrollOffset)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .opacity(selectedTab == 4 ? 1 : 0)
+                    .allowsHitTesting(selectedTab == 4)
             }
             
             // Playback Controls (show when there's a current track OR when there's a playback error OR when buffering)
-            if searchState.playbackManager.currentTrack != nil || 
-               searchState.playbackManager.playbackState.isError ||
-               searchState.playbackManager.playbackState == .buffering {
-                CompactPlaybackControlsView(
-                    playbackManager: searchState.playbackManager
-                )
+            if playbackManager.currentTrack != nil || 
+               playbackManager.playbackState.isError ||
+               playbackManager.playbackState == .buffering {
+                VStack(spacing: 0) {
+                    // Inline Lyrics Panel — always present, animated via height/opacity
+                    LyricsView(playbackManager: playbackManager)
+                        .frame(height: playbackManager.showLyrics ? 280 : 0)
+                        .opacity(playbackManager.showLyrics ? 1 : 0)
+                        .clipped()
+                    
+                    CompactPlaybackControlsView(
+                        playbackManager: playbackManager
+                    )
+                }
                 .transition(.move(edge: .bottom).combined(with: .opacity))
+                .animation(.spring(response: 0.35, dampingFraction: 0.85), value: playbackManager.showLyrics)
             }
         }
         

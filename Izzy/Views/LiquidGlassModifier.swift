@@ -8,65 +8,101 @@
 import SwiftUI
 
 // MARK: - Liquid Glass Settings Store
+
 class LiquidGlassSettings: ObservableObject {
     @Published var isEnabled: Bool {
         didSet {
             UserDefaults.standard.set(isEnabled, forKey: "liquidGlassEnabled")
         }
     }
-    
+
     static let shared = LiquidGlassSettings()
-    
+
     init() {
         self.isEnabled = UserDefaults.standard.bool(forKey: "liquidGlassEnabled")
     }
 }
 
 // MARK: - Liquid Glass View Modifier
+
+/// Applies native Liquid Glass on macOS 26+; falls back to material/gradient on earlier systems.
 struct LiquidGlassModifier: ViewModifier {
     @ObservedObject private var settings = LiquidGlassSettings.shared
     let isInteractive: Bool
     let cornerRadius: CGFloat
     let intensity: Double
-    
+
     init(isInteractive: Bool = true, cornerRadius: CGFloat = 20, intensity: Double = 0.3) {
         self.isInteractive = isInteractive
         self.cornerRadius = cornerRadius
         self.intensity = intensity
     }
-    
+
     func body(content: Content) -> some View {
-        if settings.isEnabled {
-            content
-                .background {
-                    LiquidGlassBackground(
-                        isInteractive: isInteractive,
-                        cornerRadius: cornerRadius,
-                        intensity: intensity
-                    )
-                }
-                .foregroundStyle(.primary.opacity(0.9))
-                .preferredColorScheme(.dark) // Force dark mode when liquid glass is active
-                .environment(\.colorScheme, .dark) // Force dark mode environment
+        GlassEffectApplier(
+            content: content,
+            enabled: settings.isEnabled,
+            isInteractive: isInteractive,
+            cornerRadius: cornerRadius,
+            intensity: intensity
+        )
+    }
+}
+
+// MARK: - Native Glass Effect Helper
+
+private struct GlassEffectApplier<C: View>: View {
+    let content: C
+    let enabled: Bool
+    let isInteractive: Bool
+    let cornerRadius: CGFloat
+    let intensity: Double
+
+    var body: some View {
+        if enabled {
+            if #available(macOS 26.0, *) {
+                // GlassEffectContainer wraps ONLY the background shape, not the content.
+                // Content renders on top normally — hidden sibling views cannot bleed through.
+                content
+                    .background {
+                        GlassEffectContainer(spacing: 0) {
+                            RoundedRectangle(cornerRadius: cornerRadius)
+                                .fill(.clear)
+                                .glassEffect(.regular.interactive(), in: .rect(cornerRadius: cornerRadius))
+                        }
+                    }
+                    .foregroundStyle(.primary.opacity(0.9))
+            } else {
+                content
+                    .background {
+                        LiquidGlassBackground(
+                            isInteractive: isInteractive,
+                            cornerRadius: cornerRadius,
+                            intensity: intensity
+                        )
+                    }
+                    .foregroundStyle(.primary.opacity(0.9))
+                    .preferredColorScheme(.dark)
+                    .environment(\.colorScheme, .dark)
+            }
         } else {
             content
         }
     }
 }
 
-// MARK: - Liquid Glass Background (Performance Optimized - No Animations)
+// MARK: - Liquid Glass Background (pre-macOS 26 fallback)
+
 struct LiquidGlassBackground: View {
     let isInteractive: Bool
     let cornerRadius: CGFloat
     let intensity: Double
-    
+
     var body: some View {
         ZStack {
-            // Base transparent background
             RoundedRectangle(cornerRadius: cornerRadius)
                 .fill(.clear)
-            
-            // Glass effect layers - static only for performance
+
             RoundedRectangle(cornerRadius: cornerRadius)
                 .fill(
                     LinearGradient(
@@ -84,8 +120,7 @@ struct LiquidGlassBackground: View {
                     RoundedRectangle(cornerRadius: cornerRadius)
                         .fill(.black.opacity(0.1))
                 )
-            
-            // Static glass border effect
+
             if isInteractive {
                 RoundedRectangle(cornerRadius: cornerRadius)
                     .stroke(
@@ -101,8 +136,7 @@ struct LiquidGlassBackground: View {
                         lineWidth: 1
                     )
             }
-            
-            // Inner highlight
+
             RoundedRectangle(cornerRadius: cornerRadius - 1)
                 .stroke(
                     LinearGradient(
@@ -122,22 +156,29 @@ struct LiquidGlassBackground: View {
 }
 
 // MARK: - Liquid Glass Container
+
+/// On macOS 26+ the glass is rendered as a background via `.liquidGlass()`;
+/// this container just ensures dark-mode semantics on older systems.
 struct LiquidGlassContainer<Content: View>: View {
     @ObservedObject private var settings = LiquidGlassSettings.shared
     let content: Content
     let cornerRadius: CGFloat
-    
+
     init(cornerRadius: CGFloat = 20, @ViewBuilder content: () -> Content) {
         self.cornerRadius = cornerRadius
         self.content = content()
     }
-    
+
     var body: some View {
         if settings.isEnabled {
-            content
-                .background(.clear)
-                .preferredColorScheme(.dark)
-                .environment(\.colorScheme, .dark)
+            if #available(macOS 26.0, *) {
+                content
+            } else {
+                content
+                    .background(.clear)
+                    .preferredColorScheme(.dark)
+                    .environment(\.colorScheme, .dark)
+            }
         } else {
             content
         }
@@ -145,32 +186,32 @@ struct LiquidGlassContainer<Content: View>: View {
 }
 
 // MARK: - View Extensions
+
 extension View {
     func liquidGlass(isInteractive: Bool = true, cornerRadius: CGFloat = 20, intensity: Double = 0.3) -> some View {
         self.modifier(LiquidGlassModifier(isInteractive: isInteractive, cornerRadius: cornerRadius, intensity: intensity))
     }
-    
+
     func liquidGlassContainer(cornerRadius: CGFloat = 20) -> some View {
         LiquidGlassContainer(cornerRadius: cornerRadius) {
             self
         }
     }
-    
-    /// Custom liquid glass text field style for seamless integration
+
     func liquidGlassTextField() -> some View {
         self.modifier(LiquidGlassTextFieldModifier())
     }
-    
-    /// Custom liquid glass button style for seamless integration
+
     func liquidGlassButton(prominence: LiquidGlassButtonProminence = .standard) -> some View {
         self.modifier(LiquidGlassButtonModifier(prominence: prominence))
     }
 }
 
 // MARK: - Liquid Glass Text Field Style
+
 struct LiquidGlassTextFieldModifier: ViewModifier {
     @ObservedObject private var settings = LiquidGlassSettings.shared
-    
+
     func body(content: Content) -> some View {
         if settings.isEnabled {
             content
@@ -186,6 +227,7 @@ struct LiquidGlassTextFieldModifier: ViewModifier {
 }
 
 // MARK: - Liquid Glass Button Style
+
 enum LiquidGlassButtonProminence {
     case standard
     case prominent
@@ -194,7 +236,7 @@ enum LiquidGlassButtonProminence {
 struct LiquidGlassButtonModifier: ViewModifier {
     @ObservedObject private var settings = LiquidGlassSettings.shared
     let prominence: LiquidGlassButtonProminence
-    
+
     func body(content: Content) -> some View {
         if settings.isEnabled {
             content
@@ -202,8 +244,8 @@ struct LiquidGlassButtonModifier: ViewModifier {
                 .padding(.horizontal, 16)
                 .padding(.vertical, 8)
                 .liquidGlass(
-                    isInteractive: true, 
-                    cornerRadius: 8, 
+                    isInteractive: true,
+                    cornerRadius: 8,
                     intensity: prominence == .prominent ? 0.4 : 0.3
                 )
         } else {
@@ -216,68 +258,74 @@ struct LiquidGlassButtonModifier: ViewModifier {
     }
 }
 
-// MARK: - Liquid Glass Full Window Background (Performance Optimized - No Animations)
+// MARK: - Liquid Glass Full Window Background
+
 struct LiquidGlassWindowBackground: View {
     @ObservedObject private var settings = LiquidGlassSettings.shared
-    
+
     var body: some View {
         if settings.isEnabled {
-            ZStack {
-                // Pure liquid glass base - static only
-                Rectangle()
-                    .fill(.clear)
-                    .background(.ultraThinMaterial)
-                    .ignoresSafeArea()
-                
-                // Static glass layers for depth
-                Rectangle()
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                .white.opacity(0.15),
-                                .white.opacity(0.08),
-                                .white.opacity(0.03),
-                                .white.opacity(0.08),
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
+            if #available(macOS 26.0, *) {
+                GlassEffectContainer(spacing: 0) {
+                    Rectangle()
+                        .fill(.clear)
+                        .glassEffect(.regular.interactive(), in: .rect(cornerRadius: 0))
+                        .ignoresSafeArea()
+                }
+            } else {
+                ZStack {
+                    Rectangle()
+                        .fill(.clear)
+                        .background(.ultraThinMaterial)
+                        .ignoresSafeArea()
+
+                    Rectangle()
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    .white.opacity(0.15),
+                                    .white.opacity(0.08),
+                                    .white.opacity(0.03),
+                                    .white.opacity(0.08),
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
                         )
-                    )
-                    .ignoresSafeArea()
-                
-                // Static glass gradient overlay
-                Rectangle()
-                    .fill(
-                        LinearGradient(
-                            colors: [
-                                .clear,
-                                .blue.opacity(0.08),
-                                .purple.opacity(0.06),
-                                .blue.opacity(0.04),
-                                .clear
-                            ],
-                            startPoint: .topLeading,
-                            endPoint: .bottomTrailing
+                        .ignoresSafeArea()
+
+                    Rectangle()
+                        .fill(
+                            LinearGradient(
+                                colors: [
+                                    .clear,
+                                    .blue.opacity(0.08),
+                                    .purple.opacity(0.06),
+                                    .blue.opacity(0.04),
+                                    .clear,
+                                ],
+                                startPoint: .topLeading,
+                                endPoint: .bottomTrailing
+                            )
                         )
-                    )
-                    .ignoresSafeArea()
-                
-                // Static subtle radial overlay
-                Rectangle()
-                    .fill(
-                        RadialGradient(
-                            colors: [
-                                .white.opacity(0.08),
-                                .white.opacity(0.04),
-                                .clear
-                            ],
-                            center: .center,
-                            startRadius: 100,
-                            endRadius: 500
+                        .ignoresSafeArea()
+
+                    Rectangle()
+                        .fill(
+                            RadialGradient(
+                                colors: [
+                                    .white.opacity(0.08),
+                                    .white.opacity(0.04),
+                                    .clear,
+                                ],
+                                center: .center,
+                                startRadius: 100,
+                                endRadius: 500
+                            )
                         )
-                    )
-                    .ignoresSafeArea()
-                    .opacity(0.6)
+                        .ignoresSafeArea()
+                        .opacity(0.6)
+                }
             }
         } else {
             Color.clear

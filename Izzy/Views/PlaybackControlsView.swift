@@ -380,6 +380,20 @@ struct TrackInfoView: View {
                                     .buttonStyle(PlainButtonStyle())
                                     .disabled(!playbackManager.queue.hasNext)
                                     
+                                    // Lyrics button
+                                    Button(action: {
+                                        withAnimation(.easeInOut(duration: 0.2)) {
+                                            playbackManager.showLyrics.toggle()
+                                        }
+                                    }) {
+                                        Image(systemName: "quote.bubble")
+                                            .font(.system(size: 11, weight: .medium))
+                                            .foregroundColor(playbackManager.showLyrics ? .blue : .primary)
+                                            .frame(width: 20, height: 20)
+                                    }
+                                    .buttonStyle(PlainButtonStyle())
+                                    .help(playbackManager.showLyrics ? "Hide Lyrics" : "Show Lyrics")
+
                                     // Queue button
                                     Button(action: {
                                         isQueuePresented.toggle()
@@ -576,6 +590,20 @@ struct TrackInfoView: View {
                                 .buttonStyle(PlainButtonStyle())
                                 .disabled(!playbackManager.queue.hasNext)
                                 
+                                // Lyrics button
+                                Button(action: {
+                                    withAnimation(.easeInOut(duration: 0.2)) {
+                                        playbackManager.showLyrics.toggle()
+                                    }
+                                }) {
+                                    Image(systemName: "quote.bubble")
+                                        .font(.system(size: 11, weight: .medium))
+                                        .foregroundColor(playbackManager.showLyrics ? .blue : .primary)
+                                        .frame(width: 20, height: 20)
+                                }
+                                .buttonStyle(PlainButtonStyle())
+                                .help(playbackManager.showLyrics ? "Hide Lyrics" : "Show Lyrics")
+
                                 // Queue button
                                 Button(action: {
                                     isQueuePresented.toggle()
@@ -900,6 +928,19 @@ struct ControlButtonsView: View {
 
                         // Right side controls (fixed width for balance)
                         HStack(spacing: minimalMode ? 8 : 12) {
+                            // Lyrics button
+                            Button(action: {
+                                withAnimation(.easeInOut(duration: 0.2)) {
+                                    playbackManager.showLyrics.toggle()
+                                }
+                            }) {
+                                Image(systemName: "quote.bubble")
+                                    .font(.system(size: minimalMode ? 10 : 14, weight: .medium))
+                                    .foregroundColor(playbackManager.showLyrics ? .blue : .primary)
+                            }
+                            .buttonStyle(ControlButtonStyle())
+                            .help(playbackManager.showLyrics ? "Hide Lyrics" : "Show Lyrics")
+
                             // Queue button
                             if let onQueueButtonTap = onQueueButtonTap {
                                 Button(action: onQueueButtonTap) {
@@ -991,6 +1032,19 @@ struct ControlButtonsView: View {
                         .buttonStyle(ControlButtonStyle())
                         .disabled(!playbackManager.queue.hasNext)
                         
+                        // Lyrics button
+                        Button(action: {
+                            withAnimation(.easeInOut(duration: 0.2)) {
+                                playbackManager.showLyrics.toggle()
+                            }
+                        }) {
+                            Image(systemName: "quote.bubble")
+                                .font(.system(size: minimalMode ? 10 : 14, weight: .medium))
+                                .foregroundColor(playbackManager.showLyrics ? .blue : .primary)
+                        }
+                        .buttonStyle(ControlButtonStyle())
+                        .help(playbackManager.showLyrics ? "Hide Lyrics" : "Show Lyrics")
+
                         // Queue button
                         if let onQueueButtonTap = onQueueButtonTap {
                             Button(action: onQueueButtonTap) {

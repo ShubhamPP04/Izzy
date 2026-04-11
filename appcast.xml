@@ -6,6 +6,29 @@
     <description>Most recent changes with links to updates.</description>
     <language>en</language>
 
+    <!-- Version 1.2.0 -->
+    <item>
+      <title>Version 1.2.0</title>
+      <description>
+        <![CDATA[
+          <ul>
+            <li>Native macOS 26 Liquid Glass — replaces custom glass simulation with Apple's GlassEffectContainer API</li>
+            <li>Liquid Glass applied to main panel, menu bar player, and mini player</li>
+            <li>Fixed settings inputs bleeding through to other tabs when Liquid Glass is enabled</li>
+            <li>Liquid Glass toggle moved to top of Settings for easy access</li>
+          </ul>
+        ]]>
+      </description>
+      <pubDate>Fri, 11 Apr 2026 12:00:00 +0000</pubDate>
+      <sparkle:version>19</sparkle:version>
+      <sparkle:shortVersionString>1.2.0</sparkle:shortVersionString>
+      <enclosure url="https://yourwebsite.com/izzy/Izzy.dmg"
+                 sparkle:version="19"
+                 sparkle:shortVersionString="1.2.0"
+                 length="16839788"
+                 type="application/octet-stream" />
+    </item>
+
     <!-- Version 1.1.9 -->
     <item>
       <title>Version 1.1.9</title>

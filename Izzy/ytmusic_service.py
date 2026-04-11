@@ -756,56 +756,6 @@ class JioSaavnService:
                 'error': str(e)
             }
     
-    def get_playlist_tracks_paginated(self, playlist_id: str, offset: int = 0, limit: int = 20) -> Dict[str, Any]:
-        """Get tracks from a JioSaavn playlist with pagination support"""
-        try:
-            if not HAS_REQUESTS:
-                return {
-                    'success': False,
-                    'error': 'requests library not available'
-                }
-            
-            response = requests.get(f"{self.base_url}/playlists", params={
-                'id': playlist_id
-            }, timeout=10)
-            
-            if response.status_code != 200:
-                return {
-                    'success': False,
-                    'error': f'Failed to fetch playlist: HTTP {response.status_code}'
-                }
-            
-            data = response.json()
-            if not data.get('success') or not data.get('data'):
-                return {
-                    'success': False,
-                    'error': 'Playlist not found'
-                }
-            
-            playlist_data = data['data']
-            all_songs = playlist_data.get('songs', [])
-            
-            # Apply offset and limit
-            paginated_songs = all_songs[offset:offset + limit]
-            
-            tracks = []
-            for song in paginated_songs:
-                formatted_song = self._format_jiosaavn_song(song)
-                if formatted_song:
-                    tracks.append(formatted_song)
-            
-            return {
-                'success': True,
-                'data': tracks
-            }
-            
-        except Exception as e:
-            logger.error(f"JioSaavn playlist tracks paginated failed: {e}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
-    
     def get_artist_songs(self, browse_id: str) -> Dict[str, Any]:
         """Get songs from a JioSaavn artist using saavn.dev API"""
         try:
@@ -2073,53 +2023,6 @@ class TidalService:
             
         except Exception as e:
             logger.error(f"Tidal playlist tracks failed: {e}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
-    
-    def get_playlist_tracks_paginated(self, playlist_id: str, offset: int = 0, limit: int = 20) -> Dict[str, Any]:
-        """Get tracks from a Tidal playlist with pagination support"""
-        try:
-            if not HAS_REQUESTS:
-                return {
-                    'success': False,
-                    'error': 'requests library not available'
-                }
-            
-            response = self._make_request("/playlist/", {'id': playlist_id}, timeout=15, use_cache=False)
-            
-            if not response or response.status_code != 200:
-                return {
-                    'success': False,
-                    'error': f'Failed to fetch playlist: HTTP {response.status_code if response else "no response"}'
-                }
-            
-            data = response.json()
-            if not data.get('items'):
-                return {
-                    'success': False,
-                    'error': 'Playlist not found or empty'
-                }
-            
-            # Apply offset and limit for pagination
-            all_items = data['items']
-            paginated_items = all_items[offset:offset + limit]
-            
-            tracks = []
-            for item in paginated_items:
-                track = item.get('item', item)
-                formatted_track = self._format_tidal_track(track)
-                if formatted_track:
-                    tracks.append(formatted_track)
-            
-            return {
-                'success': True,
-                'data': tracks
-            }
-            
-        except Exception as e:
-            logger.error(f"Tidal playlist tracks paginated failed: {e}")
             return {
                 'success': False,
                 'error': str(e)
@@ -3719,40 +3622,6 @@ class YTMusicService:
                 'error': str(e)
             }
     
-    def get_playlist_tracks_paginated(self, playlist_id: str, offset: int = 0, limit: int = 20) -> Dict[str, Any]:
-        """Get tracks from a playlist with pagination support"""
-        try:
-            if not HAS_YTMUSICAPI or not self.yt:
-                return {
-                    'success': False,
-                    'error': 'ytmusicapi not available - playlist tracks not supported'
-                }
-                
-            playlist_info = self.yt.get_playlist(playlist_id)
-            all_tracks = playlist_info.get('tracks', [])
-            
-            # Apply offset and limit
-            paginated_tracks = all_tracks[offset:offset + limit]
-            
-            formatted_tracks = []
-            for track in paginated_tracks:
-                formatted_track = self._format_single_result(track, 'songs')
-                if formatted_track:
-                    formatted_tracks.append(formatted_track)
-            
-            return {
-                'success': True,
-                'data': formatted_tracks
-            }
-            
-        except Exception as e:
-            logger.error(f"Failed to get playlist tracks paginated: {e}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
-    
-    
     def get_artist_songs(self, browse_id: str) -> Dict[str, Any]:
         """
         Get songs from an artist
@@ -3852,40 +3721,156 @@ class YTMusicService:
                 'error': str(e)
             }
     
-    def get_lyrics(self, video_id: str) -> Dict[str, Any]:
+    def get_lyrics(self, video_id: str, track_title: str = None, artist_name: str = None) -> Dict[str, Any]:
         """
-        Get lyrics for a song
+        Get lyrics for a song.
+        
+        Priority:
+        1. LRCLIB (fast HTTP GET, returns synced timestamps)
+        2. YouTube Music plain lyrics (fallback)
         """
         try:
-            if not HAS_YTMUSICAPI or not self.yt:
-                return {
-                    'success': False,
-                    'error': 'ytmusicapi not available - lyrics not supported'
-                }
+            print(f"🎤 Lyrics request: title='{track_title}', artist='{artist_name}', videoId={video_id}", file=sys.stderr)
             
-            # Get lyrics
-            lyrics_data = self.yt.get_lyrics(video_id)
+            # Step 1: Try LRCLIB for synced lyrics (fast, no auth needed)
+            if track_title and artist_name:
+                try:
+                    lrclib_result = self._fetch_lrclib_lyrics(track_title, artist_name)
+                    if lrclib_result:
+                        print(f"✅ Got lyrics from LRCLIB", file=sys.stderr)
+                        return lrclib_result
+                    else:
+                        print(f"⚠️ LRCLIB returned no results", file=sys.stderr)
+                except Exception as e:
+                    print(f"⚠️ LRCLIB failed: {e}", file=sys.stderr)
             
-            if lyrics_data:
-                return {
-                    'success': True,
-                    'data': {
-                        'lyrics': lyrics_data.get('lyrics', ''),
-                        'source': lyrics_data.get('source', 'YouTube Music')
-                    }
-                }
-            else:
-                return {
-                    'success': False,
-                    'error': 'No lyrics found for this song'
-                }
+            # Step 2: Fall back to YouTube Music plain lyrics
+            if HAS_YTMUSICAPI and self.yt:
+                try:
+                    print(f"🔄 Trying YTMusic lyrics for {video_id}...", file=sys.stderr)
+                    watch_playlist = self.yt.get_watch_playlist(videoId=video_id)
+                    lyrics_browse_id = watch_playlist.get('lyrics')
+                    
+                    if lyrics_browse_id:
+                        print(f"📝 Found lyrics browseId: {lyrics_browse_id}", file=sys.stderr)
+                        lyrics_data = self.yt.get_lyrics(lyrics_browse_id)
+                        if lyrics_data and lyrics_data.get('lyrics'):
+                            print(f"✅ Got plain lyrics from YTMusic", file=sys.stderr)
+                            return {
+                                'success': True,
+                                'data': {
+                                    'lyrics': lyrics_data.get('lyrics', ''),
+                                    'source': lyrics_data.get('source', 'YouTube Music'),
+                                    'syncedLyrics': None
+                                }
+                            }
+                    else:
+                        print(f"⚠️ No lyrics browseId in watch playlist", file=sys.stderr)
+                except Exception as e:
+                    print(f"⚠️ YTMusic lyrics failed: {e}", file=sys.stderr)
+            
+            print(f"❌ No lyrics found from any source", file=sys.stderr)
+            return {
+                'success': False,
+                'error': 'No lyrics available for this song'
+            }
             
         except Exception as e:
             logger.error(f"Failed to get lyrics: {e}")
+            print(f"❌ Lyrics error: {e}", file=sys.stderr)
             return {
                 'success': False,
                 'error': str(e)
             }
+    
+    def _fetch_lrclib_lyrics(self, track: str, artist: str, album: str = None, duration: int = None) -> Optional[Dict[str, Any]]:
+        """
+        Fetch synced lyrics from LRCLIB API (https://lrclib.net).
+        Free, no API key required.
+        """
+        import urllib.request
+        import urllib.parse
+        
+        params = {
+            'track_name': track,
+            'artist_name': artist,
+        }
+        if album:
+            params['album_name'] = album
+        if duration and duration > 0:
+            params['duration'] = str(duration)
+        
+        url = f"https://lrclib.net/api/get?{urllib.parse.urlencode(params)}"
+        print(f"LRCLIB request: {url}", file=sys.stderr)
+        
+        req = urllib.request.Request(url, headers={
+            'User-Agent': 'Izzy Music Player v1.0 (https://github.com/izzy)'
+        })
+        
+        try:
+            with urllib.request.urlopen(req, timeout=5) as response:
+                data = json.loads(response.read().decode('utf-8'))
+        except urllib.error.HTTPError as e:
+            if e.code == 404:
+                print(f"LRCLIB: no lyrics found for {track} - {artist}", file=sys.stderr)
+                return None
+            raise
+        
+        synced_lyrics_raw = data.get('syncedLyrics')
+        plain_lyrics = data.get('plainLyrics', '')
+        
+        if synced_lyrics_raw:
+            # Parse LRC format: [mm:ss.xx] lyrics text
+            synced_lines = self._parse_lrc(synced_lyrics_raw)
+            print(f"LRCLIB: found {len(synced_lines)} synced lines for {track}", file=sys.stderr)
+            return {
+                'success': True,
+                'data': {
+                    'lyrics': plain_lyrics or synced_lyrics_raw,
+                    'source': 'LRCLIB (Synced)',
+                    'syncedLyrics': synced_lines
+                }
+            }
+        elif plain_lyrics:
+            print(f"LRCLIB: found plain lyrics for {track} (no sync)", file=sys.stderr)
+            return {
+                'success': True,
+                'data': {
+                    'lyrics': plain_lyrics,
+                    'source': 'LRCLIB',
+                    'syncedLyrics': None
+                }
+            }
+        
+        return None
+    
+    def _parse_lrc(self, lrc_text: str) -> list:
+        """Parse LRC format into list of {time, text} objects."""
+        import re
+        lines = []
+        pattern = re.compile(r'\[(\d{2}):(\d{2})\.(\d{2,3})\]\s*(.*)')
+        
+        for line in lrc_text.strip().split('\n'):
+            match = pattern.match(line.strip())
+            if match:
+                minutes = int(match.group(1))
+                seconds = int(match.group(2))
+                centiseconds = match.group(3)
+                # Handle both .xx and .xxx formats
+                if len(centiseconds) == 2:
+                    ms = int(centiseconds) * 10
+                else:
+                    ms = int(centiseconds)
+                
+                time_seconds = minutes * 60 + seconds + ms / 1000.0
+                text = match.group(4).strip()
+                
+                lines.append({
+                    'time': round(time_seconds, 3),
+                    'text': text
+                })
+        
+        return lines
     
     def get_mood_categories(self) -> Dict[str, Any]:
         """
@@ -4189,13 +4174,6 @@ def handle_request(request_data: Dict[str, Any]) -> Dict[str, Any]:
             else:
                 # Other services don't support pagination, just return regular artist songs
                 return service.get_artist_songs(browse_id)
-        
-        elif action == 'playlist_tracks_paginated':
-            # Paginated playlist tracks (All sources)
-            playlist_id = request_data.get('playlistId', '')
-            offset = request_data.get('offset', 0)
-            limit = request_data.get('limit', 20)
-            return service.get_playlist_tracks_paginated(playlist_id, offset, limit)
 
         elif action == 'ai_search':
             query = request_data.get('query', '')
@@ -4224,7 +4202,9 @@ def handle_request(request_data: Dict[str, Any]) -> Dict[str, Any]:
             
         elif action == 'lyrics':
             video_id = request_data.get('videoId', '')
-            return service.get_lyrics(video_id)
+            track_title = request_data.get('trackTitle')
+            artist_name = request_data.get('artistName')
+            return service.get_lyrics(video_id, track_title=track_title, artist_name=artist_name)
             
         elif action == 'mood_categories':
             return service.get_mood_categories()

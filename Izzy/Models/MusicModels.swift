@@ -322,6 +322,41 @@ struct LoadMoreSongsResponse: Codable {
     let hasMore: Bool
 }
 
+// MARK: - Lyrics Data
+
+/// A single line of synced lyrics with its timestamp.
+struct SyncedLine: Codable, Identifiable {
+    let time: Double
+    let text: String
+    
+    var id: Double { time }
+}
+
+struct LyricsData: Codable {
+    let lyrics: String
+    let source: String?
+    let syncedLyrics: [SyncedLine]?
+    
+    /// Whether the song has lyrics available.
+    var isAvailable: Bool {
+        !lyrics.isEmpty
+    }
+    
+    /// Whether synced (timed) lyrics are available.
+    var isSynced: Bool {
+        guard let synced = syncedLyrics else { return false }
+        return !synced.isEmpty
+    }
+    
+    /// Lyrics split into individual lines for display (plain fallback).
+    var lines: [String] {
+        lyrics.components(separatedBy: "\n")
+    }
+    
+    /// Creates an empty lyrics instance for songs without lyrics.
+    static let unavailable = LyricsData(lyrics: "", source: nil, syncedLyrics: nil)
+}
+
 // MARK: - Favorite Song Model
 
 struct FavoriteSong: Identifiable, Codable, Equatable {

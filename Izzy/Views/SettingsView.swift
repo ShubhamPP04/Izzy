@@ -31,12 +31,12 @@ struct SettingsView: View {
             ScrollView {
                 VStack(alignment: .leading, spacing: 20) {
                     headerSection
+                    liquidGlassCard
                     musicSourceCard
                     launchAtLoginCard
                     hotkeyCard
                     menuBarPlayerCard
                     miniPlayerCard
-                    liquidGlassCard
                     customHomeNameCard
                     windowPositionCard
                     aiServicesCard
