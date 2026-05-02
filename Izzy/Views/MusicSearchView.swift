@@ -352,13 +352,9 @@ struct SearchBarView: View {
                 .onKeyPress { keyPress in
                     handleKeyPress(keyPress)
                 }
-                .onChange(of: searchState.searchText) { _, newValue in
-                    print("🔤 Search text changed to: '\(newValue)'")
-                }
                 // Sync focus state with binding
                 .onChange(of: isSearchFocused) { _, newValue in
                     isSearchBarFocused = newValue
-                    print("🔍 Search bar focus changed: \(newValue)")
                 }
             
             // Loading indicator or clear button

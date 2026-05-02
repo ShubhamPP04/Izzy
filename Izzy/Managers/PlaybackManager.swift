@@ -927,7 +927,6 @@ class PlaybackManager: ObservableObject {
         
         if let data = try? JSONEncoder().encode(playbackData) {
             UserDefaults.standard.set(data, forKey: "lastPlaybackState")
-            print("💾 Saved playback state: \(currentTrack?.title ?? "nil"), time: \(currentTime), queue: \(queueManager.currentQueue.count) tracks")
         }
     }
     

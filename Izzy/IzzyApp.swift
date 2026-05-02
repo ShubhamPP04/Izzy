@@ -35,6 +35,13 @@ struct IzzyApp: App {
                     // 🔋 BATTERY OPTIMIZATION: Configure app for minimal battery usage
                     NSApp.setActivationPolicy(.accessory) // No dock icon, reduces background CPU
                     
+                    // Warm up Apple Intelligence on macOS 26+
+                    if #available(macOS 26.0, *) {
+                        Task {
+                            await FoundationModelsService.shared.warmup()
+                        }
+                    }
+                    
                     // 🔋 Set low priority for non-critical app operations
                     DispatchQueue.global(qos: .utility).async {
                         // 🔋 Initialize app coordinator on utility queue to reduce main thread load

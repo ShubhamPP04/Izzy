@@ -30,7 +30,7 @@ except ImportError:
 try:
     from yt_dlp import YoutubeDL
     HAS_YTDLP = True
-    print("✅ Successfully imported yt-dlp", file=sys.stderr)
+    # print("✅ Successfully imported yt-dlp", file=sys.stderr)
 except ImportError as e:
     print(f"❌ Failed to import yt-dlp: {e}", file=sys.stderr)
     YoutubeDL = None
@@ -39,7 +39,7 @@ except ImportError as e:
 # Check if ytmusicapi is available
 try:
     HAS_YTMUSICAPI = True
-    print("✅ Successfully imported ytmusicapi", file=sys.stderr)
+    # print("✅ Successfully imported ytmusicapi", file=sys.stderr)
 except ImportError as e:
     HAS_YTMUSICAPI = False
     print(f"❌ Failed to import ytmusicapi: {e}", file=sys.stderr)
@@ -56,7 +56,7 @@ from ytmusicapi import YTMusic
 try:
     from yt_dlp import YoutubeDL
     HAS_YTDLP = True
-    print("✅ Successfully imported yt-dlp", file=sys.stderr)
+    # print("✅ Successfully imported yt-dlp", file=sys.stderr)
 except ImportError as e:
     print(f"❌ Failed to import yt-dlp: {e}", file=sys.stderr)
     YoutubeDL = None
@@ -134,7 +134,8 @@ class JioSaavnService:
                             if formatted_song:
                                 results['songs'].append(formatted_song)
             except Exception as e:
-                print(f"Error searching songs: {e}", file=sys.stderr)
+                pass
+                # print(f"Error searching songs: {e}", file=sys.stderr)
             
             # Search albums
             try:
@@ -151,7 +152,8 @@ class JioSaavnService:
                             if formatted_album:
                                 results['albums'].append(formatted_album)
             except Exception as e:
-                print(f"Error searching albums: {e}", file=sys.stderr)
+                pass
+                # print(f"Error searching albums: {e}", file=sys.stderr)
             
             # Search artists
             try:
@@ -168,7 +170,8 @@ class JioSaavnService:
                             if formatted_artist:
                                 results['artists'].append(formatted_artist)
             except Exception as e:
-                print(f"Error searching artists: {e}", file=sys.stderr)
+                pass
+                # print(f"Error searching artists: {e}", file=sys.stderr)
             
             # Search playlists
             try:
@@ -185,7 +188,8 @@ class JioSaavnService:
                             if formatted_playlist:
                                 results['playlists'].append(formatted_playlist)
             except Exception as e:
-                print(f"Error searching playlists: {e}", file=sys.stderr)
+                pass
+                # print(f"Error searching playlists: {e}", file=sys.stderr)
             
             return {
                 'success': True,
@@ -344,7 +348,8 @@ class JioSaavnService:
                             if formatted_album:
                                 results['albums'].append(formatted_album)
             except Exception as e:
-                print(f"Error searching albums: {e}", file=sys.stderr)
+                pass
+                # print(f"Error searching albums: {e}", file=sys.stderr)
             
             # Search artists
             try:
@@ -361,7 +366,8 @@ class JioSaavnService:
                             if formatted_artist:
                                 results['artists'].append(formatted_artist)
             except Exception as e:
-                print(f"Error searching artists: {e}", file=sys.stderr)
+                pass
+                # print(f"Error searching artists: {e}", file=sys.stderr)
             
             # Search playlists
             try:
@@ -378,7 +384,8 @@ class JioSaavnService:
                             if formatted_playlist:
                                 results['playlists'].append(formatted_playlist)
             except Exception as e:
-                print(f"Error searching playlists: {e}", file=sys.stderr)
+                pass
+                # print(f"Error searching playlists: {e}", file=sys.stderr)
             
             return {
                 'success': True,
@@ -533,22 +540,23 @@ class JioSaavnService:
                     'error': 'requests library not available - JioSaavn streaming not supported'
                 }
             
-            print(f"🎵 Getting stream info for JioSaavn song ID: {video_id}", file=sys.stderr)
+            # print(f"🎵 Getting stream info for JioSaavn song ID: {video_id}", file=sys.stderr)
             
             # Get song details using the correct endpoint format
             response = requests.get(f"{self.base_url}/songs", params={
                 'ids': video_id  # Use 'ids' instead of 'id'
             }, timeout=10)
             
-            print(f"🎵 JioSaavn API response status: {response.status_code}", file=sys.stderr)
+            # print(f"🎵 JioSaavn API response status: {response.status_code}", file=sys.stderr)
             
             if response.status_code != 200:
                 # Try alternative endpoint format
                 try:
                     response = requests.get(f"{self.base_url}/songs/{video_id}", timeout=10)
-                    print(f"🎵 Alternative endpoint response: {response.status_code}", file=sys.stderr)
+                    # print(f"🎵 Alternative endpoint response: {response.status_code}", file=sys.stderr)
                 except Exception as e:
-                    print(f"🎵 Alternative endpoint failed: {e}", file=sys.stderr)
+                    pass
+                    # print(f"🎵 Alternative endpoint failed: {e}", file=sys.stderr)
                 
                 if response.status_code != 200:
                     return {
@@ -557,7 +565,7 @@ class JioSaavnService:
                     }
             
             data = response.json()
-            print(f"🎵 JioSaavn API response data keys: {list(data.keys()) if isinstance(data, dict) else f'List with {len(data)} items' if isinstance(data, list) else type(data)}", file=sys.stderr)
+            # print(f"🎵 JioSaavn API response data keys: {list(data.keys()) if isinstance(data, dict) else f'List with {len(data)} items' if isinstance(data, list) else type(data)}", file=sys.stderr)
             
             if not data.get('success') or not data.get('data'):
                 return {
@@ -573,7 +581,7 @@ class JioSaavnService:
                 }
             
             song_data = songs[0]
-            print(f"🎵 Song data keys: {list(song_data.keys()) if isinstance(song_data, dict) else f'Type: {type(song_data)}'}", file=sys.stderr)
+            # print(f"🎵 Song data keys: {list(song_data.keys()) if isinstance(song_data, dict) else f'Type: {type(song_data)}'}", file=sys.stderr)
             
             # Get stream URLs - JioSaavn provides multiple quality options
             download_url = ''
@@ -585,17 +593,17 @@ class JioSaavnService:
                 
                 # Handle both dictionary and list formats  
                 if isinstance(download_urls, dict):
-                    print(f"🎵 Available download qualities (dict): {list(download_urls.keys())}", file=sys.stderr)
+                    # print(f"🎵 Available download qualities (dict): {list(download_urls.keys())}", file=sys.stderr)
                     # Prefer 320kbps, then 160kbps, then 96kbps, then 48kbps
                     for qual in ['320kbps', '160kbps', '96kbps', '48kbps']:
                         if download_urls.get(qual):
                             download_url = download_urls[qual]
                             quality = qual
-                            print(f"🎵 Selected quality: {quality}", file=sys.stderr)
+                            # print(f"🎵 Selected quality: {quality}", file=sys.stderr)
                             break
                 elif isinstance(download_urls, list) and len(download_urls) > 0:
                     # If it's a list of objects with quality and url properties (new API format)
-                    print(f"🎵 Download URLs list format, {len(download_urls)} options available", file=sys.stderr)
+                    # print(f"🎵 Download URLs list format, {len(download_urls)} options available", file=sys.stderr)
                     # Look for the highest quality in the list
                     best_url = None
                     best_quality = 'unknown'
@@ -617,7 +625,7 @@ class JioSaavnService:
                                 if best_url is None or current_priority > best_priority:
                                     best_url = url
                                     best_quality = quality_str
-                                    print(f"🎵 Found better quality: {quality_str}", file=sys.stderr)
+                                    # print(f"🎵 Found better quality: {quality_str}", file=sys.stderr)
                         elif isinstance(url_info, str):
                             # Fallback for direct URL strings
                             if best_url is None:
@@ -627,16 +635,17 @@ class JioSaavnService:
                     if best_url:
                         download_url = best_url
                         quality = best_quality
-                        print(f"🎵 Selected URL from list: {quality}", file=sys.stderr)
+                        # print(f"🎵 Selected URL from list: {quality}", file=sys.stderr)
                 else:
-                    print(f"🎵 Unexpected downloadUrl format: {type(download_urls)}", file=sys.stderr)
+                    pass
+                    # print(f"🎵 Unexpected downloadUrl format: {type(download_urls)}", file=sys.stderr)
             else:
                 # Check for alternative field names
                 for field in ['media_url', 'stream_url', 'url', 'link']:
                     if song_data.get(field):
                         download_url = song_data[field]
                         quality = 'default'
-                        print(f"🎵 Using alternative field '{field}' for stream URL", file=sys.stderr)
+                        # print(f"🎵 Using alternative field '{field}' for stream URL", file=sys.stderr)
                         break
             
             if not download_url:
@@ -923,7 +932,7 @@ class JioSaavnService:
                     'error': 'requests library not available'
                 }
             
-            print("🏠 Fetching JioSaavn home feed...", file=sys.stderr)
+            # print("🏠 Fetching JioSaavn home feed...", file=sys.stderr)
             
             sections = []
             
@@ -968,7 +977,7 @@ class JioSaavnService:
             
             # Fallback: Use search to get trending content if modules failed
             if not sections:
-                print("🔄 Using search fallback for home sections", file=sys.stderr)
+                # print("🔄 Using search fallback for home sections", file=sys.stderr)
                 
                 # Trending songs
                 try:
@@ -1062,7 +1071,7 @@ class JioSaavnService:
                 except Exception as e:
                     print(f"⚠️ Punjabi search failed: {e}", file=sys.stderr)
             
-            print(f"🏠 Retrieved {len(sections)} home sections", file=sys.stderr)
+            # print(f"🏠 Retrieved {len(sections)} home sections", file=sys.stderr)
             
             return {
                 'success': True,
@@ -1085,7 +1094,7 @@ class JioSaavnService:
                     'error': 'requests library not available'
                 }
             
-            print(f"📊 Fetching JioSaavn charts...", file=sys.stderr)
+            # print(f"📊 Fetching JioSaavn charts...", file=sys.stderr)
             
             # Search for trending songs as charts fallback
             response = requests.get(f"{self.base_url}/search/songs", params={
@@ -1109,7 +1118,7 @@ class JioSaavnService:
                     if formatted_song:
                         songs.append(formatted_song)
             
-            print(f"📊 Retrieved {len(songs)} chart songs", file=sys.stderr)
+            # print(f"📊 Retrieved {len(songs)} chart songs", file=sys.stderr)
             
             return {
                 'success': True,
@@ -1137,7 +1146,7 @@ class JioSaavnService:
                     'error': 'requests library not available'
                 }
             
-            print("🎭 Fetching JioSaavn mood categories...", file=sys.stderr)
+            # print("🎭 Fetching JioSaavn mood categories...", file=sys.stderr)
             
             # Define common moods/genres for JioSaavn
             categories = {
@@ -1184,7 +1193,7 @@ class JioSaavnService:
                     'error': 'requests library not available'
                 }
             
-            print(f"🎭 Fetching JioSaavn playlists for mood: {params}", file=sys.stderr)
+            # print(f"🎭 Fetching JioSaavn playlists for mood: {params}", file=sys.stderr)
             
             # Search for playlists matching the mood
             response = requests.get(f"{self.base_url}/search/songs", params={
@@ -1208,7 +1217,7 @@ class JioSaavnService:
                     if formatted_song:
                         songs.append(formatted_song)
             
-            print(f"🎭 Retrieved {len(songs)} mood songs", file=sys.stderr)
+            # print(f"🎭 Retrieved {len(songs)} mood songs", file=sys.stderr)
             
             return {
                 'success': True,
@@ -1259,11 +1268,22 @@ class TidalService:
     def __init__(self):
         # Public API instances from tidal-ui (load balanced)
         # These are community-hosted instances that don't require token.json auth
+        # Public Hi-Fi API instances — keep in sync with Monochrome:
+        # https://github.com/monochrome-music/monochrome/blob/main/INSTANCES.md
+        # Uptime JSON: https://tidal-uptime.jiffy-puffs-1j.workers.dev/
         self.api_targets = [
-            {"name": "squid-api", "url": "https://triton.squid.wtf", "weight": 30},
-            {"name": "kinoplus", "url": "https://tidal.kinoplus.online", "weight": 20},
-            {"name": "binimum", "url": "https://tidal-api.binimum.org", "weight": 10},
-            {"name": "binimum-2", "url": "https://tidal-api-2.binimum.org", "weight": 10},
+            # Primary: instances with working search + streaming (v2.9)
+            {"name": "binimum", "url": "https://tidal-api.binimum.org", "weight": 30},
+            {"name": "triton-squid", "url": "https://triton.squid.wtf", "weight": 25},
+            # Secondary: Lucida (QQDL) community instances with working streaming (v2.6-2.9)
+            {"name": "wolf-qqdl", "url": "https://wolf.qqdl.site", "weight": 15},
+            {"name": "vogel-qqdl", "url": "https://vogel.qqdl.site", "weight": 10},
+            {"name": "katze-qqdl", "url": "https://katze.qqdl.site", "weight": 5},
+            # Fallback: search-only (streaming broken as of Apr 2026)
+            {"name": "api-monochrome-tf", "url": "https://api.monochrome.tf", "weight": 5},
+            {"name": "monochrome-samidy", "url": "https://monochrome-api.samidy.com", "weight": 5},
+            {"name": "hifi-geeked", "url": "https://hifi.geeked.wtf", "weight": 3},
+            {"name": "us-west-monochrome", "url": "https://us-west.monochrome.tf", "weight": 2},
         ]
         self.current_api_index = 0
         self.base_url = self.api_targets[0]["url"]  # Default to highest weight
@@ -1297,7 +1317,7 @@ class TidalService:
             except:
                 pass
             self._session = None
-        print("🔄 Tidal session reset for fresh connection", file=sys.stderr)
+        # print("🔄 Tidal session reset for fresh connection", file=sys.stderr)
     
     def _get_cache_key(self, endpoint: str, params: Dict) -> str:
         """Generate cache key"""
@@ -1321,7 +1341,7 @@ class TidalService:
             oldest_keys = sorted(self._cache.keys(), key=lambda k: self._cache[k][0])[:15]
             for k in oldest_keys:
                 del self._cache[k]
-            print(f"🧹 Tidal cache cleanup: removed {len(oldest_keys)} old entries", file=sys.stderr)
+            # print(f"🧹 Tidal cache cleanup: removed {len(oldest_keys)} old entries", file=sys.stderr)
         self._cache[key] = (time.time(), data)
     
     def _get_next_api(self) -> str:
@@ -1465,9 +1485,10 @@ class TidalService:
                                         results['artists'].append(formatted_artist)
                         
             except Exception as e:
-                print(f"Error searching Tidal tracks: {e}", file=sys.stderr)
+                pass
+                # print(f"Error searching Tidal tracks: {e}", file=sys.stderr)
             
-            print(f"🔍 Tidal search: {len(results['songs'])} songs, {len(results['albums'])} albums, {len(results['artists'])} artists", file=sys.stderr)
+            # print(f"🔍 Tidal search: {len(results['songs'])} songs, {len(results['albums'])} albums, {len(results['artists'])} artists", file=sys.stderr)
             
             return {
                 'success': True,
@@ -1517,7 +1538,7 @@ class TidalService:
                     if formatted_track:
                         songs.append(formatted_track)
             
-            print(f"🔍 Tidal load more (offset={offset}): {len(songs)} more songs", file=sys.stderr)
+            # print(f"🔍 Tidal load more (offset={offset}): {len(songs)} more songs", file=sys.stderr)
             
             return {
                 'success': True,
@@ -2111,7 +2132,7 @@ class TidalService:
                     if formatted_track:
                         tracks.append(formatted_track)
             
-            print(f"🔍 Tidal artist songs (offset={offset}): {len(tracks)} songs", file=sys.stderr)
+            # print(f"🔍 Tidal artist songs (offset={offset}): {len(tracks)} songs", file=sys.stderr)
             
             return {
                 'success': True,
@@ -2435,7 +2456,7 @@ class TidalService:
                     'error': 'requests library not available'
                 }
             
-            print(f"🎭 Fetching Tidal playlists for mood: {params}", file=sys.stderr)
+            # print(f"🎭 Fetching Tidal playlists for mood: {params}", file=sys.stderr)
             
             response = self._make_request("/search/", {'s': params}, timeout=15)
             
@@ -2528,14 +2549,14 @@ class YTMusicService:
         """
         try:
             if HAS_YTMUSICAPI and self.yt:
-                print(f"Using ytmusicapi for search: {query}", file=sys.stderr)
+                # print(f"Using ytmusicapi for search: {query}", file=sys.stderr)
                 results = self._search_with_ytmusicapi(query, limit)
                 return {
                     'success': True,
                     'data': results  # Return the MusicSearchResults structure directly
                 }
             else:
-                print(f"Using fallback search for: {query}", file=sys.stderr)
+                # print(f"Using fallback search for: {query}", file=sys.stderr)
                 results = self._search_fallback(query, limit)
                 return {
                     'success': True,
@@ -2544,7 +2565,7 @@ class YTMusicService:
             
         except Exception as e:
             logger.error(f"Search failed: {e}")
-            print(f"Search error: {e}", file=sys.stderr)
+            # print(f"Search error: {e}", file=sys.stderr)
             return {
                 'success': False,
                 'error': str(e)
@@ -2568,20 +2589,20 @@ class YTMusicService:
         
         for category, filter_name in search_filters.items():
             try:
-                print(f"Searching {category} for: '{query}' with filter '{filter_name}'", file=sys.stderr)
+                # print(f"Searching {category} for: '{query}' with filter '{filter_name}'", file=sys.stderr)
                 
                 # Use ytmusicapi search with proper filter
                 search_results = self.yt.search(query, filter=filter_name, limit=limit)
-                print(f"Got {len(search_results)} {category} results", file=sys.stderr)
+                # print(f"Got {len(search_results)} {category} results", file=sys.stderr)
                 
                 # Format results
                 formatted_results = self._format_search_results(search_results, category)
                 results[category] = formatted_results
-                print(f"Formatted {len(formatted_results)} {category} results", file=sys.stderr)
+                # print(f"Formatted {len(formatted_results)} {category} results", file=sys.stderr)
                 
             except Exception as e:
                 logger.error(f"Error searching {category}: {e}")
-                print(f"Error searching {category}: {e}", file=sys.stderr)
+                # print(f"Error searching {category}: {e}", file=sys.stderr)
                 results[category] = []
         
         return results
@@ -2829,7 +2850,7 @@ class YTMusicService:
             return None
         except Exception as exc:
             logger.warning(f"Gemini enrichment failed: {exc}")
-            print(f"Gemini enrichment failed: {exc}", file=sys.stderr)
+            # print(f"Gemini enrichment failed: {exc}", file=sys.stderr)
             return None
 
         @staticmethod
@@ -2952,7 +2973,7 @@ class YTMusicService:
                 playlist_id = safe_get(item, 'playlistId')
                 if playlist_id:
                     result['id'] = playlist_id
-                    print(f"📋 Playlist formatted: {title} with playlistId: {playlist_id}", file=sys.stderr)
+                    # print(f"📋 Playlist formatted: {title} with playlistId: {playlist_id}", file=sys.stderr)
             
             # Handle thumbnails
             thumbnails_raw = safe_get(item, 'thumbnails', [])
@@ -3124,38 +3145,38 @@ class YTMusicService:
             # 1. Check cache first (instant)
             cached = self._get_cached_stream(video_id)
             if cached:
-                print(f"⚡ Cached stream in {time.time() - start_time:.2f}s for {video_id}", file=sys.stderr)
+                # print(f"⚡ Cached stream in {time.time() - start_time:.2f}s for {video_id}", file=sys.stderr)
                 return {
                     'success': True,
                     'data': cached
                 }
 
             # 2. Try fast ytmusicapi extraction first (usually < 1 second)
-            print(f"🚀 Attempting fast stream extraction for {video_id}", file=sys.stderr)
+            # print(f"🚀 Attempting fast stream extraction for {video_id}", file=sys.stderr)
             fast_stream = self._get_stream_via_ytmusicapi(video_id)
             if fast_stream and fast_stream.get('success'):
                 self._set_cached_stream(video_id, fast_stream['data'])
-                print(f"⚡ Fast stream in {time.time() - start_time:.2f}s for {video_id}", file=sys.stderr)
+                # print(f"⚡ Fast stream in {time.time() - start_time:.2f}s for {video_id}", file=sys.stderr)
                 return fast_stream
 
             # 3. Try Invidious API (fast, no rate limiting)
-            print(f"🔄 Trying Invidious API for {video_id}", file=sys.stderr)
+            # print(f"🔄 Trying Invidious API for {video_id}", file=sys.stderr)
             invidious_stream = self._get_stream_via_invidious(video_id)
             if invidious_stream and invidious_stream.get('success'):
                 self._set_cached_stream(video_id, invidious_stream['data'])
-                print(f"⚡ Invidious stream in {time.time() - start_time:.2f}s for {video_id}", file=sys.stderr)
+                # print(f"⚡ Invidious stream in {time.time() - start_time:.2f}s for {video_id}", file=sys.stderr)
                 return invidious_stream
 
             # 4. Fallback to yt-dlp (slower but more reliable)
             if HAS_YTDLP:
-                print(f"🐢 Falling back to yt-dlp for {video_id}", file=sys.stderr)
+                # print(f"🐢 Falling back to yt-dlp for {video_id}", file=sys.stderr)
                 result = self._get_stream_with_ytdlp_fast(video_id)
                 if result.get('success'):
                     self._set_cached_stream(video_id, result['data'])
-                    print(f"⚡ yt-dlp stream in {time.time() - start_time:.2f}s for {video_id}", file=sys.stderr)
+                    # print(f"⚡ yt-dlp stream in {time.time() - start_time:.2f}s for {video_id}", file=sys.stderr)
                 return result
             else:
-                print(f"yt-dlp not available, using fallback for: {video_id}", file=sys.stderr)
+                # print(f"yt-dlp not available, using fallback for: {video_id}", file=sys.stderr)
                 return self._get_stream_fallback(video_id)
                 
         except Exception as e:
@@ -3216,12 +3237,12 @@ class YTMusicService:
                                 }
                             }
                 except Exception as e:
-                    print(f"Invidious instance {instance} failed: {e}", file=sys.stderr)
+                    # print(f"Invidious instance {instance} failed: {e}", file=sys.stderr)
                     continue
                     
             return None
         except Exception as e:
-            print(f"Invidious extraction failed: {e}", file=sys.stderr)
+            # print(f"Invidious extraction failed: {e}", file=sys.stderr)
             return None
 
     def _get_stream_with_ytdlp_fast(self, video_id: str) -> Dict[str, Any]:
@@ -3257,7 +3278,7 @@ class YTMusicService:
             if not HAS_YTDLP or YoutubeDL is None:
                 raise Exception("yt-dlp is not available")
 
-            print(f"Fast yt-dlp extraction: {video_id}", file=sys.stderr)
+            # print(f"Fast yt-dlp extraction: {video_id}", file=sys.stderr)
 
             with YoutubeDL(fast_opts) as ydl:
                 info = ydl.extract_info(url, download=False)
@@ -3290,7 +3311,7 @@ class YTMusicService:
             }
 
         except Exception as e:
-            print(f"Fast yt-dlp failed: {e}", file=sys.stderr)
+            # print(f"Fast yt-dlp failed: {e}", file=sys.stderr)
             # Try regular yt-dlp as last resort
             return self._get_stream_with_ytdlp(video_id)
 
@@ -3300,7 +3321,7 @@ class YTMusicService:
             return None
 
         try:
-            print(f"🎵 ytmusicapi: Fetching song data for {video_id}", file=sys.stderr)
+            # print(f"🎵 ytmusicapi: Fetching song data for {video_id}", file=sys.stderr)
             song_data = self.yt.get_song(video_id)
             streaming_data = (song_data or {}).get('streamingData') or {}
             video_details = (song_data or {}).get('videoDetails') or {}
@@ -3323,7 +3344,7 @@ class YTMusicService:
                 candidates.append(fmt)
 
             if not candidates:
-                print(f"🎵 ytmusicapi: No direct audio URLs found for {video_id}", file=sys.stderr)
+                # print(f"🎵 ytmusicapi: No direct audio URLs found for {video_id}", file=sys.stderr)
                 return None
 
             def sort_key(fmt: Dict[str, Any]):
@@ -3339,7 +3360,7 @@ class YTMusicService:
             duration_raw = video_details.get('lengthSeconds')
             duration = float(duration_raw) if duration_raw else streaming_data.get('duration')
 
-            print(f"🎵 ytmusicapi: Found stream URL for {video_id}", file=sys.stderr)
+            # print(f"🎵 ytmusicapi: Found stream URL for {video_id}", file=sys.stderr)
             return {
                 'success': True,
                 'data': {
@@ -3351,7 +3372,7 @@ class YTMusicService:
             }
 
         except Exception as err:
-            print(f"🎵 ytmusicapi failed for {video_id}: {err}", file=sys.stderr)
+            # print(f"🎵 ytmusicapi failed for {video_id}: {err}", file=sys.stderr)
             logger.debug(f"ytmusicapi fast stream lookup failed for {video_id}: {err}")
             return None
     
@@ -3675,7 +3696,7 @@ class YTMusicService:
                 if formatted_track:
                     formatted_tracks.append(formatted_track)
             
-            print(f"Generated watch playlist with {len(formatted_tracks)} tracks", file=sys.stderr)
+            # print(f"Generated watch playlist with {len(formatted_tracks)} tracks", file=sys.stderr)
             
             return {
                 'success': True,
@@ -3730,14 +3751,14 @@ class YTMusicService:
         2. YouTube Music plain lyrics (fallback)
         """
         try:
-            print(f"🎤 Lyrics request: title='{track_title}', artist='{artist_name}', videoId={video_id}", file=sys.stderr)
+            # print(f"🎤 Lyrics request: title='{track_title}', artist='{artist_name}', videoId={video_id}", file=sys.stderr)
             
             # Step 1: Try LRCLIB for synced lyrics (fast, no auth needed)
             if track_title and artist_name:
                 try:
                     lrclib_result = self._fetch_lrclib_lyrics(track_title, artist_name)
                     if lrclib_result:
-                        print(f"✅ Got lyrics from LRCLIB", file=sys.stderr)
+                        # print(f"✅ Got lyrics from LRCLIB", file=sys.stderr)
                         return lrclib_result
                     else:
                         print(f"⚠️ LRCLIB returned no results", file=sys.stderr)
@@ -3747,15 +3768,15 @@ class YTMusicService:
             # Step 2: Fall back to YouTube Music plain lyrics
             if HAS_YTMUSICAPI and self.yt:
                 try:
-                    print(f"🔄 Trying YTMusic lyrics for {video_id}...", file=sys.stderr)
+                    # print(f"🔄 Trying YTMusic lyrics for {video_id}...", file=sys.stderr)
                     watch_playlist = self.yt.get_watch_playlist(videoId=video_id)
                     lyrics_browse_id = watch_playlist.get('lyrics')
                     
                     if lyrics_browse_id:
-                        print(f"📝 Found lyrics browseId: {lyrics_browse_id}", file=sys.stderr)
+                        # print(f"📝 Found lyrics browseId: {lyrics_browse_id}", file=sys.stderr)
                         lyrics_data = self.yt.get_lyrics(lyrics_browse_id)
                         if lyrics_data and lyrics_data.get('lyrics'):
-                            print(f"✅ Got plain lyrics from YTMusic", file=sys.stderr)
+                            # print(f"✅ Got plain lyrics from YTMusic", file=sys.stderr)
                             return {
                                 'success': True,
                                 'data': {
@@ -3801,7 +3822,7 @@ class YTMusicService:
             params['duration'] = str(duration)
         
         url = f"https://lrclib.net/api/get?{urllib.parse.urlencode(params)}"
-        print(f"LRCLIB request: {url}", file=sys.stderr)
+        # print(f"LRCLIB request: {url}", file=sys.stderr)
         
         req = urllib.request.Request(url, headers={
             'User-Agent': 'Izzy Music Player v1.0 (https://github.com/izzy)'
@@ -3812,7 +3833,7 @@ class YTMusicService:
                 data = json.loads(response.read().decode('utf-8'))
         except urllib.error.HTTPError as e:
             if e.code == 404:
-                print(f"LRCLIB: no lyrics found for {track} - {artist}", file=sys.stderr)
+                # print(f"LRCLIB: no lyrics found for {track} - {artist}", file=sys.stderr)
                 return None
             raise
         
@@ -3822,7 +3843,7 @@ class YTMusicService:
         if synced_lyrics_raw:
             # Parse LRC format: [mm:ss.xx] lyrics text
             synced_lines = self._parse_lrc(synced_lyrics_raw)
-            print(f"LRCLIB: found {len(synced_lines)} synced lines for {track}", file=sys.stderr)
+            # print(f"LRCLIB: found {len(synced_lines)} synced lines for {track}", file=sys.stderr)
             return {
                 'success': True,
                 'data': {
@@ -3832,7 +3853,7 @@ class YTMusicService:
                 }
             }
         elif plain_lyrics:
-            print(f"LRCLIB: found plain lyrics for {track} (no sync)", file=sys.stderr)
+            # print(f"LRCLIB: found plain lyrics for {track} (no sync)", file=sys.stderr)
             return {
                 'success': True,
                 'data': {
@@ -3886,7 +3907,7 @@ class YTMusicService:
             # Get mood categories
             mood_data = self.yt.get_mood_categories()
             
-            print(f"Retrieved mood categories with {len(mood_data)} sections", file=sys.stderr)
+            # print(f"Retrieved mood categories with {len(mood_data)} sections", file=sys.stderr)
             
             # Format the mood categories into the expected structure
             formatted_data = {}
@@ -3901,7 +3922,7 @@ class YTMusicService:
                         })
                 formatted_data[section_name] = formatted_categories
             
-            print(f"🎭 Formatted {sum(len(v) for v in formatted_data.values())} mood categories", file=sys.stderr)
+            # print(f"🎭 Formatted {sum(len(v) for v in formatted_data.values())} mood categories", file=sys.stderr)
             
             return {
                 'success': True,
@@ -3929,7 +3950,7 @@ class YTMusicService:
             # Get playlists for the mood category
             playlists_data = self.yt.get_mood_playlists(params)
             
-            print(f"Retrieved {len(playlists_data)} mood playlists", file=sys.stderr)
+            # print(f"Retrieved {len(playlists_data)} mood playlists", file=sys.stderr)
             
             return {
                 'success': True,
@@ -3957,7 +3978,7 @@ class YTMusicService:
             # Get charts data
             charts_data = self.yt.get_charts(country)
             
-            print(f"Retrieved charts for country {country}", file=sys.stderr)
+            # print(f"Retrieved charts for country {country}", file=sys.stderr)
             
             # Format the charts data
             formatted_data = {
@@ -4003,7 +4024,7 @@ class YTMusicService:
                     if formatted:
                         formatted_data['trending'].append(formatted)
             
-            print(f"📊 Formatted charts: {len(formatted_data['songs'])} songs, {len(formatted_data['videos'])} videos", file=sys.stderr)
+            # print(f"📊 Formatted charts: {len(formatted_data['songs'])} songs, {len(formatted_data['videos'])} videos", file=sys.stderr)
             
             return {
                 'success': True,
@@ -4031,7 +4052,7 @@ class YTMusicService:
             # Get home feed
             home_data = self.yt.get_home(limit=20)
             
-            print(f"Retrieved home feed with {len(home_data)} sections", file=sys.stderr)
+            # print(f"Retrieved home feed with {len(home_data)} sections", file=sys.stderr)
             
             # Format the home data into sections with contents
             sections = []
@@ -4076,7 +4097,7 @@ class YTMusicService:
                         'contents': formatted_contents
                     })
             
-            print(f"🏠 Formatted {len(sections)} home sections for YouTube Music", file=sys.stderr)
+            # print(f"🏠 Formatted {len(sections)} home sections for YouTube Music", file=sys.stderr)
             
             return {
                 'success': True,
@@ -4097,20 +4118,20 @@ def handle_request(request_data: Dict[str, Any]) -> Dict[str, Any]:
     try:
         # Get the music source from the request (default to YouTube Music)
         music_source = request_data.get('musicSource', 'youtube_music')
-        print(f"🎵 Python received musicSource: '{music_source}'", file=sys.stderr)
+        # print(f"🎵 Python received musicSource: '{music_source}'", file=sys.stderr)
         
         if music_source == 'jiosaavn':
-            print("🔥 Using JioSaavn service", file=sys.stderr)
+            # print("🔥 Using JioSaavn service", file=sys.stderr)
             service = JioSaavnService()
         elif music_source == 'tidal':
-            print("🔥 Using Tidal service (Hi-Res Lossless)", file=sys.stderr)
+            # print("🔥 Using Tidal service (Hi-Res Lossless)", file=sys.stderr)
             service = TidalService()
         else:
-            print("🔥 Using YouTube Music service", file=sys.stderr)
+            # print("🔥 Using YouTube Music service", file=sys.stderr)
             service = YTMusicService()
             
         action = request_data.get('action')
-        print(f"🎵 Action: {action}", file=sys.stderr)
+        # print(f"🎵 Action: {action}", file=sys.stderr)
         
         if action == 'search':
             query = request_data.get('query', '')
@@ -4257,13 +4278,13 @@ def main():
                     continue
                 
                 # Log to stderr for debugging
-                print(f"Received request: {line}", file=sys.stderr, flush=True)
+                # print(f"Received request: {line}", file=sys.stderr, flush=True)
                 
                 request_data = json.loads(line)
                 response = handle_request(request_data)
                 
                 # Log response to stderr for debugging
-                print(f"Sending response: {json.dumps(response)}", file=sys.stderr, flush=True)
+                # print(f"Sending response: {json.dumps(response)}", file=sys.stderr, flush=True)
                 
                 # Write response to stdout
                 print(json.dumps(response), flush=True)
@@ -4273,7 +4294,7 @@ def main():
                     'success': False,
                     'error': f'Invalid JSON: {str(e)}'
                 }
-                print(f"JSON decode error: {e}", file=sys.stderr, flush=True)
+                # print(f"JSON decode error: {e}", file=sys.stderr, flush=True)
                 print(json.dumps(error_response), flush=True)
                 
             except Exception as e:
@@ -4281,14 +4302,15 @@ def main():
                     'success': False,
                     'error': str(e)
                 }
-                print(f"Request error: {e}", file=sys.stderr, flush=True)
+                # print(f"Request error: {e}", file=sys.stderr, flush=True)
                 print(json.dumps(error_response), flush=True)
                 
     except KeyboardInterrupt:
-        print("Service interrupted", file=sys.stderr, flush=True)
+        # print("Service interrupted", file=sys.stderr, flush=True)
         pass
     except Exception as e:
-        print(f"Main loop error: {e}", file=sys.stderr, flush=True)
+        pass
+        # print(f"Main loop error: {e}", file=sys.stderr, flush=True)
 
 if __name__ == '__main__':
     main()

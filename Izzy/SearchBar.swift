@@ -32,16 +32,8 @@ struct SearchBar: View {
                     handleKeyPress(keyPress)
                 }
                 .onAppear {
-                    // Force focus when the text field appears
                     isSearchFocused = true
                 }
-                // Keep focus when text changes (including when cleared)
-                .onChange(of: searchState.searchText) { _, _ in
-                    DispatchQueue.main.async {
-                        isSearchFocused = true
-                    }
-                }
-                // Sync focus state with binding
                 .onChange(of: isSearchFocused) { _, newValue in
                     isSearchBarFocused = newValue
                 }

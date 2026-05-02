@@ -20,12 +20,10 @@ struct SettingsView: View {
     @AppStorage("musicSource") private var musicSource = MusicSource.youtubeMusic.rawValue
     @AppStorage("customHomeName") private var customHomeName = "User"
     @AppStorage("startupTab") private var startupTab = 1 // 0 = Home, 1 = Search, 2 = Favorites, 3 = Recently Played, 4 = Settings, 5 = Playlists
-    @AppStorage("geminiApiKey") private var geminiApiKey = ""
     @AppStorage("showAISearch") private var showAISearch = true
     @AppStorage(GlobalHotkeyManager.hotkeyDefaultsKey) private var storedHotkeyModifierRawValue = HotkeyModifier.option.rawValue
     @StateObject private var updateManager = UpdateManager.shared
-    @State private var isGeminiKeyVisible = false
-    
+
     var body: some View {
         ScrollViewReader { _ in
             ScrollView {
@@ -468,67 +466,48 @@ struct SettingsView: View {
             }
             .padding(.bottom, 4)
 
-            Text("Connect your Gemini 2.5 Flash key to unlock smarter AI Search recommendations.")
+            Text("Uses Apple Intelligence for on-device natural language understanding. No API key needed.")
                 .font(.system(size: 12))
                 .foregroundColor(.secondary)
 
-            VStack(alignment: .leading, spacing: 8) {
-                Group {
-                    if isGeminiKeyVisible {
-                        TextField("Gemini API Key", text: $geminiApiKey)
-                            .autocorrectionDisabled()
-                            .liquidGlassTextField()
-                    } else {
-                        SecureField("Gemini API Key", text: $geminiApiKey)
-                            .autocorrectionDisabled()
-                            .liquidGlassTextField()
-                    }
-                }
-                .onChange(of: geminiApiKey) { _, newValue in
-                    let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
-                    if trimmed != geminiApiKey {
-                        geminiApiKey = trimmed
-                    }
-                }
-
-                HStack(spacing: 12) {
-                    Button {
-                        isGeminiKeyVisible.toggle()
-                    } label: {
-                        Label(isGeminiKeyVisible ? "Hide Key" : "Show Key", systemImage: isGeminiKeyVisible ? "eye.slash" : "eye")
-                            .font(.system(size: 12, weight: .medium))
-                    }
-                    .buttonStyle(.plain)
-
-                    if !geminiApiKey.isEmpty {
-                        Divider()
-                            .frame(height: 16)
-                        Button {
-                            geminiApiKey = ""
-                        } label: {
-                            Label("Clear", systemImage: "xmark.circle")
-                                .font(.system(size: 12, weight: .medium))
-                        }
-                        .buttonStyle(.plain)
-                    }
+            if #available(macOS 26.0, *) {
+                HStack {
+                    Text("Apple Intelligence")
+                        .font(.system(size: 14, weight: .medium))
 
                     Spacer()
 
-                    if !geminiApiKey.isEmpty {
-                        Label("Key saved", systemImage: "checkmark.shield.fill")
+                    if FoundationModelsService.shared.isAvailable {
+                        Label("Available", systemImage: "checkmark.circle.fill")
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(.green)
                     } else {
-                        Label("Required for AI Search", systemImage: "exclamationmark.triangle")
+                        Label("Not Available", systemImage: "xmark.circle.fill")
                             .font(.system(size: 12, weight: .semibold))
                             .foregroundStyle(.orange)
                     }
                 }
-            }
 
-            Link("Get a Gemini API key", destination: URL(string: "https://ai.google.dev/gemini-api/docs/get-started")!)
-                .font(.system(size: 12, weight: .medium))
-                .foregroundColor(.blue)
+                HStack {
+                    Text("Disable AI features")
+                        .font(.system(size: 14, weight: .medium))
+
+                    Spacer()
+
+                    Toggle("", isOn: Binding(
+                        get: { FoundationModelsService.shared.isDisabledByUser },
+                        set: { FoundationModelsService.shared.isDisabledByUser = $0 }
+                    ))
+                    .labelsHidden()
+                }
+            } else {
+                HStack {
+                    Label("Requires macOS 26 or later", systemImage: "exclamationmark.triangle")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.orange)
+                    Spacer()
+                }
+            }
         }
     }
 

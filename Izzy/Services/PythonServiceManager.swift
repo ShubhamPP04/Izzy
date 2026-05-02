@@ -47,7 +47,6 @@ struct ServiceRequest: Codable {
     let limit: Int?
     let offset: Int?
     let musicSource: String?
-    let aiApiKey: String?
     let params: String?
     let country: String?
     let trackTitle: String?
@@ -61,7 +60,6 @@ struct ServiceRequest: Codable {
          limit: Int? = nil,
          offset: Int? = nil,
          musicSource: String? = nil,
-         aiApiKey: String? = nil,
          params: String? = nil,
          country: String? = nil,
          trackTitle: String? = nil,
@@ -74,7 +72,6 @@ struct ServiceRequest: Codable {
         self.limit = limit
         self.offset = offset
         self.musicSource = musicSource
-        self.aiApiKey = aiApiKey
         self.params = params
         self.country = country
         self.trackTitle = trackTitle
@@ -97,14 +94,6 @@ class PythonServiceManager: ObservableObject {
     private var inactivityTimer: DispatchSourceTimer?
     private let inactivityCheckInterval: TimeInterval = 60
     private let inactivityThreshold: TimeInterval = 240  // 4 minutes of inactivity before suspension
-    private var storedGeminiAPIKey: String? {
-        let key = UserDefaults.standard.string(forKey: "geminiApiKey")?.trimmingCharacters(in: .whitespacesAndNewlines)
-        return key?.isEmpty == true ? nil : key
-    }
-    
-    var hasGeminiAPIKey: Bool {
-        storedGeminiAPIKey != nil
-    }
     
     private init() {}
     
@@ -340,13 +329,10 @@ class PythonServiceManager: ObservableObject {
                 }
             } catch {
                 lastError = error
-                print("❌ Attempt \(attempt) failed: \(error)")
                 
-                // On failure, mark service as not running to force restart
                 if attempt < 3 {
-                    print("🔄 Restarting service for retry...")
                     cleanup()
-                    try? await Task.sleep(nanoseconds: 500_000_000) // Wait 0.5s before retry
+                    try? await Task.sleep(nanoseconds: 500_000_000)
                 }
             }
         }
@@ -370,43 +356,27 @@ class PythonServiceManager: ObservableObject {
             let requestData = try JSONEncoder().encode(request)
             let requestString = String(data: requestData, encoding: .utf8)! + "\n"
             
-            print("📤 Sending request: \(requestString.trimmingCharacters(in: .whitespacesAndNewlines))")
-            
             inputPipe.fileHandleForWriting.write(requestString.data(using: .utf8)!)
             
             // Read response with timeout
             let responseData = try readResponseWithTimeout(from: outputPipe, timeout: timeout)
             
-            print("📥 Received response data: \(responseData.count) bytes")
-            
             if responseData.isEmpty {
-                print("❌ Empty response from Python service")
                 continuation.resume(throwing: ServiceError.invalidResponse)
                 return
-            }
-            
-            // Log the raw response for debugging (truncated for readability)
-            if let responseString = String(data: responseData, encoding: .utf8) {
-                let truncated = responseString.count > 500 ? String(responseString.prefix(500)) + "..." : responseString
-                print("📄 Raw response: \(truncated)")
             }
             
             // Parse response
             let serviceResponse = try JSONDecoder().decode(ServiceResponse<T>.self, from: responseData)
             
-            print("✅ Parsed response success: \(serviceResponse.success)")
-            
             if serviceResponse.success, let data = serviceResponse.data {
-                print("🎉 Returning successful data")
                 continuation.resume(returning: data)
             } else {
                 let error = ServiceError.pythonError(serviceResponse.error ?? "Unknown error")
-                print("❌ Python service error: \(serviceResponse.error ?? "Unknown error")")
                 continuation.resume(throwing: error)
             }
             
         } catch {
-            print("💥 Service request failed with error: \(error)")
             continuation.resume(throwing: error)
         }
     }
@@ -576,21 +546,6 @@ extension PythonServiceManager {
         return try await sendRequest(request, responseType: MusicSearchResults.self)
     }
 
-    func performAISearch(query: String, limit: Int = 20) async throws -> AISearchResponse {
-        if !isServiceRunning {
-            try ensureServiceRunning()
-        }
-        let currentSource = UserDefaults.standard.string(forKey: "musicSource") ?? "youtube_music"
-        let request = ServiceRequest(
-            action: "ai_search",
-            query: query,
-            limit: limit,
-            musicSource: currentSource,
-            aiApiKey: storedGeminiAPIKey
-        )
-        return try await sendRequest(request, responseType: AISearchResponse.self)
-    }
-    
     func getStreamInfo(videoId: String, musicSource: String? = nil) async throws -> StreamInfo {
         // Use provided music source, or fall back to current setting
         let sourceToUse = musicSource ?? UserDefaults.standard.string(forKey: "musicSource") ?? "youtube_music"

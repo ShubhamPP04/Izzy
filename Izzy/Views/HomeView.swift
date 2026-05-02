@@ -22,6 +22,13 @@ struct HomeView: View {
     @State private var forYouScrollOffset: CGFloat = 0
     @State private var canScrollLeft = false
     @State private var canScrollRight = false
+
+    private var aiBadgeVisible: Bool {
+        if #available(macOS 26.0, *) {
+            return FoundationModelsService.shared.isAvailable
+        }
+        return false
+    }
     
     // Use cached data from SearchState instead of local state
     private var homeSections: [HomeSection] {
@@ -92,49 +99,55 @@ struct HomeView: View {
             shownSongIds.removeAll()
         }
 
-        // Try AI-powered recommendations first if Gemini API key is available
-        print("🔑 Checking Gemini API key availability: \(pythonService.hasGeminiAPIKey)")
+        // Try Apple Intelligence recommendations first if available
+        var appleIntelligenceAvailable = false
+        if #available(macOS 26.0, *) {
+            appleIntelligenceAvailable = FoundationModelsService.shared.isAvailable
+        }
+        print("🤖 Apple Intelligence available: \(appleIntelligenceAvailable)")
 
-        if pythonService.hasGeminiAPIKey && !forceRefresh {
-            // Use AI only on initial load, not on force refresh for faster performance
+        if appleIntelligenceAvailable && !forceRefresh {
             do {
-                // Build a concise AI query based on recently played songs
                 let recentArtists = Array(Set(filteredSongs.prefix(5).compactMap { $0.artist })).prefix(3).joined(separator: ", ")
                 let recentTitles = filteredSongs.prefix(3).map { $0.title }.joined(separator: ", ")
-
-                let aiQuery = "Similar to: \(recentTitles) by \(recentArtists)"
+                let aiQuery = "play music similar to \(recentTitles) by \(recentArtists)"
 
                 print("🤖 AI ENABLED - Fetching recommendations")
 
-                let aiResponse = try await pythonService.performAISearch(query: aiQuery, limit: 12)
+                if #available(macOS 26.0, *) {
+                    let service = FoundationModelsService.shared
+                    let searchTool = MusicSearchTool()
+                    let instructions = FoundationModelsPromptLibrary.commandBarInstructions()
 
-                print("🤖 AI returned \(aiResponse.topResults.count) results")
+                    if let session = service.createCommandSession(instructions: instructions, tools: [searchTool]) {
+                        let intent = try await session.respond(to: aiQuery, generating: MusicIntent.self)
+                        let searchQuery = intent.content.buildSearchQuery()
 
-                // Convert AI results to FavoriteSong and filter out already shown
-                for result in aiResponse.topResults {
-                    guard let videoId = result.videoId else { continue }
+                        let searchResponse = try await pythonService.searchMusic(query: searchQuery, limit: 12)
+                        print("🤖 AI returned \(searchResponse.songs.count) results")
 
-                    // STRICT: Only accept if musicSource matches OR if not set (then we set it)
-                    if let resultSource = result.musicSource {
-                        if resultSource != currentSource {
-                            print("⚠️ AI: Skipping \(result.title) - wrong source: \(resultSource) != \(currentSource)")
-                            continue
+                        for result in searchResponse.songs {
+                            guard let videoId = result.videoId, !videoId.isEmpty else { continue }
+
+                            if let resultSource = result.musicSource {
+                                if resultSource != currentSource {
+                                    print("⚠️ AI: Skipping \(result.title) - wrong source: \(resultSource) != \(currentSource)")
+                                    continue
+                                }
+                            }
+
+                            if shownSongIds.contains(videoId) ||
+                               filteredSongs.contains(where: { $0.videoId == videoId }) ||
+                               newRecommendations.contains(where: { $0.videoId == videoId }) {
+                                continue
+                            }
+
+                            let favoriteSong = FavoriteSong(from: result, musicSource: currentSource)
+                            print("✅ AI: Added \(favoriteSong.title) from \(favoriteSong.musicSource ?? "unknown")")
+                            newRecommendations.append(favoriteSong)
+
+                            if newRecommendations.count >= 10 { break }
                         }
-                    }
-
-                    // Skip if already shown or already in recently played
-                    if shownSongIds.contains(videoId) ||
-                       filteredSongs.contains(where: { $0.videoId == videoId }) ||
-                       newRecommendations.contains(where: { $0.videoId == videoId }) {
-                        continue
-                    }
-
-                    let favoriteSong = FavoriteSong(from: result, musicSource: currentSource)
-                    print("✅ AI: Added \(favoriteSong.title) from \(favoriteSong.musicSource ?? "unknown")")
-                    newRecommendations.append(favoriteSong)
-
-                    if newRecommendations.count >= 10 {
-                        break
                     }
                 }
 
@@ -445,8 +458,8 @@ struct HomeView: View {
                                         .fontWeight(.bold)
                                         .foregroundColor(.primary)
 
-                                    // AI badge when Gemini API key is available
-                                    if PythonServiceManager.shared.hasGeminiAPIKey {
+                                    // AI badge when Apple Intelligence is available
+                                    if aiBadgeVisible {
                                         HStack(spacing: 3) {
                                             Image(systemName: "sparkles")
                                                 .font(.system(size: 10, weight: .semibold))

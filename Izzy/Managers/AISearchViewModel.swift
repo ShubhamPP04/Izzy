@@ -2,7 +2,8 @@
 //  AISearchViewModel.swift
 //  Izzy
 //
-//  Created by GitHub Copilot on 26/09/25.
+//  Replaced Gemini-based AI search with Apple Intelligence (Foundation Models).
+//  Uses on-device AI for natural language parsing + PythonServiceManager for real search.
 //
 
 import Foundation
@@ -24,6 +25,22 @@ final class AISearchViewModel: ObservableObject {
     private var searchTask: Task<Void, Never>?
     private var progressTask: Task<Void, Never>?
     private var progressCleanupTask: Task<Void, Never>?
+
+    // Apple Intelligence availability (for UI binding)
+    var isAppleIntelligenceAvailable: Bool {
+        if #available(macOS 26.0, *) {
+            return FoundationModelsService.shared.isAvailable
+        }
+        return false
+    }
+
+    var isAppleIntelligenceNotReady: Bool {
+        if #available(macOS 26.0, *) {
+            let service = FoundationModelsService.shared
+            return !service.isDisabledByUser && !service.isAvailable
+        }
+        return true
+    }
 
     func bootstrap(initialQuery: String?) {
         guard let initialQuery, inputText.isEmpty else { return }
@@ -69,33 +86,54 @@ final class AISearchViewModel: ObservableObject {
     private func performSearch(for query: String, limit: Int) async {
         defer { searchTask = nil }
 
-        guard pythonService.hasGeminiAPIKey else {
-            isSearching = false
-            resetOutputs()
-            errorMessage = "Add your Gemini API key in Settings to enable AI Search."
-            stopProgress(immediate: true)
-            return
-        }
-
         isSearching = true
         errorMessage = nil
         startProgressAnimation()
 
         do {
-            try pythonService.ensureServiceRunning()
-            let response = try await pythonService.performAISearch(query: query, limit: limit)
+            // Try Apple Intelligence path on macOS 26+
+            if #available(macOS 26.0, *) {
+                let service = FoundationModelsService.shared
+                if service.isAvailable {
+                    let intent = try await parseIntentWithAI(query: query)
+                    if Task.isCancelled { return }
 
-            if Task.isCancelled {
-                isSearching = false
-                stopProgress(immediate: true)
-                return
+                    let searchQuery = intent.buildSearchQuery()
+                    let searchResponse = try await executeSearch(query: searchQuery, limit: limit)
+                    if Task.isCancelled { return }
+
+                    // Build AI-powered suggestions from the parsed intent
+                    var aiSuggestions: [String] = []
+                    if !intent.artist.isEmpty { aiSuggestions.append("More by \(intent.artist)") }
+                    if !intent.mood.isEmpty { aiSuggestions.append("\(intent.mood.capitalized) \(intent.genre.isEmpty ? "music" : intent.genre)") }
+                    if !intent.era.isEmpty { aiSuggestions.append("\(normalizeEra(intent.era)) \(intent.genre.isEmpty ? "hits" : intent.genre)") }
+                    if !intent.activity.isEmpty { aiSuggestions.append("More \(intent.activity) music") }
+                    if aiSuggestions.isEmpty { aiSuggestions.append("Top hits like this") }
+
+                    var aiInsights: [String] = []
+                    aiInsights.append("Playing: \(intent.queryDescription())")
+                    if !intent.artist.isEmpty { aiInsights.append("Featured artist: \(intent.artist)") }
+
+                    suggestions = aiSuggestions
+                    insights = aiInsights
+                    curatedResults = Array(searchResponse.songs.prefix(6))
+                    fullResults = searchResponse
+                    errorMessage = nil
+
+                    isSearching = false
+                    stopProgress(immediate: false, success: true)
+                    return
+                }
             }
 
-            inputText = response.query
-            suggestions = response.suggestions
-            curatedResults = response.topResults
-            insights = response.insights ?? []
-            fullResults = response.results
+            // Fallback: regular search without AI
+            let searchResponse = try await executeSearch(query: query, limit: limit)
+            if Task.isCancelled { return }
+
+            suggestions = []
+            insights = []
+            curatedResults = Array(searchResponse.songs.prefix(6))
+            fullResults = searchResponse
             errorMessage = nil
 
             isSearching = false
@@ -113,6 +151,40 @@ final class AISearchViewModel: ObservableObject {
             insights = []
             fullResults = MusicSearchResults()
         }
+    }
+
+    @available(macOS 26.0, *)
+    private func parseIntentWithAI(query: String) async throws -> MusicIntent {
+        let service = FoundationModelsService.shared
+        let searchTool = MusicSearchTool()
+        let instructions = FoundationModelsPromptLibrary.commandBarInstructions()
+
+        guard let session = service.createCommandSession(
+            instructions: instructions,
+            tools: [searchTool]
+        ) else {
+            throw AIError.notAvailable
+        }
+
+        let intent = try await session.respond(to: query, generating: MusicIntent.self)
+        return intent.content
+    }
+
+    private func executeSearch(query: String, limit: Int) async throws -> MusicSearchResults {
+        try pythonService.ensureServiceRunning()
+        return try await pythonService.searchMusic(query: query, limit: limit)
+    }
+
+    private func normalizeEra(_ era: String) -> String {
+        let lowered = era.lowercased()
+        if lowered.contains("1960") { return "60s" }
+        if lowered.contains("1970") { return "70s" }
+        if lowered.contains("1980") { return "80s" }
+        if lowered.contains("1990") { return "90s" }
+        if lowered.contains("2000") { return "2000s" }
+        if lowered.contains("2010") { return "2010s" }
+        if lowered.contains("2020") { return "2020s" }
+        return era
     }
 
     private func startProgressAnimation() {
@@ -190,6 +262,11 @@ final class AISearchViewModel: ObservableObject {
     }
 
     private func message(for error: Error) -> String {
+        if #available(macOS 26.0, *) {
+            if let msg = AIErrorHandler.handleAndMessage(error) {
+                return msg
+            }
+        }
         if let localized = error as? LocalizedError,
            let description = localized.errorDescription {
             return description

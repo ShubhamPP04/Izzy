@@ -12,13 +12,8 @@ import Foundation
 class SearchState: ObservableObject {
     @Published var searchText: String = "" {
         didSet {
-            // 🔋 BATTERY EFFICIENCY: Save playback state when user interacts with search
-            playbackManager.savePlaybackState()
-            
-            // Keep results panel open by default, only hide when explicitly cleared
             let hasText = !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             if hasText && !showResults {
-                print("🚀 Showing results for text: '\(searchText)'")
                 showResults = true
             }
         }
@@ -252,10 +247,6 @@ class SearchState: ObservableObject {
         searchCancellable = $searchText
             .debounce(for: .milliseconds(2000), scheduler: RunLoop.main)
             .sink { [weak self] searchText in
-                // 🔋 BATTERY EFFICIENCY: Save playback state before performing search
-                self?.playbackManager.savePlaybackState()
-                
-                // Don't trigger search if we're restoring state
                 guard let self = self, !self.isRestoringState else { return }
                 self.performSearch(searchText)
             }
@@ -279,12 +270,10 @@ class SearchState: ObservableObject {
         )
         .receive(on: DispatchQueue.main)
         .sink { [weak self] results, isSearching, searchError, searchText in
-            // Keep results panel open when we have search text or results
             let hasSearchText = !searchText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
             let hasResults = !results.isEmpty
             
             if (hasSearchText || hasResults) && self?.showResults == false {
-                print("🔄 Auto-showing results: hasText=\(hasSearchText), hasResults=\(hasResults)")
                 self?.showResults = true
             }
         }
@@ -385,16 +374,12 @@ class SearchState: ObservableObject {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         
         guard !trimmedQuery.isEmpty else {
-            // Don't clear results if we're restoring state or if we have persistent results
             if !isRestoringState && persistentResults.isEmpty {
                 musicSearchManager.clearResults()
             }
             return
         }
         
-        print("🔍 Performing search for: '\(trimmedQuery)'")
-        
-        // Perform music search
         musicSearchManager.search(query: query)
     }
     

@@ -2,7 +2,11 @@
 //  AISearchView.swift
 //  Izzy
 //
-//  Created by GitHub Copilot on 26/09/25.
+//  Redesigned minimal AI Search. Every result is actionable:
+//  - Songs: play immediately
+//  - Albums: expand inline to show tracks, click track to play
+//  - Artists: expand inline to show songs
+//  - Playlists: expand inline to show tracks
 //
 
 import SwiftUI
@@ -15,27 +19,29 @@ struct AISearchView: View {
     @Binding var isPromptFocused: Bool
     @StateObject private var viewModel = AISearchViewModel()
     @FocusState private var promptFieldFocused: Bool
-    
+
+    // Expandable sections state
+    @State private var expandedAlbums: Set<String> = []
+    @State private var expandedArtists: Set<String> = []
+    @State private var expandedPlaylists: Set<String> = []
+    @State private var albumTracks: [String: [SearchResult]] = [:]
+    @State private var artistSongs: [String: [SearchResult]] = [:]
+    @State private var playlistTracks: [String: [SearchResult]] = [:]
+    @State private var isLoadingAlbum: Set<String> = []
+    @State private var isLoadingArtist: Set<String> = []
+    @State private var isLoadingPlaylist: Set<String> = []
+
     var body: some View {
         ScrollView {
-            VStack(alignment: .leading, spacing: 18) {
-                header
-                promptField
-                suggestionsSection
-                insightsSection
-                resultsHighlightsSection
-                fallbackSection
+            VStack(spacing: 20) {
+                promptSection
+                resultsContent
             }
-            .padding(20)
-            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 18, style: .continuous))
-            .overlay(
-                RoundedRectangle(cornerRadius: 18, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.05), lineWidth: 1)
-            )
-            .padding(.vertical)
+            .padding(.horizontal, 20)
+            .padding(.vertical, 16)
             .background(GeometryReader { proxy in
                 Color.clear
-                    .preference(key: ViewOffsetKey.self, value: -proxy.frame(in: .named("AISEARCHSCROLL")) .origin.y)
+                    .preference(key: ViewOffsetKey.self, value: -proxy.frame(in: .named("AISEARCHSCROLL")).origin.y)
             })
         }
         .coordinateSpace(name: "AISEARCHSCROLL")
@@ -43,236 +49,121 @@ struct AISearchView: View {
         .onAppear {
             viewModel.bootstrap(initialQuery: searchState.searchText)
             if viewModel.curatedResults.isEmpty {
-                Task { await MainActor.run { promptFieldFocused = true } }
+                Task { @MainActor in promptFieldFocused = true }
             }
         }
-        .onChange(of: promptFieldFocused) { _, newValue in
-            isPromptFocused = newValue
-        }
+        .onChange(of: promptFieldFocused) { _, newValue in isPromptFocused = newValue }
         .onChange(of: isPromptFocused) { _, newValue in
-            if newValue != promptFieldFocused {
-                promptFieldFocused = newValue
-            }
+            if newValue != promptFieldFocused { promptFieldFocused = newValue }
         }
-        .onDisappear {
-            isPromptFocused = false
-        }
+        .onDisappear { isPromptFocused = false }
     }
-    
-    private var header: some View {
-        HStack(spacing: 12) {
-            Image(systemName: "sparkle.magnifyingglass")
-                .font(.system(size: 24, weight: .semibold))
-                .foregroundStyle(LinearGradient(colors: [.pink, .purple], startPoint: .topLeading, endPoint: .bottomTrailing))
-                .padding(12)
-                .background(
-                    Circle()
-                        .fill(.ultraThinMaterial)
-                        .overlay(Circle().stroke(Color.white.opacity(0.1), lineWidth: 1))
-                )
-            VStack(alignment: .leading, spacing: 4) {
-                Text("AI Search")
-                    .font(.system(size: 20, weight: .semibold))
-                Text("Describe what you're looking for and let Izzy curate music instantly.")
-                    .font(.callout)
+
+    // MARK: - Prompt
+
+    private var promptSection: some View {
+        VStack(spacing: 8) {
+            HStack(spacing: 10) {
+                Image(systemName: viewModel.isAppleIntelligenceAvailable ? "apple.intelligence" : "magnifyingglass")
+                    .font(.system(size: 14))
                     .foregroundStyle(.secondary)
-            }
-            Spacer()
-        }
-    }
-    
-    private var promptField: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack(spacing: 12) {
-                Image(systemName: "slider.horizontal.3")
-                    .foregroundStyle(.secondary)
-                TextField("Try \"energetic synthwave to stay productive\"", text: $viewModel.inputText)
+
+                TextField("Describe what you want to hear...", text: $viewModel.inputText)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 16, weight: .medium))
+                    .font(.system(size: 15))
                     .focused($promptFieldFocused)
                     .onSubmit { viewModel.submitCurrentQuery() }
+
                 if viewModel.isSearching {
-                    Text(viewModel.progressPercentageText)
-                        .font(.footnote.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                        .transition(.opacity)
+                    ProgressView()
+                        .controlSize(.small)
                 } else if !viewModel.inputText.isEmpty {
-                    Button {
-                        viewModel.clear()
-                    } label: {
+                    Button(action: viewModel.clear) {
                         Image(systemName: "xmark.circle.fill")
-                            .font(.system(size: 14))
-                            .foregroundStyle(.secondary)
+                            .font(.system(size: 13))
+                            .foregroundStyle(.tertiary)
                     }
                     .buttonStyle(.plain)
                 }
             }
-            .padding(.horizontal, 18)
-            .padding(.vertical, 14)
-            .background(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .fill(LinearGradient(colors: [Color.white.opacity(0.08), Color.white.opacity(0.02)], startPoint: .topLeading, endPoint: .bottomTrailing))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 14, style: .continuous)
-                    .strokeBorder(Color.white.opacity(0.08), lineWidth: 1)
-            )
+            .padding(.horizontal, 14)
+            .padding(.vertical, 10)
+            .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
 
-            if viewModel.shouldShowProgress {
-                VStack(alignment: .leading, spacing: 6) {
-                    ProgressView(value: viewModel.searchProgress) {
-                        Text(viewModel.progressStatusText)
-                            .font(.footnote)
-                            .foregroundStyle(.secondary)
-                    } currentValueLabel: {
-                        Text(viewModel.progressPercentageText)
-                            .font(.footnote.monospacedDigit())
-                            .foregroundStyle(.secondary)
-                    }
-                    .progressViewStyle(LinearProgressViewStyle())
-                    .tint(.purple)
-                    .animation(.easeInOut(duration: 0.25), value: viewModel.searchProgress)
-                }
-                .padding(.horizontal, 4)
-            }
-            
             if let error = viewModel.errorMessage {
                 Text(error)
-                    .font(.footnote)
-                    .foregroundStyle(.pink)
-            }
-        }
-    }
-    
-    private var resultsHighlightsSection: some View {
-        Group {
-            if viewModel.shouldShowHighlights {
-                VStack(alignment: .leading, spacing: 16) {
-                    songsSection
-                    albumsSection
-                    playlistsSection
-                }
-                .transition(.opacity)
+                    .font(.caption)
+                    .foregroundStyle(.red.opacity(0.8))
             }
         }
     }
 
-    private var suggestionsSection: some View {
-        Group {
-            if !viewModel.suggestions.isEmpty {
-                VStack(alignment: .leading, spacing: 8) {
-                    AISectionHeader(title: "Smart refinements", systemImage: "sparkles")
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 10) {
-                            ForEach(viewModel.suggestions, id: \.self) { suggestion in
-                                Button {
-                                    viewModel.useSuggestion(suggestion)
-                                } label: {
-                                    HStack(spacing: 6) {
-                                        Image(systemName: "wand.and.stars")
-                                            .font(.system(size: 12, weight: .bold))
-                                        Text(suggestion)
-                                            .font(.system(size: 13, weight: .medium))
+    // MARK: - Results
+
+    @ViewBuilder
+    private var resultsContent: some View {
+        if viewModel.shouldShowHighlights {
+            VStack(spacing: 24) {
+                if !viewModel.songHighlights.isEmpty {
+                    songSection
+                }
+                if !viewModel.albumHighlights.isEmpty {
+                    albumSection
+                }
+                if !viewModel.artistHighlights.isEmpty {
+                    artistSection
+                }
+                if !viewModel.playlistHighlights.isEmpty {
+                    playlistSection
+                }
+            }
+            .transition(.opacity.combined(with: .move(edge: .top)))
+        } else if !viewModel.isSearching {
+            emptyState
+        }
+    }
+
+    // MARK: - Songs
+
+    private var songSection: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            sectionLabel("Songs")
+            ForEach(viewModel.songHighlights, id: \.id) { song in
+                ResultRow(result: song) {
+                    playSong(song)
+                }
+            }
+        }
+    }
+
+    // MARK: - Albums
+
+    private var albumSection: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            sectionLabel("Albums")
+            ForEach(viewModel.albumHighlights, id: \.id) { album in
+                VStack(spacing: 0) {
+                    ResultRow(result: album, isExpanded: expandedAlbums.contains(album.id)) {
+                        toggleAlbum(album)
+                    }
+
+                    if expandedAlbums.contains(album.id) {
+                        if isLoadingAlbum.contains(album.id) {
+                            HStack {
+                                Spacer()
+                                ProgressView().controlSize(.small)
+                                Spacer()
+                            }
+                            .padding(.vertical, 8)
+                        } else if let tracks = albumTracks[album.id] {
+                            VStack(spacing: 0) {
+                                ForEach(tracks, id: \.id) { track in
+                                    ResultRow(result: track, isNested: true) {
+                                        playSong(track)
                                     }
-                                    .padding(.horizontal, 14)
-                                    .padding(.vertical, 8)
-                                    .background(
-                                        Capsule()
-                                            .fill(LinearGradient(colors: [.purple.opacity(0.35), .blue.opacity(0.3)], startPoint: .leading, endPoint: .trailing))
-                                    )
-                                }
-                                .buttonStyle(.plain)
-                            }
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private var insightsSection: some View {
-        Group {
-            if !viewModel.insights.isEmpty {
-                VStack(alignment: .leading, spacing: 10) {
-                    AISectionHeader(title: "Highlights", systemImage: "lightbulb")
-                    LazyVStack(alignment: .leading, spacing: 6) {
-                        ForEach(viewModel.insights, id: \.self) { insight in
-                            Label(insight, systemImage: "lightbulb.fill")
-                                .labelStyle(.titleAndIcon)
-                                .font(.subheadline)
-                                .foregroundStyle(.secondary)
-                        }
-                    }
-                }
-            }
-        }
-    }
-
-    private var fallbackSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            if !viewModel.shouldShowHighlights && !viewModel.isSearching {
-                VStack(alignment: .leading, spacing: 8) {
-                    Text("Need inspiration?")
-                        .font(.headline)
-                    Text("Try prompts like \"jazzy beats for rainy evenings\" or \"soothing piano instrumentals for sleep\".")
-                        .font(.subheadline)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            
-            if viewModel.hasClassicResults {
-                Button {
-                    openInClassicSearch(with: viewModel.inputText)
-                } label: {
-                    Label("Open in Classic Search", systemImage: "arrow.right.circle")
-                        .font(.subheadline)
-                }
-                .buttonStyle(.plain)
-                .padding(.top, 4)
-            }
-        }
-        .padding(.top, 12)
-    }
-    
-    private func songsSectionView(results: [SearchResult]) -> some View {
-        let columns = [
-            GridItem(.flexible(), spacing: 12),
-            GridItem(.flexible(), spacing: 12)
-        ]
-        return LazyVGrid(columns: columns, spacing: 12) {
-            ForEach(results, id: \.id) { result in
-                AISongTile(result: result) {
-                    play(result: result)
-                } onOpen: {
-                    openInClassicSearch(with: result.title)
-                }
-            }
-        }
-    }
-
-    private var songsSection: some View {
-        Group {
-            if !viewModel.songHighlights.isEmpty {
-                VStack(alignment: .leading, spacing: 10) {
-                    AISectionHeader(title: "Top songs", systemImage: "music.note")
-                    songsSectionView(results: viewModel.songHighlights)
-                }
-            }
-        }
-    }
-
-    private var albumsSection: some View {
-        Group {
-            if !viewModel.albumHighlights.isEmpty {
-                VStack(alignment: .leading, spacing: 10) {
-                    AISectionHeader(title: "Featured albums", systemImage: "rectangle.stack.fill")
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 12) {
-                            ForEach(viewModel.albumHighlights, id: \.id) { album in
-                                AICollectionCard(result: album, accent: .blue.opacity(0.6)) {
-                                    openInClassicSearch(with: album.title)
                                 }
                             }
+                            .padding(.leading, 16)
                         }
                     }
                 }
@@ -280,18 +171,34 @@ struct AISearchView: View {
         }
     }
 
-    private var playlistsSection: some View {
-        Group {
-            if !viewModel.playlistHighlights.isEmpty {
-                VStack(alignment: .leading, spacing: 10) {
-                    AISectionHeader(title: "Curated playlists", systemImage: "music.note.list")
-                    ScrollView(.horizontal, showsIndicators: false) {
-                        HStack(spacing: 12) {
-                            ForEach(viewModel.playlistHighlights, id: \.id) { playlist in
-                                AICollectionCard(result: playlist, accent: .purple.opacity(0.55)) {
-                                    openInClassicSearch(with: playlist.title)
+    // MARK: - Artists
+
+    private var artistSection: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            sectionLabel("Artists")
+            ForEach(viewModel.artistHighlights, id: \.id) { artist in
+                VStack(spacing: 0) {
+                    ResultRow(result: artist, isExpanded: expandedArtists.contains(artist.id)) {
+                        toggleArtist(artist)
+                    }
+
+                    if expandedArtists.contains(artist.id) {
+                        if isLoadingArtist.contains(artist.id) {
+                            HStack {
+                                Spacer()
+                                ProgressView().controlSize(.small)
+                                Spacer()
+                            }
+                            .padding(.vertical, 8)
+                        } else if let songs = artistSongs[artist.id] {
+                            VStack(spacing: 0) {
+                                ForEach(songs, id: \.id) { song in
+                                    ResultRow(result: song, isNested: true) {
+                                        playSong(song)
+                                    }
                                 }
                             }
+                            .padding(.leading, 16)
                         }
                     }
                 }
@@ -299,254 +206,297 @@ struct AISearchView: View {
         }
     }
 
-    private func openInClassicSearch(with query: String) {
-        guard !query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        selectedTab = 1
-        searchState.searchText = query
-        searchState.showResults = true
-        isPromptFocused = false
-        searchState.saveSelectedTab(1)
-        windowManager.showWindow()
+    // MARK: - Playlists
+
+    private var playlistSection: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            sectionLabel("Playlists")
+            ForEach(viewModel.playlistHighlights, id: \.id) { playlist in
+                VStack(spacing: 0) {
+                    ResultRow(result: playlist, isExpanded: expandedPlaylists.contains(playlist.id)) {
+                        togglePlaylist(playlist)
+                    }
+
+                    if expandedPlaylists.contains(playlist.id) {
+                        if isLoadingPlaylist.contains(playlist.id) {
+                            HStack {
+                                Spacer()
+                                ProgressView().controlSize(.small)
+                                Spacer()
+                            }
+                            .padding(.vertical, 8)
+                        } else if let tracks = playlistTracks[playlist.id] {
+                            VStack(spacing: 0) {
+                                ForEach(tracks, id: \.id) { track in
+                                    ResultRow(result: track, isNested: true) {
+                                        playSong(track)
+                                    }
+                                }
+                            }
+                            .padding(.leading, 16)
+                        }
+                    }
+                }
+            }
+        }
     }
 
-    private func play(result: SearchResult) {
-        guard result.type == .song, let videoId = result.videoId, !videoId.isEmpty else {
-            openInClassicSearch(with: result.title)
-            return
+    // MARK: - Empty State
+
+    private var emptyState: some View {
+        VStack(spacing: 16) {
+            if viewModel.isAppleIntelligenceNotReady {
+                Label("Apple Intelligence not available on this device", systemImage: "exclamationmark.triangle")
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 8)
+                    .background(RoundedRectangle(cornerRadius: 8).fill(.orange.opacity(0.08)))
+            }
+
+            VStack(spacing: 8) {
+                Text("Try a natural language query")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Text("\"chill jazz for studying\"  \"best of Queen\"  \"80s synthwave\"")
+                    .font(.caption)
+                    .foregroundStyle(.tertiary)
+            }
         }
+        .frame(maxWidth: .infinity)
+        .padding(.top, 32)
+    }
+
+    // MARK: - Actions
+
+    private func playSong(_ result: SearchResult) {
+        guard result.type == .song, let videoId = result.videoId, !videoId.isEmpty else { return }
         let track = Track(from: result)
         Task { await searchState.playbackManager.play(track: track) }
     }
+
+    private func toggleAlbum(_ album: SearchResult) {
+        if expandedAlbums.contains(album.id) {
+            expandedAlbums.remove(album.id)
+            albumTracks.removeValue(forKey: album.id)
+        } else {
+            expandedAlbums.insert(album.id)
+            guard let browseId = album.browseId, !browseId.isEmpty else { return }
+            isLoadingAlbum.insert(album.id)
+            Task {
+                do {
+                    let tracks = try await searchState.musicSearchManager.loadAlbumTracks(browseId: browseId)
+                    let inherited = tracks.map { track in
+                        var t = track
+                        if t.thumbnailURL == nil || t.thumbnailURL?.isEmpty == true {
+                            t = SearchResult(id: track.id, type: track.type, title: track.title, artist: track.artist, thumbnailURL: album.thumbnailURL, duration: track.duration, explicit: track.explicit, videoId: track.videoId, browseId: track.browseId, year: track.year, playCount: track.playCount, musicSource: track.musicSource, audioQuality: track.audioQuality)
+                        }
+                        return t
+                    }
+                    await MainActor.run {
+                        albumTracks[album.id] = inherited
+                        isLoadingAlbum.remove(album.id)
+                    }
+                } catch {
+                    print("Failed to load album tracks: \(error)")
+                    await MainActor.run { isLoadingAlbum.remove(album.id) }
+                }
+            }
+        }
+    }
+
+    private func toggleArtist(_ artist: SearchResult) {
+        if expandedArtists.contains(artist.id) {
+            expandedArtists.remove(artist.id)
+            artistSongs.removeValue(forKey: artist.id)
+        } else {
+            expandedArtists.insert(artist.id)
+            guard let browseId = artist.browseId, !browseId.isEmpty else { return }
+            isLoadingArtist.insert(artist.id)
+            Task {
+                do {
+                    let songs = try await searchState.musicSearchManager.loadArtistSongs(browseId: browseId)
+                    let inherited = songs.map { song in
+                        var s = song
+                        if s.thumbnailURL == nil || s.thumbnailURL?.isEmpty == true {
+                            s = SearchResult(id: song.id, type: song.type, title: song.title, artist: song.artist, thumbnailURL: artist.thumbnailURL, duration: song.duration, explicit: song.explicit, videoId: song.videoId, browseId: song.browseId, year: song.year, playCount: song.playCount, musicSource: song.musicSource, audioQuality: song.audioQuality)
+                        }
+                        return s
+                    }
+                    await MainActor.run {
+                        artistSongs[artist.id] = inherited
+                        isLoadingArtist.remove(artist.id)
+                    }
+                } catch {
+                    print("Failed to load artist songs: \(error)")
+                    await MainActor.run { isLoadingArtist.remove(artist.id) }
+                }
+            }
+        }
+    }
+
+    private func togglePlaylist(_ playlist: SearchResult) {
+        if expandedPlaylists.contains(playlist.id) {
+            expandedPlaylists.remove(playlist.id)
+            playlistTracks.removeValue(forKey: playlist.id)
+        } else {
+            expandedPlaylists.insert(playlist.id)
+            let playlistId = playlist.id
+            isLoadingPlaylist.insert(playlist.id)
+            Task {
+                do {
+                    let tracks = try await searchState.musicSearchManager.loadPlaylistTracks(playlistId: playlistId)
+                    await MainActor.run {
+                        playlistTracks[playlist.id] = tracks
+                        isLoadingPlaylist.remove(playlist.id)
+                    }
+                } catch {
+                    print("Failed to load playlist tracks: \(error)")
+                    await MainActor.run { isLoadingPlaylist.remove(playlist.id) }
+                }
+            }
+        }
+    }
+
+    // MARK: - Helpers
+
+    private func sectionLabel(_ text: String) -> some View {
+        Text(text.uppercased())
+            .font(.caption2)
+            .fontWeight(.semibold)
+            .foregroundStyle(.quaternary)
+            .padding(.leading, 4)
+            .padding(.bottom, 2)
+    }
 }
+
+// MARK: - Result Row (universal row for all types)
+
+private struct ResultRow: View {
+    let result: SearchResult
+    var isExpanded: Bool = false
+    var isNested: Bool = false
+    let action: () -> Void
+
+    @State private var isHovered = false
+
+    var body: some View {
+        Button(action: action) {
+            HStack(spacing: 10) {
+                artwork(size: isNested ? 32 : 36)
+
+                VStack(alignment: .leading, spacing: 1) {
+                    Text(result.title)
+                        .font(.system(size: isNested ? 12 : 13, weight: .medium))
+                        .lineLimit(1)
+                    if let artist = result.artist, !artist.isEmpty {
+                        Text(artist)
+                            .font(.system(size: 10))
+                            .foregroundStyle(.secondary)
+                            .lineLimit(1)
+                    } else {
+                        typeLabel
+                    }
+                }
+
+                Spacer()
+
+                trailingIcon
+            }
+            .padding(.horizontal, isNested ? 8 : 10)
+            .padding(.vertical, isNested ? 6 : 8)
+            .background(
+                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                    .fill(isHovered ? Color.white.opacity(0.04) : .clear)
+            )
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .onHover { isHovered = $0 }
+    }
+
+    @ViewBuilder
+    private var typeLabel: some View {
+        switch result.type {
+        case .album:
+            Text("Album").font(.system(size: 10)).foregroundStyle(.secondary)
+        case .artist:
+            Text("Artist").font(.system(size: 10)).foregroundStyle(.secondary)
+        case .playlist:
+            Text("Playlist").font(.system(size: 10)).foregroundStyle(.secondary)
+        default:
+            EmptyView()
+        }
+    }
+
+    @ViewBuilder
+    private var trailingIcon: some View {
+        switch result.type {
+        case .song:
+            Image(systemName: "play.fill")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(.quaternary)
+        case .album, .artist, .playlist:
+            Image(systemName: isExpanded ? "chevron.down" : "chevron.right")
+                .font(.system(size: 9, weight: .semibold))
+                .foregroundStyle(.quaternary)
+        default:
+            EmptyView()
+        }
+    }
+
+    @ViewBuilder
+    private func artwork(size: CGFloat) -> some View {
+        Group {
+            if let urlString = result.thumbnailURL, let url = URL(string: urlString) {
+                AsyncImage(url: url) { image in
+                    image.resizable().aspectRatio(contentMode: .fill)
+                } placeholder: {
+                    Color.secondary.opacity(0.1)
+                }
+            } else {
+                Color.secondary.opacity(0.1)
+                    .overlay(
+                        Image(systemName: iconForType)
+                            .font(.system(size: size * 0.35))
+                            .foregroundStyle(.tertiary)
+                    )
+            }
+        }
+        .frame(width: size, height: size)
+        .clipShape(RoundedRectangle(cornerRadius: result.type == .artist ? size / 2 : 5, style: .continuous))
+    }
+
+    private var iconForType: String {
+        switch result.type {
+        case .album: return "rectangle.stack"
+        case .artist: return "person.fill"
+        case .playlist: return "music.note.list"
+        default: return "music.note"
+        }
+    }
+}
+
+// MARK: - Preference Key
 
 private struct ViewOffsetKey: PreferenceKey {
     static var defaultValue: CGFloat = .zero
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
-    }
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) { value = nextValue() }
 }
 
-private struct AISongTile: View {
-    let result: SearchResult
-    let onPlay: () -> Void
-    let onOpen: () -> Void
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 10) {
-            ZStack(alignment: .bottomTrailing) {
-                thumbnail
-                Button(action: onPlay) {
-                    Image(systemName: "play.fill")
-                        .font(.system(size: 13, weight: .bold))
-                        .foregroundStyle(.white)
-                        .padding(8)
-                        .background(Circle().fill(Color.accentColor))
-                }
-                .buttonStyle(.plain)
-                .shadow(radius: 3, y: 1)
-            }
-            Text(result.title)
-                .font(.system(size: 14, weight: .semibold))
-                .lineLimit(2)
-                .foregroundStyle(.primary)
-            if let artist = result.artist, !artist.isEmpty {
-                Text(artist)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .lineLimit(1)
-            }
-        }
-        .padding(12)
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .fill(Color.white.opacity(0.05))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .stroke(Color.white.opacity(0.08), lineWidth: 1)
-        )
-        .contentShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
-        .contextMenu {
-            Button("Play now", action: onPlay)
-            Button("Search more like this") {
-                onOpen()
-            }
-        }
-        .onTapGesture(perform: onPlay)
-    }
-
-    @ViewBuilder
-    private var thumbnail: some View {
-        if let urlString = result.thumbnailURL, let url = URL(string: urlString) {
-            AsyncImage(url: url) { image in
-                image
-                    .resizable()
-                    .aspectRatio(1, contentMode: .fill)
-            } placeholder: {
-                ZStack {
-                    Color.white.opacity(0.08)
-                    ProgressView()
-                }
-            }
-            .frame(height: 100)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        } else {
-            ZStack {
-                Color.white.opacity(0.08)
-                Image(systemName: "music.note")
-                    .font(.system(size: 24, weight: .semibold))
-                    .foregroundStyle(.secondary)
-            }
-            .frame(height: 100)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        }
-    }
-}
-
-private struct AICollectionCard: View {
-    let result: SearchResult
-    let accent: Color
-    let onOpen: () -> Void
-
-    var body: some View {
-        Button(action: onOpen) {
-            VStack(alignment: .leading, spacing: 10) {
-                thumbnail
-                Text(result.title)
-                    .font(.system(size: 14, weight: .semibold))
-                    .lineLimit(2)
-                if let subtitle = subtitleText {
-                    Text(subtitle)
-                        .font(.caption)
-                        .foregroundStyle(.secondary)
-                        .lineLimit(1)
-                }
-            }
-            .frame(width: 160, alignment: .leading)
-            .padding(12)
-            .background(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .fill(Color.white.opacity(0.05))
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 16, style: .continuous)
-                    .stroke(accent.opacity(0.7), lineWidth: 1)
-            )
-        }
-        .buttonStyle(.plain)
-    }
-
-    private var subtitleText: String? {
-        if let artist = result.artist, !artist.isEmpty {
-            return artist
-        }
-        switch result.type {
-        case .album:
-            return "Album"
-        case .playlist:
-            return "Playlist"
-        default:
-            return nil
-        }
-    }
-
-    @ViewBuilder
-    private var thumbnail: some View {
-        if let urlString = result.thumbnailURL, let url = URL(string: urlString) {
-            AsyncImage(url: url) { image in
-                image
-                    .resizable()
-                    .aspectRatio(1, contentMode: .fill)
-            } placeholder: {
-                placeholder
-            }
-            .frame(width: 136, height: 136)
-            .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        } else {
-            placeholder
-                .frame(width: 136, height: 136)
-                .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
-        }
-    }
-
-    private var placeholder: some View {
-        ZStack {
-            LinearGradient(colors: [accent.opacity(0.3), accent.opacity(0.1)], startPoint: .top, endPoint: .bottom)
-            Image(systemName: placeholderIcon)
-                .font(.system(size: 32, weight: .semibold))
-                .foregroundStyle(.secondary)
-        }
-    }
-
-    private var placeholderIcon: String {
-        switch result.type {
-        case .album:
-            return "rectangle.stack"
-        case .playlist:
-            return "music.note.list"
-        default:
-            return "music.note"
-        }
-    }
-}
-
-private struct AISectionHeader: View {
-    let title: String
-    let systemImage: String
-
-    var body: some View {
-        HStack(spacing: 8) {
-            Image(systemName: systemImage)
-                .font(.system(size: 13, weight: .bold))
-                .foregroundStyle(.secondary)
-            Text(title.uppercased())
-                .font(.caption)
-                .fontWeight(.semibold)
-                .foregroundStyle(.secondary)
-        }
-    }
-}
+// MARK: - ViewModel Extensions
 
 private extension AISearchViewModel {
     var songHighlights: [SearchResult] {
         curatedResults.isEmpty ? Array(fullResults.songs.prefix(6)) : curatedResults
     }
-
-    var albumHighlights: [SearchResult] {
-        Array(fullResults.albums.prefix(8))
-    }
-
-    var playlistHighlights: [SearchResult] {
-        Array(fullResults.playlists.prefix(8))
-    }
-
+    var albumHighlights: [SearchResult] { Array(fullResults.albums.prefix(6)) }
+    var artistHighlights: [SearchResult] { Array(fullResults.artists.prefix(4)) }
+    var playlistHighlights: [SearchResult] { Array(fullResults.playlists.prefix(4)) }
     var shouldShowHighlights: Bool {
-        !songHighlights.isEmpty || !albumHighlights.isEmpty || !playlistHighlights.isEmpty
+        !songHighlights.isEmpty || !albumHighlights.isEmpty || !artistHighlights.isEmpty || !playlistHighlights.isEmpty
     }
-
-    var hasClassicResults: Bool {
-        fullResults.hasResults
-    }
-
-    var progressPercentageText: String {
-        let clamped = max(0, min(1, searchProgress))
-        return "\(Int(clamped * 100))%"
-    }
-
-    var progressStatusText: String {
-        if isSearching {
-            return "Finding the perfect mix…"
-        }
-        if searchProgress >= 1 {
-            return "Ready"
-        }
-        return "Preparing results…"
-    }
-
-    var shouldShowProgress: Bool {
-        isSearching || searchProgress > 0
-    }
+    var hasClassicResults: Bool { fullResults.hasResults }
 }
 
 #Preview {
