@@ -15,7 +15,7 @@ class AppCoordinator: ObservableObject {
     private let hotkeyManager = GlobalHotkeyManager()
     private var appIsActive = false
     private var updateCheckTimer: Timer?
-    private var memoryManagementTimer: Timer?
+    private var memoryPressureSource: DispatchSourceMemoryPressure?
     private var cancellables = Set<AnyCancellable>()
     
     init() {
@@ -86,6 +86,9 @@ class AppCoordinator: ObservableObject {
         updateCheckTimer = Timer.scheduledTimer(withTimeInterval: 86400, repeats: true) { _ in
             UpdateManager.shared.autoCheckForUpdates()
         }
+        // A daily check has no deadline. Generous tolerance lets the scheduler
+        // coalesce it with other wakeups instead of waking an idle CPU on the dot.
+        updateCheckTimer?.tolerance = 3600
         
         // Also check for updates on app launch (after a short delay)
         DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
@@ -93,14 +96,31 @@ class AppCoordinator: ObservableObject {
         }
     }
     
-    // Periodic memory management to prevent slowdowns
+    // Release cached image data only when the system reports real memory pressure.
+    // Previously this purged the whole URLCache every 10 minutes unconditionally,
+    // which threw away still-valid artwork and forced it to be re-downloaded and
+    // re-decoded on the next scroll — burning network, CPU and battery for nothing.
+    // URLCache already evicts by LRU within the limits set in IzzyApp.init().
     private func startMemoryManagement() {
-        // Clear image cache every 10 minutes (600 seconds)
-        memoryManagementTimer = Timer.scheduledTimer(withTimeInterval: 600, repeats: true) { _ in
-            // Clear URL cache (AsyncImage caching)
-            URLCache.shared.removeAllCachedResponses()
-            print("🧹 Cleared image cache for performance")
+        let source = DispatchSource.makeMemoryPressureSource(
+            eventMask: [.warning, .critical],
+            queue: .main
+        )
+        source.setEventHandler { [weak source] in
+            guard let source else { return }
+            let cache = URLCache.shared
+            if source.data.contains(.critical) {
+                cache.removeAllCachedResponses()
+            } else {
+                // Warning: drop only the in-memory half. The disk cache survives,
+                // so artwork is re-read locally instead of re-fetched over the wire.
+                let capacity = cache.memoryCapacity
+                cache.memoryCapacity = 0
+                cache.memoryCapacity = capacity
+            }
         }
+        source.resume()
+        memoryPressureSource = source
     }
     
     func createSearchView() -> some View {
@@ -168,13 +188,13 @@ class AppCoordinator: ObservableObject {
         searchState.playbackManager.savePlaybackState()
         // Invalidate the update check timer
         updateCheckTimer?.invalidate()
-        memoryManagementTimer?.invalidate()
+        memoryPressureSource?.cancel()
     }
     
     deinit {
         NotificationCenter.default.removeObserver(self)
         updateCheckTimer?.invalidate()
-        memoryManagementTimer?.invalidate()
+        memoryPressureSource?.cancel()
         cancellables.removeAll()
     }
 }

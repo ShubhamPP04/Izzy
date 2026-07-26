@@ -6,6 +6,33 @@
     <description>Most recent changes with links to updates.</description>
     <language>en</language>
 
+    <!-- Version 1.3.0 -->
+    <item>
+      <title>Version 1.3.0</title>
+      <description>
+        <![CDATA[
+          <ul>
+            <li>Fixed macOS Now Playing and Control Center transport controls, which stopped responding after the first track change</li>
+            <li>Registered togglePlayPause so headset and keyboard play/pause keys work</li>
+            <li>Izzy no longer takes a Dock tile — it is a proper menu bar app now</li>
+            <li>Fixed the Python backend spawning duplicate interpreters and leaking one on every failed request</li>
+            <li>Much lower idle CPU and battery use: removed redundant polling timers and a busy-wait read loop</li>
+            <li>Album art is no longer purged from cache every 10 minutes, so covers load instantly and use less network</li>
+            <li>Search responds in 350ms instead of 2 seconds</li>
+            <li>Dropped unreachable Tidal endpoints: Tidal search is ~20x faster, though Tidal playback remains unavailable upstream</li>
+          </ul>
+        ]]>
+      </description>
+      <pubDate>Sun, 26 Jul 2026 12:00:00 +0000</pubDate>
+      <sparkle:version>20</sparkle:version>
+      <sparkle:shortVersionString>1.3.0</sparkle:shortVersionString>
+      <enclosure url="https://github.com/ShubhamPP04/Izzy/releases/download/v1.3.0/Izzy.dmg"
+                 sparkle:version="20"
+                 sparkle:shortVersionString="1.3.0"
+                 length="22362661"
+                 type="application/octet-stream" />
+    </item>
+
     <!-- Version 1.2.0 -->
     <item>
       <title>Version 1.2.0</title>

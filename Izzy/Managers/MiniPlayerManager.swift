@@ -19,11 +19,9 @@ class MiniPlayerManager: ObservableObject {
     static let shared = MiniPlayerManager()
     
     private var miniPlayerWindow: NSWindow?
+    private var windowDelegate: MiniPlayerWindowDelegate?
     private var searchState: SearchState?
     private var cancellables = Set<AnyCancellable>()
-    private var progressTimer: Timer?
-    private let activeProgressInterval: TimeInterval = 0.5
-    private let backgroundProgressInterval: TimeInterval = 1.5
     
     @Published var isEnabled = false {
         didSet {
@@ -62,17 +60,6 @@ class MiniPlayerManager: ObservableObject {
         // Update mini player if it should be enabled
         updateMiniPlayer()
 
-        // Adjust update cadence based on app activity to keep CPU low when hidden
-        NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in self?.updateProgressTimer() }
-            .store(in: &cancellables)
-        
-        NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in self?.updateProgressTimer() }
-            .store(in: &cancellables)
-        
         // Listen for track changes
         searchState.playbackManager.$currentTrack
             .receive(on: DispatchQueue.main)
@@ -88,7 +75,6 @@ class MiniPlayerManager: ObservableObject {
             .sink { [weak self] (state: PlaybackState) in
                 self?.playbackState = state
                 self?.updateMiniPlayerContent()
-                self?.updateProgressTimer()
             }
             .store(in: &cancellables)
         
@@ -107,30 +93,6 @@ class MiniPlayerManager: ObservableObject {
                 self?.currentTime = time
             }
             .store(in: &cancellables)
-    }
-    
-    private func updateProgressTimer() {
-        progressTimer?.invalidate()
-        
-        if playbackState.isPlaying {
-            // 🔋 CPU OPTIMIZATION: Slow down when app is hidden to minimize CPU use
-            let interval = NSApp.isActive ? activeProgressInterval : backgroundProgressInterval
-            progressTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
-                self?.updateProgressFromPlaybackManager()
-            }
-            progressTimer?.tolerance = interval * 0.3
-            if let timer = progressTimer {
-                RunLoop.main.add(timer, forMode: .common)
-            }
-        }
-    }
-    
-    private func updateProgressFromPlaybackManager() {
-        guard let searchState = searchState else { return }
-        DispatchQueue.main.async { [weak self] in
-            self?.currentTime = searchState.playbackManager.currentTime
-            self?.duration = searchState.playbackManager.duration
-        }
     }
     
     func updateMiniPlayer() {
@@ -164,9 +126,6 @@ class MiniPlayerManager: ObservableObject {
     }
     
     private func hideMiniPlayer() {
-        progressTimer?.invalidate()
-        progressTimer = nil
-        
         // Just hide the window, don't close it
         // Closing triggers app termination for accessory apps (no dock icon)
         if let window = miniPlayerWindow {
@@ -201,8 +160,12 @@ class MiniPlayerManager: ObservableObject {
         // Enable drag and resize
         window.isMovableByWindowBackground = true
         
-        // Set delegate for frame change notifications
-        window.delegate = MiniPlayerWindowDelegate(manager: self)
+        // Retain the delegate. NSWindow.delegate is a weak reference, so assigning a
+        // freshly constructed object let it deallocate on the spot — the delegate was
+        // always nil and mini-player frame changes were never persisted.
+        let delegate = MiniPlayerWindowDelegate(manager: self)
+        windowDelegate = delegate
+        window.delegate = delegate
     }
     
     private func updateMiniPlayerContent() {
@@ -236,7 +199,6 @@ class MiniPlayerManager: ObservableObject {
     }
     
     deinit {
-        progressTimer?.invalidate()
         cancellables.removeAll()
     }
 }

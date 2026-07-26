@@ -18,9 +18,6 @@ class SimpleMenuBarManager: ObservableObject {
     private var searchState: SearchState?
     private var windowManager: WindowManager?
     private var cancellables = Set<AnyCancellable>()
-    private var progressTimer: Timer?
-    private let activeProgressInterval: TimeInterval = 0.5
-    private let backgroundProgressInterval: TimeInterval = 1.5
     
     @Published var isEnabled = false {
         didSet {
@@ -49,17 +46,6 @@ class SimpleMenuBarManager: ObservableObject {
         self.windowManager = windowManager
         updateMenuBar()
 
-        // Adjust update cadence based on whether the app is active to keep CPU low when hidden
-        NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in self?.updateProgressTimer() }
-            .store(in: &cancellables)
-
-        NotificationCenter.default.publisher(for: NSApplication.didResignActiveNotification)
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in self?.updateProgressTimer() }
-            .store(in: &cancellables)
-        
         // Listen for track changes
         searchState.playbackManager.$currentTrack
             .receive(on: DispatchQueue.main)
@@ -75,7 +61,6 @@ class SimpleMenuBarManager: ObservableObject {
             .sink { [weak self] (state: PlaybackState) in
                 self?.playbackState = state
                 self?.updateMenuBarContent()
-                self?.updateProgressTimer()
             }
             .store(in: &cancellables)
         
@@ -94,30 +79,6 @@ class SimpleMenuBarManager: ObservableObject {
                 self?.currentTime = time
             }
             .store(in: &cancellables)
-    }
-    
-    private func updateProgressTimer() {
-        progressTimer?.invalidate()
-        
-        if playbackState.isPlaying {
-            // 🔋 CPU OPTIMIZATION: Slow down when app is hidden to minimize CPU use
-            let interval = NSApp.isActive ? activeProgressInterval : backgroundProgressInterval
-            progressTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: true) { [weak self] _ in
-                self?.updateProgressFromPlaybackManager()
-            }
-            progressTimer?.tolerance = interval * 0.3
-            if let timer = progressTimer {
-                RunLoop.main.add(timer, forMode: .common)
-            }
-        }
-    }
-    
-    private func updateProgressFromPlaybackManager() {
-        guard let searchState = searchState else { return }
-        DispatchQueue.main.async { [weak self] in
-            self?.currentTime = searchState.playbackManager.currentTime
-            self?.duration = searchState.playbackManager.duration
-        }
     }
     
     // Changed from private to internal to allow access from AppCoordinator
@@ -171,9 +132,6 @@ class SimpleMenuBarManager: ObservableObject {
     }
     
     private func removeMenuBar() {
-        progressTimer?.invalidate()
-        progressTimer = nil
-        
         if let statusItem = statusItem {
             NSStatusBar.system.removeStatusItem(statusItem)
             self.statusItem = nil
@@ -231,7 +189,6 @@ class SimpleMenuBarManager: ObservableObject {
     }
     
     deinit {
-        progressTimer?.invalidate()
         cancellables.removeAll()
     }
 }

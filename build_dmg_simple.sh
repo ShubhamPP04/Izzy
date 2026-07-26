@@ -25,14 +25,14 @@ xcodebuild -project Izzy.xcodeproj \
            -configuration Release \
            -derivedDataPath "$BUILD_DIR" \
            BUILD_LIBRARY_FOR_DISTRIBUTION=NO \
-           CODE_SIGN_IDENTITY="" \
-           CODE_SIGNING_REQUIRED=NO \
-           CODE_SIGN_ENTITLEMENTS="" \
+           CODE_SIGN_IDENTITY="-" \
+           CODE_SIGNING_REQUIRED=YES \
+           CODE_SIGNING_ALLOWED=YES \
            clean build
 
 # Update the Info.plist to the correct version
-APP_VERSION="1.2.0"
-APP_BUILD="19"
+APP_VERSION="1.3.0"
+APP_BUILD="20"
 echo "📝 Updating app version to ${APP_VERSION}..."
 plutil -replace CFBundleShortVersionString -string "$APP_VERSION" "$APP_PATH/Contents/Info.plist"
 plutil -replace CFBundleVersion -string "$APP_BUILD" "$APP_PATH/Contents/Info.plist"
@@ -78,13 +78,28 @@ fi
 
 # Copy virtual environment or runtime if present
 if [ -d "music_env" ]; then
-  rsync -a --delete --exclude "**/__pycache__" --exclude "**/*.pyc" "music_env" "$RESOURCES_DIR/"
+  # -L dereferences symlinks: the venv's bin/python3.13 points at /opt/homebrew,
+  # and codesign rejects a bundle containing symlinks that escape it. Copying the
+  # real binary costs ~1MB and is exactly what `python -m venv --copies` produces.
+  rsync -aL --delete --exclude "**/__pycache__" --exclude "**/*.pyc" "music_env" "$RESOURCES_DIR/"
   echo "✅ Copied music_env to Resources"
 elif [ -d "build/python_runtime" ]; then
-  rsync -a --delete "build/python_runtime" "$RESOURCES_DIR/"
+  rsync -aL --delete "build/python_runtime" "$RESOURCES_DIR/"
   echo "✅ Copied python_runtime to Resources"
 else
   echo "⚠️ No bundled Python env found (music_env or build/python_runtime). App will fall back to system Python."
+fi
+
+# Re-sign AFTER injecting resources. Copying files into an already-signed bundle
+# breaks the signature seal, and macOS refuses to launch a bundle whose seal does
+# not match its contents. arm64 binaries must carry at least an ad-hoc signature.
+echo "🔏 Re-signing app bundle..."
+codesign --force --deep --sign - --entitlements "Izzy/Izzy.entitlements" "$APP_PATH"
+if codesign --verify --deep --strict "$APP_PATH" 2>/dev/null; then
+  echo "✅ Signature valid"
+else
+  echo "❌ Signature verification failed"
+  exit 1
 fi
 
 # Create DMG

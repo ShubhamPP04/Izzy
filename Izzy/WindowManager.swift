@@ -102,7 +102,9 @@ class WindowManager: ObservableObject {
                 // Position is auto-restored by setFrameAutosaveName
 
                 // Now show the window
-                NSApp.setActivationPolicy(.regular)
+                // Stay .accessory. FloatingPanel overrides canBecomeKey/canBecomeMain,
+                // so it takes keyboard focus fine without promoting the app to a
+                // regular one — switching to .regular here is what put Izzy in the Dock.
                 NSApp.activate(ignoringOtherApps: true)
                 panel.orderFront(nil)
                 panel.makeKeyAndOrderFront(nil)
@@ -133,7 +135,7 @@ class WindowManager: ObservableObject {
         // Position is auto-restored by setFrameAutosaveName
 
         // Now show the window at the correct position
-        NSApp.setActivationPolicy(.regular)
+        // Stay .accessory here too; see showWindow() above.
         NSApp.activate(ignoringOtherApps: true)
         panel.makeKeyAndOrderFront(nil)
 
@@ -172,7 +174,6 @@ class WindowManager: ObservableObject {
 
         // IMPORTANT: Release app focus so other apps can work properly
         // This ensures that when the panel is hidden, other apps can receive input
-        NSApp.setActivationPolicy(.accessory)
         DispatchQueue.main.async {
             // Find the previously active application and activate it
             let runningApps = NSWorkspace.shared.runningApplications

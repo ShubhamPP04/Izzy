@@ -1266,24 +1266,21 @@ class TidalService:
     ]
     
     def __init__(self):
-        # Public API instances from tidal-ui (load balanced)
-        # These are community-hosted instances that don't require token.json auth
-        # Public Hi-Fi API instances — keep in sync with Monochrome:
-        # https://github.com/monochrome-music/monochrome/blob/main/INSTANCES.md
-        # Uptime JSON: https://tidal-uptime.jiffy-puffs-1j.workers.dev/
+        # Public Hi-Fi API instances. Only hosts that actually answer are listed.
+        #
+        # Verified 2026-07-26: the entries that used to sit at the top of this list
+        # (tidal-api.binimum.org, triton.squid.wtf, hifi.geeked.wtf) are NXDOMAIN,
+        # and the qqdl.site hosts accept the connection then hang until the socket
+        # times out. Walking them cost ~30s of dead network I/O and up to five 10s
+        # timeouts on EVERY request — a pure battery and CPU drain with no upside.
+        #
+        # These three answer /search/ only. /track/ returns 403 "Upstream API error"
+        # on every reachable instance, so Tidal playback is unavailable regardless
+        # of which host is selected.
         self.api_targets = [
-            # Primary: instances with working search + streaming (v2.9)
-            {"name": "binimum", "url": "https://tidal-api.binimum.org", "weight": 30},
-            {"name": "triton-squid", "url": "https://triton.squid.wtf", "weight": 25},
-            # Secondary: Lucida (QQDL) community instances with working streaming (v2.6-2.9)
-            {"name": "wolf-qqdl", "url": "https://wolf.qqdl.site", "weight": 15},
-            {"name": "vogel-qqdl", "url": "https://vogel.qqdl.site", "weight": 10},
-            {"name": "katze-qqdl", "url": "https://katze.qqdl.site", "weight": 5},
-            # Fallback: search-only (streaming broken as of Apr 2026)
-            {"name": "api-monochrome-tf", "url": "https://api.monochrome.tf", "weight": 5},
-            {"name": "monochrome-samidy", "url": "https://monochrome-api.samidy.com", "weight": 5},
-            {"name": "hifi-geeked", "url": "https://hifi.geeked.wtf", "weight": 3},
-            {"name": "us-west-monochrome", "url": "https://us-west.monochrome.tf", "weight": 2},
+            {"name": "api-monochrome-tf", "url": "https://api.monochrome.tf", "weight": 10},
+            {"name": "monochrome-samidy", "url": "https://monochrome-api.samidy.com", "weight": 6},
+            {"name": "us-west-monochrome", "url": "https://us-west.monochrome.tf", "weight": 4},
         ]
         self.current_api_index = 0
         self.base_url = self.api_targets[0]["url"]  # Default to highest weight
@@ -1350,7 +1347,7 @@ class TidalService:
         self.base_url = self.api_targets[self.current_api_index]["url"]
         return self.base_url
     
-    def _make_request(self, endpoint: str, params: Dict, timeout: int = 10, use_cache: bool = True) -> Optional[requests.Response]:
+    def _make_request(self, endpoint: str, params: Dict, timeout: int = 6, use_cache: bool = True) -> Optional[requests.Response]:
         """Make request with automatic fallback to other API instances"""
         # Check cache first
         cache_key = self._get_cache_key(endpoint, params)
@@ -1436,7 +1433,7 @@ class TidalService:
             seen_artists = set()
             
             try:
-                response = self._make_request("/search/", {'s': query}, timeout=10)
+                response = self._make_request("/search/", {'s': query}, timeout=6)
                 if response and response.status_code == 200:
                     data = response.json()
                     # Handle different response formats
@@ -1521,7 +1518,7 @@ class TidalService:
                 's': query,
                 'offset': offset,
                 'limit': limit
-            }, timeout=10)
+            }, timeout=6)
             
             if response and response.status_code == 200:
                 data = response.json()
@@ -1725,7 +1722,7 @@ class TidalService:
                 response = self._make_request("/track/", {
                     'id': track_id,
                     'quality': quality
-                }, timeout=10, use_cache=False)  # Don't cache stream URLs
+                }, timeout=6, use_cache=False)  # Don't cache stream URLs
                 
                 if response and response.status_code == 200:
                     data = response.json()
@@ -1788,7 +1785,7 @@ class TidalService:
                 }
             
             # Get track info
-            info_response = self._make_request("/info/", {'id': track_id}, timeout=10)
+            info_response = self._make_request("/info/", {'id': track_id}, timeout=6)
             
             title = ''
             duration = 0
@@ -1857,7 +1854,7 @@ class TidalService:
                 response = self._make_request("/track/", {
                     'id': track_id,
                     'quality': quality
-                }, timeout=10, use_cache=False)  # Don't cache stream URLs
+                }, timeout=6, use_cache=False)  # Don't cache stream URLs
                 
                 if response and response.status_code == 200:
                     data = response.json()
@@ -1913,7 +1910,7 @@ class TidalService:
                 }
             
             # Get track info
-            info_response = self._make_request("/info/", {'id': track_id}, timeout=10)
+            info_response = self._make_request("/info/", {'id': track_id}, timeout=6)
             
             title = ''
             duration = 0

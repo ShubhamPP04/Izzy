@@ -94,6 +94,12 @@ class PythonServiceManager: ObservableObject {
     private var inactivityTimer: DispatchSourceTimer?
     private let inactivityCheckInterval: TimeInterval = 60
     private let inactivityThreshold: TimeInterval = 240  // 4 minutes of inactivity before suspension
+    // Serializes service lifecycle. `isServiceRunning` was read and mutated from
+    // several threads at once (MusicSearchManager.init, AI search, MusicSearchTool
+    // and the sendRequest retry loop), so every `guard !isServiceRunning` was a
+    // check-then-act race: all callers saw `false` and each spawned an interpreter.
+    // Recursive so ensureServiceRunning() can call startService() on one thread.
+    private let lifecycleLock = NSRecursiveLock()
     
     private init() {}
     
@@ -104,6 +110,9 @@ class PythonServiceManager: ObservableObject {
     // MARK: - Service Lifecycle
     
     func startService() throws {
+        lifecycleLock.lock()
+        defer { lifecycleLock.unlock() }
+
         guard !isServiceRunning else { return }
         
         // Prefer bundled script inside the app resources
@@ -254,11 +263,9 @@ class PythonServiceManager: ObservableObject {
             
             // Monitor process termination
             process.terminationHandler = { [weak self] _ in
-                DispatchQueue.main.async {
-                    self?.isServiceRunning = false
-                    self?.stopInactivityTimer()
-                    self?.cleanup()
-                }
+                guard let self else { return }
+                self.stopInactivityTimer()
+                self.cleanup() // takes the lock and clears isServiceRunning
             }
             
             print("Python service started successfully with system Python: \(pythonPath)")
@@ -270,11 +277,22 @@ class PythonServiceManager: ObservableObject {
     }
     
     func stopService() {
-        guard isServiceRunning, let process = process else { return }
-        
+        lifecycleLock.lock()
+        defer { lifecycleLock.unlock() }
+
+        // Do not gate on isServiceRunning. A failed request calls cleanup(), which
+        // cleared that flag while the interpreter was still alive; gating here then
+        // made stopService() a no-op and the process was never reaped.
+        guard let process = process else {
+            isServiceRunning = false
+            return
+        }
+
         stopInactivityTimer()
-        process.terminate()
-        process.waitUntilExit()
+        if process.isRunning {
+            process.terminate()
+            process.waitUntilExit()
+        }
         cleanup()
     }
 
@@ -298,6 +316,16 @@ class PythonServiceManager: ObservableObject {
     }
     
     private func cleanup() {
+        lifecycleLock.lock()
+        defer { lifecycleLock.unlock() }
+
+        // Never drop the handle to a live interpreter. sendRequest() calls cleanup()
+        // between retries; without this terminate, the ~50MB Python process was
+        // orphaned and a fresh one spawned beside it on every failed request.
+        if let process = process, process.isRunning {
+            process.terminate()
+        }
+
         inputPipe = nil
         outputPipe = nil
         process = nil
@@ -331,7 +359,13 @@ class PythonServiceManager: ObservableObject {
                 lastError = error
                 
                 if attempt < 3 {
-                    cleanup()
+                    // Only recycle the interpreter if it actually died. A single
+                    // failed request (bad upstream response, decode error) says
+                    // nothing about interpreter health, and tearing the service down
+                    // here killed it out from under other in-flight requests.
+                    if process?.isRunning != true {
+                        cleanup()
+                    }
                     try? await Task.sleep(nanoseconds: 500_000_000)
                 }
             }
@@ -383,83 +417,63 @@ class PythonServiceManager: ObservableObject {
     
     private func readResponseWithTimeout(from pipe: Pipe, timeout: TimeInterval) throws -> Data {
         let fileHandle = pipe.fileHandleForReading
-        
+
         return try withTimeout(timeout) {
+            // Incremental JSON scanner: each byte is examined exactly once, so a
+            // response costs O(total bytes) instead of re-decoding and re-scanning
+            // the whole accumulated buffer on every chunk (previously O(n^2)).
+            // `availableData` blocks in the kernel until bytes arrive, so there is
+            // no polling wakeup; the enclosing `withTimeout` supplies the deadline.
             var responseData = Data()
-            var attempts = 0
-            let maxAttempts = Int(timeout * 10) // Check every 100ms
-            var braceCount = 0
+            var braceDepth = 0
             var inString = false
             var escapeNext = false
-            var foundStart = false
-            
-            while attempts < maxAttempts {
-                // Check if data is available
-                let availableData = fileHandle.availableData
-                if !availableData.isEmpty {
-                    responseData.append(availableData)
-                    
-                    // Parse character by character to find complete JSON
-                    if let string = String(data: responseData, encoding: .utf8) {
-                        braceCount = 0
-                        inString = false
+            var sawObjectStart = false
+
+            while true {
+                let chunk = fileHandle.availableData
+                if chunk.isEmpty { break } // EOF: pipe closed
+
+                var scanned = responseData.count
+                responseData.append(chunk)
+
+                for byte in chunk {
+                    scanned += 1
+
+                    if escapeNext {
                         escapeNext = false
-                        foundStart = false
-                        
-                        for (index, char) in string.enumerated() {
-                            if escapeNext {
-                                escapeNext = false
-                                continue
-                            }
-                            
-                            if char == "\\" && inString {
-                                escapeNext = true
-                                continue
-                            }
-                            
-                            if char == "\"" && !escapeNext {
-                                inString.toggle()
-                                continue
-                            }
-                            
-                            if !inString {
-                                if char == "{" {
-                                    if !foundStart {
-                                        foundStart = true
-                                    }
-                                    braceCount += 1
-                                } else if char == "}" {
-                                    braceCount -= 1
-                                    
-                                    // Complete JSON object found
-                                    if foundStart && braceCount == 0 {
-                                        let endIndex = string.index(string.startIndex, offsetBy: index + 1)
-                                        let jsonString = String(string[..<endIndex])
-                                        print("Found complete JSON response: \(jsonString.prefix(200))...")
-                                        return jsonString.data(using: .utf8) ?? Data()
-                                    }
-                                }
-                            }
+                        continue
+                    }
+
+                    switch byte {
+                    case 0x5C where inString: // backslash
+                        escapeNext = true
+                    case 0x22: // double quote
+                        inString.toggle()
+                    case 0x7B where !inString: // {
+                        sawObjectStart = true
+                        braceDepth += 1
+                    case 0x7D where !inString: // }
+                        braceDepth -= 1
+                        if sawObjectStart && braceDepth == 0 {
+                            // Complete top-level object; ignore any trailing bytes.
+                            return Data(responseData.prefix(scanned))
                         }
+                    default:
+                        break
                     }
                 }
-                
-                // Wait a bit before trying again
-                Thread.sleep(forTimeInterval: 0.1)
-                attempts += 1
             }
-            
-            // If we get here, we didn't receive a complete response
+
             if responseData.isEmpty {
                 throw ServiceError.timeout
             }
-            
-            // Try to return what we have if it looks like JSON
-            if let string = String(data: responseData, encoding: .utf8),
-               string.trimmingCharacters(in: .whitespacesAndNewlines).hasPrefix("{") {
+
+            // Partial read at EOF: hand back anything that still looks like JSON.
+            if sawObjectStart {
                 return responseData
             }
-            
+
             throw ServiceError.invalidResponse
         }
     }
@@ -493,6 +507,14 @@ class PythonServiceManager: ObservableObject {
     }
     
     private func restartService() async throws {
+        // Idempotent: concurrent callers all observe !isServiceRunning and pile in
+        // here. Without this check the second caller tears down the interpreter the
+        // first has just started, which produces a restart storm.
+        lifecycleLock.lock()
+        let alreadyHealthy = isServiceRunning && process?.isRunning == true
+        lifecycleLock.unlock()
+        if alreadyHealthy { return }
+
         stopService()
         
         // Wait a bit before restarting
@@ -518,6 +540,9 @@ class PythonServiceManager: ObservableObject {
     
     // 🔋 BATTERY EFFICIENCY: Add method to resume service when needed
     func ensureServiceRunning() throws {
+        lifecycleLock.lock()
+        defer { lifecycleLock.unlock() }
+
         if !isServiceRunning {
             print("🔋 Resuming Python service")
             try startService()

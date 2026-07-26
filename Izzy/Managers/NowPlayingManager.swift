@@ -50,54 +50,55 @@ class NowPlayingManager: ObservableObject {
     // MARK: - Now Playing Info
     
     func updateNowPlayingInfo(track: Track, isPlaying: Bool, currentTime: TimeInterval, duration: TimeInterval) {
-        print("🎮 Updating Now Playing info: \(track.title) - Playing: \(isPlaying)")
-        
+        let center = MPNowPlayingInfoCenter.default()
+
         #if os(macOS)
-        // FIXED: Remove aggressive app activation that interferes with other apps
-        // The app should only receive remote commands, not force itself to become active
-        // This allows users to work in other apps while music plays in the background
+        // macOS cannot infer playback state from an audio session; it must be explicit.
+        center.playbackState = isPlaying ? .playing : .paused
         #endif
-        
-        // Ensure remote commands are enabled when we start playing
-        enableRemoteCommands()
-        
-        // CRITICAL FIX: On macOS, you MUST explicitly set the playbackState
-        // Unlike iOS, macOS cannot infer the playback state from AVAudioSession
-        #if os(macOS)
-        MPNowPlayingInfoCenter.default().playbackState = isPlaying ? .playing : .paused
-        print("🎮 CRITICAL: Set playbackState to \(isPlaying ? "playing" : "paused")")
-        #endif
-        
-        var nowPlayingInfo: [String: Any] = [:]
-        
-        // Basic track info
-        nowPlayingInfo[MPMediaItemPropertyTitle] = track.title
-        nowPlayingInfo[MPMediaItemPropertyArtist] = track.artist
-        
-        if let album = track.album {
-            nowPlayingInfo[MPMediaItemPropertyAlbumTitle] = album
+
+        // Fast path: same track, clock advanced. Every one-second tick used to
+        // rebuild the entire dictionary and re-resolve artwork, churning the system
+        // Now Playing session ~60x a minute for the two values that actually moved.
+        if track.videoId == nowPlayingTrackId {
+            var info = center.nowPlayingInfo ?? nowPlayingBaseInfo
+            info[MPNowPlayingInfoPropertyElapsedPlaybackTime] = currentTime
+            info[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
+            info[MPMediaItemPropertyPlaybackDuration] = duration
+            nowPlayingBaseInfo = info
+            center.nowPlayingInfo = info
+            return
         }
-        
-        // Playback info
-        nowPlayingInfo[MPNowPlayingInfoPropertyElapsedPlaybackTime] = currentTime
-        nowPlayingInfo[MPMediaItemPropertyPlaybackDuration] = duration
-        nowPlayingInfo[MPNowPlayingInfoPropertyPlaybackRate] = isPlaying ? 1.0 : 0.0
-        
-        print("🎮 Now Playing info set - Rate: \(isPlaying ? 1.0 : 0.0), Time: \(currentTime)/\(duration)")
-        
-        // Load artwork if available
-        if let thumbnailURL = track.thumbnailURL {
-            loadArtwork(from: thumbnailURL) { artwork in
-                if let artwork = artwork {
-                    nowPlayingInfo[MPMediaItemPropertyArtwork] = artwork
-                    print("🎮 Added artwork to Now Playing info")
-                }
-                MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
-                print("🎮 Now Playing info updated with artwork")
-            }
-        } else {
-            MPNowPlayingInfoCenter.default().nowPlayingInfo = nowPlayingInfo
-            print("🎮 Now Playing info updated without artwork")
+
+        // New track: publish full metadata and re-assert the transport commands.
+        nowPlayingTrackId = track.videoId
+        enableRemoteCommands()
+
+        var info: [String: Any] = [
+            MPMediaItemPropertyTitle: track.title,
+            MPMediaItemPropertyArtist: track.artist,
+            MPNowPlayingInfoPropertyElapsedPlaybackTime: currentTime,
+            MPMediaItemPropertyPlaybackDuration: duration,
+            MPNowPlayingInfoPropertyPlaybackRate: isPlaying ? 1.0 : 0.0
+        ]
+        if let album = track.album {
+            info[MPMediaItemPropertyAlbumTitle] = album
+        }
+
+        nowPlayingBaseInfo = info
+        center.nowPlayingInfo = info
+        print("🎮 Now Playing: \(track.title) — playing: \(isPlaying)")
+
+        guard let thumbnailURL = track.thumbnailURL else { return }
+        let requestedId = track.videoId
+        loadArtwork(from: thumbnailURL) { [weak self] artwork in
+            // Drop stale completions: artwork for a previous track could otherwise
+            // land after the user had already skipped past it.
+            guard let self, let artwork, self.nowPlayingTrackId == requestedId else { return }
+            var updated = MPNowPlayingInfoCenter.default().nowPlayingInfo ?? self.nowPlayingBaseInfo
+            updated[MPMediaItemPropertyArtwork] = artwork
+            self.nowPlayingBaseInfo = updated
+            MPNowPlayingInfoCenter.default().nowPlayingInfo = updated
         }
     }
     
@@ -116,11 +117,11 @@ class NowPlayingManager: ObservableObject {
     
     func clearNowPlayingInfo() {
         #if os(macOS)
-        // Reset playback state when clearing
         MPNowPlayingInfoCenter.default().playbackState = .stopped
-        print("🎮 CRITICAL: Set playbackState to stopped")
         #endif
-        
+
+        nowPlayingTrackId = nil
+        nowPlayingBaseInfo = [:]
         MPNowPlayingInfoCenter.default().nowPlayingInfo = nil
         print("🎮 Now Playing info cleared")
     }
@@ -158,6 +159,11 @@ class NowPlayingManager: ObservableObject {
     
     // 🔋 BATTERY OPTIMIZATION: Artwork loading cache and background processing
     private var artworkCache = NSCache<NSString, MPMediaItemArtwork>()
+
+    // Identifies the item currently published, so a progress tick can patch two
+    // keys instead of republishing the whole Now Playing dictionary.
+    private var nowPlayingTrackId: String?
+    private var nowPlayingBaseInfo: [String: Any] = [:]
     
     private func loadArtwork(from urlString: String, completion: @escaping (MPMediaItemArtwork?) -> Void) {
         guard let url = URL(string: urlString) else {
@@ -211,6 +217,7 @@ class NowPlayingManager: ObservableObject {
         commandCenter.nextTrackCommand.isEnabled = false
         commandCenter.previousTrackCommand.isEnabled = false
         commandCenter.changePlaybackPositionCommand.isEnabled = false
+        commandCenter.togglePlayPauseCommand.isEnabled = false
         
         // Remove any existing targets
         commandCenter.playCommand.removeTarget(nil)
@@ -218,6 +225,7 @@ class NowPlayingManager: ObservableObject {
         commandCenter.nextTrackCommand.removeTarget(nil)
         commandCenter.previousTrackCommand.removeTarget(nil)
         commandCenter.changePlaybackPositionCommand.removeTarget(nil)
+        commandCenter.togglePlayPauseCommand.removeTarget(nil)
         
         #if os(macOS)
         // For macOS, enable remote commands without forcing app activation
@@ -235,6 +243,15 @@ class NowPlayingManager: ObservableObject {
         commandCenter.pauseCommand.addTarget { _ in
             print("🎮 Remote pause command received")
             NotificationCenter.default.post(name: .remotePauseCommand, object: nil)
+            return .success
+        }
+
+        // Toggle play/pause. This is what the macOS Control Center transport button
+        // and most keyboard/headset play keys actually send — without it the native
+        // Now Playing widget rendered correctly but its button did nothing.
+        commandCenter.togglePlayPauseCommand.addTarget { _ in
+            print("🎮 Remote toggle play/pause command received")
+            NotificationCenter.default.post(name: .remoteTogglePlayPauseCommand, object: nil)
             return .success
         }
         
@@ -272,6 +289,7 @@ class NowPlayingManager: ObservableObject {
         commandCenter.nextTrackCommand.isEnabled = true
         commandCenter.previousTrackCommand.isEnabled = true
         commandCenter.changePlaybackPositionCommand.isEnabled = true
+        commandCenter.togglePlayPauseCommand.isEnabled = true
         
         print("🎮 Remote command center setup complete - all commands enabled")
     }
@@ -282,6 +300,7 @@ class NowPlayingManager: ObservableObject {
 extension Notification.Name {
     static let remotePlayCommand = Notification.Name("remotePlayCommand")
     static let remotePauseCommand = Notification.Name("remotePauseCommand")
+    static let remoteTogglePlayPauseCommand = Notification.Name("remoteTogglePlayPauseCommand")
     static let remoteNextCommand = Notification.Name("remoteNextCommand")
     static let remotePreviousCommand = Notification.Name("remotePreviousCommand")
     static let remoteSeekCommand = Notification.Name("remoteSeekCommand")

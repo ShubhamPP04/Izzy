@@ -243,9 +243,11 @@ class SearchState: ObservableObject {
     }
     
     private func setupSearchObserver() {
-        // Debounced search with 2 second delay - only search after user finishes typing
+        // Debounce just long enough to coalesce a burst of keystrokes. 2s made the
+        // UI feel unresponsive; 350ms still collapses typing into a single query.
         searchCancellable = $searchText
-            .debounce(for: .milliseconds(2000), scheduler: RunLoop.main)
+            .removeDuplicates()
+            .debounce(for: .milliseconds(350), scheduler: RunLoop.main)
             .sink { [weak self] searchText in
                 guard let self = self, !self.isRestoringState else { return }
                 self.performSearch(searchText)

@@ -186,3 +186,7 @@ Temporary Items
 *.dmg
 *.xcarchive
 ExportOptions.plist
+
+# Local build artifacts
+build-debug/
+*.profraw

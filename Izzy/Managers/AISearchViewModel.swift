@@ -23,7 +23,6 @@ final class AISearchViewModel: ObservableObject {
 
     private let pythonService = PythonServiceManager.shared
     private var searchTask: Task<Void, Never>?
-    private var progressTask: Task<Void, Never>?
     private var progressCleanupTask: Task<Void, Never>?
 
     // Apple Intelligence availability (for UI binding)
@@ -188,28 +187,18 @@ final class AISearchViewModel: ObservableObject {
     }
 
     private func startProgressAnimation() {
-        progressTask?.cancel()
         progressCleanupTask?.cancel()
         searchProgress = 0
 
-        progressTask = Task { [weak self] in
-            while !Task.isCancelled {
-                try? await Task.sleep(nanoseconds: 120_000_000)
-                await MainActor.run {
-                    guard let self, self.isSearching else { return }
-                    let increment = Double.random(in: 0.04...0.08)
-                    let nextValue = min(self.searchProgress + increment, 0.92)
-                    withAnimation(.easeOut(duration: 0.25)) {
-                        self.searchProgress = nextValue
-                    }
-                }
-            }
+        // One declarative ramp replaces an ~8 Hz task that hopped to the main actor
+        // on every tick — and kept waking even after the value had capped at 0.92.
+        // SwiftUI interpolates this on the render thread with no timer wakeups.
+        withAnimation(.easeOut(duration: 8.0)) {
+            searchProgress = 0.92
         }
     }
 
     private func stopProgress(immediate: Bool, success: Bool = false) {
-        progressTask?.cancel()
-        progressTask = nil
 
         if immediate {
             progressCleanupTask?.cancel()

@@ -1,8 +1,8 @@
 {
   "latest": {
-    "version": "1.2.0",
-    "build": "19",
-    "releaseDate": "2026-04-11",
+    "version": "1.3.0",
+    "build": "20",
+    "releaseDate": "2026-07-26",
     "downloadURL": "https://github.com/ShubhamPP04/Izzy/releases/latest",
     "releaseNotesURL": "https://github.com/ShubhamPP04/Izzy/releases/latest",
     "minimumOSVersion": "14.0",
@@ -19,6 +19,20 @@
     ]
   },
   "releaseNotes": [
+    {
+      "version": "1.3.0",
+      "date": "2026-07-26",
+      "changes": [
+        "Fixed macOS Now Playing and Control Center transport controls, which stopped responding after the first track change",
+        "Registered togglePlayPause so headset and keyboard play/pause keys work",
+        "Izzy no longer takes a Dock tile - it is a proper menu bar app now",
+        "Fixed the Python backend spawning duplicate interpreters and leaking one on every failed request",
+        "Much lower idle CPU and battery use: removed redundant polling timers and a busy-wait read loop",
+        "Album art is no longer purged from cache every 10 minutes, so covers load instantly and use less network",
+        "Search responds in 350ms instead of 2 seconds",
+        "Dropped unreachable Tidal endpoints: Tidal search is ~20x faster, though Tidal playback remains unavailable upstream"
+      ]
+    },
     {
       "version": "1.2.0",
       "date": "2026-04-11",

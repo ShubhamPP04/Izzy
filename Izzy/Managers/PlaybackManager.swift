@@ -54,6 +54,12 @@ class PlaybackManager: ObservableObject {
     private var playerItem: AVPlayerItem?
     private var timeObserver: Any?
     private var cancellables = Set<AnyCancellable>()
+    // Subscriptions scoped to the current AVPlayerItem. Kept separate from
+    // `cancellables` because cleanup() tears these down on every track change —
+    // and it used to clear `cancellables` wholesale, which also destroyed the
+    // remote-command handlers registered once in init(). That silently killed
+    // every macOS Now Playing / Control Center button after the first track.
+    private var playerCancellables = Set<AnyCancellable>()
     private var isSeeking = false  // Flag to prevent time updates during seeking
     
     // 🚀 FAST SEEK OPTIMIZATION: Advanced caching for instant seeking
@@ -109,6 +115,19 @@ class PlaybackManager: ObservableObject {
             .sink { [weak self] _ in
                 print("🎮 PlaybackManager received remote pause command")
                 self?.pause()
+            }
+            .store(in: &cancellables)
+
+        NotificationCenter.default.publisher(for: .remoteTogglePlayPauseCommand)
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in
+                guard let self = self else { return }
+                print("🎮 PlaybackManager received remote toggle play/pause command")
+                if self.isPlaying {
+                    self.pause()
+                } else {
+                    self.resume()
+                }
             }
             .store(in: &cancellables)
         
@@ -482,6 +501,10 @@ class PlaybackManager: ObservableObject {
                 }
             }
         }
+        // Buffer polling is a heuristic, not a deadline. Tolerance lets the
+        // scheduler batch these fires with other work instead of forcing an
+        // exact wakeup twice a second while a track spins up.
+        bufferTimer?.tolerance = 0.15
     }
     
     private func setupPlayer(with streamInfo: StreamInfo, startFromPosition: TimeInterval? = nil) {
@@ -779,7 +802,7 @@ class PlaybackManager: ObservableObject {
             .sink { [weak self] status in
                 self?.handlePlayerStatusChange(status)
             }
-            .store(in: &cancellables)
+            .store(in: &playerCancellables)
         
         // Playback end observer
         NotificationCenter.default.publisher(for: .AVPlayerItemDidPlayToEndTime, object: playerItem)
@@ -790,7 +813,7 @@ class PlaybackManager: ObservableObject {
                     await self?.handlePlaybackEnd()
                 }
             }
-            .store(in: &cancellables)
+            .store(in: &playerCancellables)
         
         // Add boundary time observer for more precise end detection
         if duration > 0 {
@@ -809,7 +832,7 @@ class PlaybackManager: ObservableObject {
             .sink { [weak self] _ in
                 self?.handlePlaybackStalled()
             }
-            .store(in: &cancellables)
+            .store(in: &playerCancellables)
     }
     
     private func handlePlayerStatusChange(_ status: AVPlayerItem.Status) {
@@ -901,7 +924,7 @@ class PlaybackManager: ObservableObject {
         skipDebounceTask?.cancel()
         skipDebounceTask = nil
         
-        cancellables.removeAll()
+        playerCancellables.removeAll()
         player = nil
         playerItem = nil
     }
