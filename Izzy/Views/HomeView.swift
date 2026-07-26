@@ -30,15 +30,36 @@ struct HomeView: View {
         return false
     }
     
-    // Use cached data from SearchState instead of local state
+    // Use cached data from SearchState instead of local state.
+    // Defensive source filter: even if a stale section from a previous source
+    // survives in cache (e.g. the source changed before the reload completed),
+    // its items will not render under the wrong source's tab.
     private var homeSections: [HomeSection] {
-        get { searchState.cachedHomeSections }
+        searchState.cachedHomeSections.map { section in
+            HomeSection(
+                title: section.title,
+                contents: section.contents.filter { item in
+                    (item.musicSource ?? musicSource) == musicSource
+                }
+            )
+        }
+        .filter { !$0.contents.isEmpty }
     }
     private var chartsData: ChartsData? {
-        get { searchState.cachedChartsData }
+        guard let data = searchState.cachedChartsData else { return nil }
+        let src = musicSource
+        let f = { (arr: [SearchResult]?) -> [SearchResult] in
+            (arr ?? []).filter { ($0.musicSource ?? src) == src }
+        }
+        return ChartsData(
+            songs: f(data.songs),
+            videos: f(data.videos),
+            artists: f(data.artists),
+            trending: f(data.trending)
+        )
     }
     private var moodCategories: [String: [MoodCategory]] {
-        get { searchState.cachedMoodCategories }
+        searchState.cachedMoodCategories
     }
     
     @State private var isLoadingHome = false
@@ -869,7 +890,7 @@ struct HomeView: View {
                 await loadExploreData()
             }
         }
-        .onChange(of: musicSource) { _ in
+        .onChange(of: musicSource) { _, _ in
             // Update recommendations when music source changes
             print("🔄 Music source changed in HomeView, refreshing For You recommendations")
             // Clear shown IDs when source changes to get fresh recommendations

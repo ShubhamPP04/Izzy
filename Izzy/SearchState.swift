@@ -362,6 +362,18 @@ class SearchState: ObservableObject {
         }
     }
     
+    /// Drop all Home/Charts/Moods/For-You caches. Call this whenever the music source
+    /// changes — these feeds are source-specific, and the previous source's data was
+    /// still rendering after a switch because only the search cache was being cleared.
+    func clearExploreCache() {
+        hasLoadedExploreData = false
+        hasLoadedForYou = false
+        cachedHomeSections = []
+        cachedChartsData = nil
+        cachedMoodCategories = [:]
+        cachedForYouSongs = []
+    }
+
     func clearSearch() {
         searchText = ""
         persistentSearchText = ""

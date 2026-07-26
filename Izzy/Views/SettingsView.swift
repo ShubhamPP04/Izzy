@@ -58,7 +58,11 @@ struct SettingsView: View {
         }
         .onChange(of: musicSource) { _, newValue in
             UserDefaults.standard.set(newValue, forKey: "musicSource")
-            // Clear search results when music source changes to force refresh
+            // Both caches are source-specific: search results AND home/charts/moods
+            // feeds. Clearing only the search cache left the Home tab rendering the
+            // previous source's content after a switch.
+            searchState.musicSearchManager.clearCacheForMusicSourceChange()
+            searchState.clearExploreCache()
             searchState.clearSearch()
         }
         .onAppear {
@@ -359,7 +363,8 @@ struct SettingsView: View {
 
                         if oldSource != newSource.rawValue {
                             searchState.musicSearchManager.clearCacheForMusicSourceChange()
-                            print("🔄 Music source changed from '\(oldSource)' to '\(newSource.rawValue)' - cache cleared")
+                            searchState.clearExploreCache()
+                            print("🔄 Music source changed from '\(oldSource)' to '\(newSource.rawValue)' - caches cleared")
                         }
                     }
                 )

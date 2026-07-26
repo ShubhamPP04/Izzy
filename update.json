@@ -1,8 +1,7 @@
 {
   "latest": {
-    "version": "1.3.0",
-    "build": "20",
-    "releaseDate": "2026-07-26",
+    "version": "1.3.1",
+    "build": "21",
     "downloadURL": "https://github.com/ShubhamPP04/Izzy/releases/latest",
     "releaseNotesURL": "https://github.com/ShubhamPP04/Izzy/releases/latest",
     "minimumOSVersion": "14.0",
@@ -19,6 +18,13 @@
     ]
   },
   "releaseNotes": [
+    {
+      "version": "1.3.1",
+      "date": "2026-07-26",
+      "changes": [
+        "Fixed Home page showing content from the previous music source after switching providers"
+      ]
+    },
     {
       "version": "1.3.0",
       "date": "2026-07-26",

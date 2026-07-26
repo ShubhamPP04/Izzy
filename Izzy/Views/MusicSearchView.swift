@@ -635,6 +635,7 @@ struct MusicProviderSwitchButton: View {
         musicSource = source.rawValue
         UserDefaults.standard.set(source.rawValue, forKey: "musicSource")
         searchState.musicSearchManager.clearCacheForMusicSourceChange()
+        searchState.clearExploreCache()
         searchState.clearSearch()
         print("🔄 Music source switched to: \(source.displayName)")
     }
