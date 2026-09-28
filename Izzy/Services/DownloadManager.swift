@@ -113,8 +113,19 @@ class DownloadManager: ObservableObject {
                 throw DownloadError.invalidStreamURL
             }
             
+            // Segmented Tidal streams (Hi-Res DASH) arrive as fragmented MP4
+            // segments; they are joined here and remuxed to FLAC by FFmpeg.
+            let segmentURLs = (streamInfo.segmentUrls ?? []).compactMap { URL(string: $0) }
+            let isSegmented = segmentURLs.count > 1
+            
             // Determine file extension based on quality and source
-            let fileExtension = getFileExtension(for: streamInfo, musicSource: song.musicSource)
+            let fileExtension: String
+            if isSegmented {
+                let isFlac = streamInfo.codec?.lowercased().contains("flac") == true
+                fileExtension = (isFlac && Self.ffmpegPath != nil) ? "flac" : "m4a"
+            } else {
+                fileExtension = getFileExtension(for: streamInfo, musicSource: song.musicSource)
+            }
             let sanitizedTitle = sanitizeFilename(song.title)
             let sanitizedArtist = sanitizeFilename(song.artist ?? "Unknown")
             let filename = "\(sanitizedArtist) - \(sanitizedTitle).\(fileExtension)"
@@ -122,14 +133,20 @@ class DownloadManager: ObservableObject {
             print("📁 Download destination: \(filename)")
             
             // Use temp file first, then process with metadata
-            let tempAudioFile = tempDirectory.appendingPathComponent("audio_\(taskId).\(fileExtension)")
+            let tempExtension = isSegmented ? "mp4" : fileExtension
+            let tempAudioFile = tempDirectory.appendingPathComponent("audio_\(taskId).\(tempExtension)")
             let destinationURL = downloadDirectory.appendingPathComponent(filename)
             
             // Download the audio file
             updateTaskStatus(taskId, status: .downloading, progress: 0.3)
             
-            print("📥 Downloading audio file...")
-            try await downloadFile(from: streamURL, to: tempAudioFile, taskId: taskId)
+            if isSegmented {
+                print("📥 Downloading \(segmentURLs.count) segments (\(streamInfo.qualityInfo ?? streamInfo.quality ?? "unknown"))...")
+                try await downloadSegments(segmentURLs, to: tempAudioFile, taskId: taskId)
+            } else {
+                print("📥 Downloading audio file...")
+                try await downloadFile(from: streamURL, to: tempAudioFile, taskId: taskId)
+            }
             
             // Verify file was downloaded
             let fileSize = try FileManager.default.attributesOfItem(atPath: tempAudioFile.path)[.size] as? Int64 ?? 0
@@ -283,6 +300,57 @@ class DownloadManager: ObservableObject {
         await MainActor.run {
             updateTaskStatus(taskId, status: .downloading, progress: 0.85)
         }
+    }
+    
+    /// Downloads an init segment plus media segments and appends them into one
+    /// fragmented MP4 file, which is itself a valid, playable file.
+    private func downloadSegments(_ urls: [URL], to destination: URL, taskId: String) async throws {
+        if FileManager.default.fileExists(atPath: destination.path) {
+            try FileManager.default.removeItem(at: destination)
+        }
+        FileManager.default.createFile(atPath: destination.path, contents: nil)
+        let handle = try FileHandle(forWritingTo: destination)
+        defer { try? handle.close() }
+        
+        let configuration = URLSessionConfiguration.default
+        configuration.timeoutIntervalForRequest = 60
+        let session = URLSession(configuration: configuration)
+        defer { session.finishTasksAndInvalidate() }
+        
+        for (index, url) in urls.enumerated() {
+            var request = URLRequest(url: url)
+            request.setValue("Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36", forHTTPHeaderField: "User-Agent")
+            
+            var lastError: Error = DownloadError.httpError
+            var segmentData: Data? = nil
+            for _ in 0..<3 {
+                do {
+                    let (data, response) = try await session.data(for: request)
+                    if let http = response as? HTTPURLResponse, (200...299).contains(http.statusCode), !data.isEmpty {
+                        segmentData = data
+                        break
+                    }
+                } catch {
+                    lastError = error
+                }
+            }
+            guard let data = segmentData else {
+                print("❌ Segment \(index + 1)/\(urls.count) failed")
+                throw lastError
+            }
+            try handle.write(contentsOf: data)
+            
+            let progress = 0.3 + 0.55 * Double(index + 1) / Double(urls.count)
+            await MainActor.run {
+                updateTaskStatus(taskId, status: .downloading, progress: progress)
+            }
+        }
+        print("✅ Joined \(urls.count) segments")
+    }
+    
+    private static var ffmpegPath: String? {
+        ["/opt/homebrew/bin/ffmpeg", "/usr/local/bin/ffmpeg", "/usr/bin/ffmpeg"]
+            .first { FileManager.default.fileExists(atPath: $0) }
     }
     
     private func updateTaskStatus(_ taskId: String, status: DownloadTask.DownloadStatus, progress: Double? = nil, error: String? = nil, filePath: URL? = nil) {

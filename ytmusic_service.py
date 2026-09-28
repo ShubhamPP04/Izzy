@@ -1243,29 +1243,8 @@ class TidalService:
     OPTIMIZED: Uses caching and single API calls to reduce CPU/memory usage
     """
     
-    # Audio quality levels in order of preference for STREAMING (highest to lowest)
-    # Note: LOSSLESS is more compatible for playback
-    QUALITY_LEVELS = [
-        'LOSSLESS',         # 16-bit/44.1kHz FLAC (CD quality) - most compatible
-        'HI_RES_LOSSLESS',  # Up to 24-bit/192kHz FLAC (MQA) - may need special codec
-        'HI_RES',           # Up to 24-bit/96kHz FLAC - may need special codec
-        'HIGH',             # 320kbps AAC
-        'LOW'               # 96kbps AAC
-    ]
-    
-    # Audio quality levels in order of preference for DOWNLOADING
-    # NOTE: LOSSLESS is tried first because HI_RES/HI_RES_LOSSLESS use DASH segmented
-    # streaming (50+ segments) which requires complex downloading. LOSSLESS provides
-    # a direct FLAC URL that can be downloaded in one request.
-    DOWNLOAD_QUALITY_LEVELS = [
-        'LOSSLESS',         # 16-bit/44.1kHz FLAC (CD quality) - direct URL, works reliably
-        'HI_RES_LOSSLESS',  # Up to 24-bit/192kHz FLAC (MQA) - requires DASH parsing
-        'HI_RES',           # Up to 24-bit/96kHz FLAC - requires DASH parsing
-        'HIGH',             # 320kbps AAC
-        'LOW'               # 96kbps AAC
-    ]
-    
-    def __init__(self):
+    def __init__(self, preferred_quality: Optional[str] = None, dolby_atmos: bool = False,
+                 custom_api_url: Optional[str] = None, api_key: Optional[str] = None):
         # Public Hi-Fi API instances. Only hosts that actually answer are listed.
         #
         # Verified 2026-07-26: the entries that used to sit at the top of this list
@@ -1282,11 +1261,18 @@ class TidalService:
             {"name": "monochrome-samidy", "url": "https://monochrome-api.samidy.com", "weight": 6},
             {"name": "us-west-monochrome", "url": "https://us-west.monochrome.tf", "weight": 4},
         ]
+        # A user-supplied hifi-api compatible instance (Settings > Tidal) goes first.
+        custom_api_url = (custom_api_url or '').strip().rstrip('/')
+        if custom_api_url.startswith('http://') or custom_api_url.startswith('https://'):
+            self.api_targets.insert(0, {"name": "custom", "url": custom_api_url, "weight": 100})
+        self.api_key = (api_key or '').strip()
         self.current_api_index = 0
         self.base_url = self.api_targets[0]["url"]  # Default to highest weight
         
-        # Preferred quality - LOSSLESS for best compatibility
-        self.preferred_quality = 'LOSSLESS'
+        # Preferred quality tier (Settings > Tidal). HI_RES_LOSSLESS = up to 24-bit/192kHz.
+        quality = (preferred_quality or 'HI_RES_LOSSLESS').upper()
+        self.preferred_quality = quality if quality in self.QUALITY_TIERS_ASCENDING else 'HI_RES_LOSSLESS'
+        self.dolby_atmos = bool(dolby_atmos)
         
         # Simple cache to reduce API calls (cache for 2 minutes - shorter to avoid stale responses)
         self._cache = {}
@@ -1304,6 +1290,8 @@ class TidalService:
                 'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)',
                 'Accept': 'application/json'
             })
+            if self.api_key:
+                self._session.headers['X-API-Key'] = self.api_key
         return self._session
     
     def _reset_session(self):
@@ -1701,259 +1689,487 @@ class TidalService:
             logger.error(f"Error formatting Tidal playlist: {e}")
             return None
     
-    def get_stream_info(self, track_id: str) -> Dict[str, Any]:
-        """Get Tidal stream info using hifi-api /track/ endpoint
-        
-        Tries quality levels in order: LOSSLESS → HI_RES_LOSSLESS → HI_RES → HIGH → LOW
-        LOSSLESS (CD quality) is tried first for better compatibility.
+    # MARK: - Stream resolution (Hi-Res + Dolby Atmos)
+    #
+    # Tidal answers /track/ in two manifest shapes:
+    #   * application/vnd.tidal.bts  -> JSON with a direct file URL (LOSSLESS/HIGH/LOW)
+    #   * application/dash+xml       -> segmented DASH (HI_RES_LOSSLESS, and Atmos
+    #                                   from /trackManifests/?atmos=true)
+    # AVPlayer cannot play DASH, so DASH manifests are rewritten into an HLS media
+    # playlist (fMP4 segments are valid HLS media) that Swift serves to AVPlayer.
+
+    # Tiers ascending, used to build the attempt order: preferred, then higher,
+    # then lower - so a CD-only master still plays when Max is requested.
+    QUALITY_TIERS_ASCENDING = ['LOW', 'HIGH', 'LOSSLESS', 'HI_RES_LOSSLESS']
+
+    def _quality_attempt_order(self, preferred: str) -> List[str]:
+        tiers = self.QUALITY_TIERS_ASCENDING
+        if preferred not in tiers:
+            preferred = 'HI_RES_LOSSLESS'
+        index = tiers.index(preferred)
+        above = tiers[index + 1:]
+        below = list(reversed(tiers[:index]))
+        return [preferred] + above + below
+
+    @staticmethod
+    def _is_atmos_codec(codec: Optional[str]) -> bool:
+        c = (codec or '').strip().lower()
+        return c.startswith('ec-3') or c.startswith('eac3') or c.startswith('ac-3') or 'joc' in c
+
+    @staticmethod
+    def _is_atmos_manifest(xml_text: str) -> bool:
+        lower = (xml_text or '').lower()
+        return any(token in lower for token in ('ec-3', 'eac3', 'ec3', 'atmos', 'joc'))
+
+    def _fetch_atmos_manifest_xml(self, track_id: str) -> Optional[str]:
+        """Fetch the Dolby Atmos DASH manifest, if the catalogue has an Atmos mix.
+
+        /trackManifests has answered in several JSON shapes (inline XML, base64,
+        or a manifest URI nested under data/attributes), so walk them all.
         """
+        response = self._make_request("/trackManifests/", {
+            'id': track_id,
+            'atmos': 'true'
+        }, timeout=6, use_cache=False)
+        if not response or response.status_code != 200:
+            return None
         try:
-            if not HAS_REQUESTS:
-                return {
-                    'success': False,
-                    'error': 'requests library not available - Tidal streaming not supported'
-                }
-            
-            # Try each quality level starting from highest
-            response = None
-            used_quality = None
-            
-            for quality in self.QUALITY_LEVELS:
-                response = self._make_request("/track/", {
-                    'id': track_id,
-                    'quality': quality
-                }, timeout=6, use_cache=False)  # Don't cache stream URLs
-                
-                if response and response.status_code == 200:
-                    data = response.json()
-                    if data.get('data') and data['data'].get('manifest'):
-                        used_quality = quality
-                        break
-            
-            if not response or not used_quality:
-                return {
-                    'success': False,
-                    'error': 'Failed to get stream at any quality level'
-                }
-            
-            data = response.json()
-            track_data = data['data']
-            
-            # Get stream URL from manifest
-            stream_url = ''
-            manifest = track_data.get('manifest', '')
-            manifest_type = track_data.get('manifestMimeType', '')
-            
-            if manifest:
-                try:
-                    # Decode base64 manifest
-                    decoded_manifest = base64.b64decode(manifest).decode('utf-8')
-                    
-                    if 'application/vnd.tidal.bts' in manifest_type:
-                        # JSON manifest format (for LOSSLESS/HIGH/LOW)
-                        manifest_json = json.loads(decoded_manifest)
-                        urls = manifest_json.get('urls', [])
-                        if urls:
-                            stream_url = urls[0]
-                            
-                    elif 'application/dash+xml' in manifest_type:
-                        # DASH MPD manifest (for HI_RES_LOSSLESS/HI_RES)
-                        import re
-                        
-                        # Try to find BaseURL first (direct stream URL)
-                        base_url_match = re.search(r'<BaseURL>([^<]+)</BaseURL>', decoded_manifest)
-                        if base_url_match:
-                            stream_url = base_url_match.group(1)
-                        else:
-                            # Try initialization URL
-                            media_match = re.search(r'initialization="([^"]+)"', decoded_manifest)
-                            if media_match:
-                                stream_url = media_match.group(1)
-                            else:
-                                # Try to find any FLAC/MP4/M4A URL in the manifest
-                                url_match = re.search(r'https?://[^\s<>"]+\.(?:flac|mp4|m4a)', decoded_manifest)
-                                if url_match:
-                                    stream_url = url_match.group(0)
-                                    
-                except Exception as e:
-                    pass  # Silently handle manifest errors
-            
-            if not stream_url:
-                return {
-                    'success': False,
-                    'error': 'Could not extract stream URL from track data'
-                }
-            
-            # Get track info
-            info_response = self._make_request("/info/", {'id': track_id}, timeout=6)
-            
-            title = ''
-            duration = 0
-            
-            if info_response and info_response.status_code == 200:
-                info_data = info_response.json()
-                if info_data.get('data'):
-                    title = info_data['data'].get('title', '')
-                    duration = info_data['data'].get('duration', 0)
-            
-            # Get actual quality from response
-            actual_quality = track_data.get('audioQuality', used_quality)
-            bit_depth = track_data.get('bitDepth', '')
-            sample_rate = track_data.get('sampleRate', '')
-            
-            quality_info = actual_quality
-            if bit_depth and sample_rate:
-                quality_info = f"{actual_quality} ({bit_depth}-bit/{sample_rate/1000:.1f}kHz)"
-            
-            # Determine mimeType based on quality
-            mime_type = 'audio/flac'  # Default for lossless
-            if actual_quality in ['HIGH', 'LOW']:
-                mime_type = 'audio/mp4'  # AAC in MP4 container
-            elif actual_quality in ['LOSSLESS', 'HI_RES', 'HI_RES_LOSSLESS']:
-                mime_type = 'audio/flac'
-            
+            payload = response.json()
+        except Exception:
+            return None
+
+        found_uri = [None]
+
+        def walk(obj, depth):
+            if obj is None or depth > 6:
+                return None
+            if isinstance(obj, str):
+                text = obj.strip()
+                if text.startswith('<'):
+                    return obj
+                if text.startswith('http://') or text.startswith('https://'):
+                    if found_uri[0] is None:
+                        found_uri[0] = text
+                    return None
+                if len(text) > 100 and re.fullmatch(r'[A-Za-z0-9+/=\s]+', text):
+                    try:
+                        decoded = base64.b64decode(text).decode('utf-8')
+                        if decoded.strip().startswith('<'):
+                            return decoded
+                    except Exception:
+                        pass
+                return None
+            if isinstance(obj, list):
+                for item in obj:
+                    found = walk(item, depth + 1)
+                    if found:
+                        return found
+                return None
+            if not isinstance(obj, dict):
+                return None
+            for key in ('uri', 'url', 'manifestUrl', 'mpdUrl'):
+                value = obj.get(key)
+                if isinstance(value, str) and value.startswith('http') and found_uri[0] is None:
+                    found_uri[0] = value
+            for key in ('manifest', 'mpdXml', 'mpd', 'xml', 'mpdBase64', 'manifestBase64'):
+                if isinstance(obj.get(key), str):
+                    found = walk(obj[key], depth + 1)
+                    if found:
+                        return found
+            for key in ('attributes', 'data', 'included'):
+                if isinstance(obj.get(key), (dict, list)):
+                    found = walk(obj[key], depth + 1)
+                    if found:
+                        return found
+            return None
+
+        xml_text = walk(payload, 0)
+        if xml_text:
+            return xml_text
+        if found_uri[0]:
+            try:
+                manifest_response = self._get_session().get(found_uri[0], timeout=6)
+                if manifest_response.status_code == 200 and manifest_response.text.strip().startswith('<'):
+                    # Relative segment URLs resolve against the manifest URI.
+                    return self._inject_base_url(manifest_response.text, found_uri[0])
+            except Exception as e:
+                logger.error(f"Failed to fetch Atmos manifest URI: {e}")
+        return None
+
+    @staticmethod
+    def _inject_base_url(xml_text: str, manifest_uri: str) -> str:
+        """Remember where a fetched MPD came from so relative URLs can resolve."""
+        return f"<!--izzy-base:{manifest_uri}-->" + xml_text
+
+    def _parse_dash_manifest(self, xml_text: str, prefer_atmos: bool = False) -> Optional[Dict[str, Any]]:
+        """Parse a DASH MPD into init + media segment URLs with durations.
+
+        Supports SegmentTemplate with SegmentTimeline or a fixed @duration, and a
+        single BaseURL file (SegmentBase). Returns None for DRM-protected
+        manifests - AVPlayer cannot decrypt Widevine/PlayReady.
+        """
+        import xml.etree.ElementTree as ET
+        from urllib.parse import urljoin
+
+        manifest_uri = ''
+        base_marker = re.match(r'<!--izzy-base:(.*?)-->', xml_text)
+        if base_marker:
+            manifest_uri = base_marker.group(1)
+            xml_text = xml_text[base_marker.end():]
+
+        try:
+            root = ET.fromstring(xml_text.strip())
+        except ET.ParseError as e:
+            logger.error(f"Invalid DASH manifest: {e}")
+            return None
+
+        def local(tag):
+            return tag.split('}', 1)[-1]
+
+        def child(elem, name):
+            for c in list(elem):
+                if local(c.tag) == name:
+                    return c
+            return None
+
+        def children(elem, name):
+            return [c for c in list(elem) if local(c.tag) == name]
+
+        def join_base(current, elem):
+            base = child(elem, 'BaseURL')
+            if base is not None and (base.text or '').strip():
+                return urljoin(current, base.text.strip())
+            return current
+
+        if any(local(e.tag) == 'ContentProtection' for e in root.iter()):
+            logger.error("DASH manifest is DRM-protected; cannot play in AVPlayer")
+            return None
+
+        def parse_duration(value):
+            m = re.match(r'P(?:(\d+)D)?T?(?:(\d+)H)?(?:(\d+)M)?(?:([\d.]+)S)?', value or '')
+            if not m:
+                return 0.0
+            days, hours, minutes, seconds = m.groups()
+            return (int(days or 0) * 86400 + int(hours or 0) * 3600 +
+                    int(minutes or 0) * 60 + float(seconds or 0))
+
+        total_duration = parse_duration(root.get('mediaPresentationDuration'))
+        base = join_base(manifest_uri, root)
+        period = child(root, 'Period')
+        if period is None:
+            return None
+        base = join_base(base, period)
+
+        # Collect every audio representation with its inherited context.
+        candidates = []
+        for adaptation in children(period, 'AdaptationSet'):
+            mime = (adaptation.get('mimeType') or adaptation.get('contentType') or '')
+            if mime and 'audio' not in mime:
+                continue
+            adaptation_base = join_base(base, adaptation)
+            for rep in children(adaptation, 'Representation'):
+                codecs = rep.get('codecs') or adaptation.get('codecs') or ''
+                candidates.append({
+                    'rep': rep,
+                    'adaptation': adaptation,
+                    'base': join_base(adaptation_base, rep),
+                    'codecs': codecs,
+                    'bandwidth': int(rep.get('bandwidth') or 0),
+                    'sampleRate': int(rep.get('audioSamplingRate') or adaptation.get('audioSamplingRate') or 0),
+                })
+        if not candidates:
+            return None
+
+        def rank(c):
+            atmos_bonus = 1 if (prefer_atmos and self._is_atmos_codec(c['codecs'])) else 0
+            return (atmos_bonus, c['bandwidth'])
+
+        chosen = max(candidates, key=rank)
+        rep, adaptation, rep_base = chosen['rep'], chosen['adaptation'], chosen['base']
+
+        template = child(rep, 'SegmentTemplate')
+        if template is None:
+            template = child(adaptation, 'SegmentTemplate')
+
+        def fill(pattern, number=None, time_value=None):
+            def repl(m):
+                name, fmt = m.group(1), m.group(2)
+                if name == 'RepresentationID':
+                    return rep.get('id') or ''
+                if name == 'Bandwidth':
+                    value = int(rep.get('bandwidth') or 0)
+                elif name == 'Number':
+                    value = number or 0
+                elif name == 'Time':
+                    value = time_value or 0
+                else:
+                    return m.group(0)
+                return (fmt % value) if fmt else str(value)
+            filled = re.sub(r'\$(RepresentationID|Number|Time|Bandwidth)(%0\d+d)?\$', repl, pattern)
+            return urljoin(rep_base, filled.replace('$$', '$'))
+
+        init_url = None
+        segments = []  # (url, seconds)
+        if template is not None:
+            timescale = int(template.get('timescale') or 1)
+            start_number = int(template.get('startNumber') or 1)
+            media = template.get('media') or ''
+            if template.get('initialization'):
+                init_url = fill(template.get('initialization'))
+            timeline = child(template, 'SegmentTimeline')
+            if timeline is not None:
+                number = start_number
+                current_time = 0
+                for s in children(timeline, 'S'):
+                    if s.get('t') is not None:
+                        current_time = int(s.get('t'))
+                    d = int(s.get('d'))
+                    repeat = int(s.get('r') or 0)
+                    if repeat < 0 and total_duration > 0:
+                        # r="-1": repeat until the end of the period.
+                        repeat = max(int((total_duration * timescale - current_time) // d) - 1, 0)
+                    for _ in range(repeat + 1):
+                        segments.append((fill(media, number, current_time), d / timescale))
+                        number += 1
+                        current_time += d
+            elif template.get('duration') and total_duration > 0:
+                seg_seconds = int(template.get('duration')) / timescale
+                count = int(-(-total_duration // seg_seconds))  # ceil
+                for i in range(count):
+                    remaining = total_duration - i * seg_seconds
+                    segments.append((fill(media, start_number + i), min(seg_seconds, remaining)))
+        elif rep_base:
+            # SegmentBase / plain BaseURL: one playable file.
             return {
-                'success': True,
-                'data': {
-                    'url': stream_url,
-                    'title': title,
-                    'duration': int(duration),
-                    'quality': actual_quality,
-                    'qualityInfo': quality_info,
-                    'bitDepth': bit_depth,
-                    'sampleRate': sample_rate,
-                    'mimeType': mime_type
-                }
+                'directUrl': rep_base,
+                'codec': chosen['codecs'],
+                'sampleRate': chosen['sampleRate'],
+                'bandwidth': chosen['bandwidth'],
+                'duration': total_duration,
             }
-            
+
+        if not segments:
+            return None
+        if total_duration <= 0:
+            total_duration = sum(seconds for _, seconds in segments)
+        return {
+            'initUrl': init_url,
+            'segments': segments,
+            'codec': chosen['codecs'],
+            'sampleRate': chosen['sampleRate'],
+            'bandwidth': chosen['bandwidth'],
+            'duration': total_duration,
+        }
+
+    @staticmethod
+    def _build_hls_playlist(parsed: Dict[str, Any]) -> str:
+        """Build a VOD HLS media playlist over the DASH fMP4 segments."""
+        import math
+        target = max(1, math.ceil(max(seconds for _, seconds in parsed['segments'])))
+        lines = [
+            '#EXTM3U',
+            '#EXT-X-VERSION:7',
+            f'#EXT-X-TARGETDURATION:{target}',
+            '#EXT-X-MEDIA-SEQUENCE:0',
+            '#EXT-X-PLAYLIST-TYPE:VOD',
+            '#EXT-X-INDEPENDENT-SEGMENTS',
+        ]
+        if parsed.get('initUrl'):
+            lines.append(f'#EXT-X-MAP:URI="{parsed["initUrl"]}"')
+        for url, seconds in parsed['segments']:
+            lines.append(f'#EXTINF:{seconds:.6f},')
+            lines.append(url)
+        lines.append('#EXT-X-ENDLIST')
+        return '\n'.join(lines) + '\n'
+
+    @staticmethod
+    def _as_int(value) -> Optional[int]:
+        try:
+            number = int(float(value))
+            return number if number > 0 else None
+        except (TypeError, ValueError):
+            return None
+
+    def _stream_payload_from_dash(self, xml_text: str, prefer_atmos: bool) -> Optional[Dict[str, Any]]:
+        parsed = self._parse_dash_manifest(xml_text, prefer_atmos=prefer_atmos)
+        if not parsed:
+            return None
+        if parsed.get('directUrl'):
+            return {'url': parsed['directUrl'], 'codec': parsed['codec'],
+                    'manifestSampleRate': parsed['sampleRate'], 'bandwidth': parsed['bandwidth']}
+        segment_urls = ([parsed['initUrl']] if parsed.get('initUrl') else []) + [u for u, _ in parsed['segments']]
+        return {
+            'url': segment_urls[0],
+            'hlsPlaylist': self._build_hls_playlist(parsed),
+            'segmentUrls': segment_urls,
+            'codec': parsed['codec'],
+            'manifestSampleRate': parsed['sampleRate'],
+            'bandwidth': parsed['bandwidth'],
+            'manifestDuration': parsed['duration'],
+        }
+
+    def _resolve_track_quality(self, track_id: str, quality: str) -> Optional[Dict[str, Any]]:
+        """Fetch /track/ at one quality and turn its manifest into a stream payload."""
+        response = self._make_request("/track/", {
+            'id': track_id,
+            'quality': quality
+        }, timeout=6, use_cache=False)  # Don't cache stream URLs
+        if not response or response.status_code != 200:
+            return None
+        try:
+            track_data = response.json().get('data') or {}
+        except Exception:
+            return None
+        manifest = track_data.get('manifest')
+        if not manifest:
+            return None
+        try:
+            decoded_manifest = base64.b64decode(manifest).decode('utf-8')
+        except Exception:
+            return None
+        manifest_type = track_data.get('manifestMimeType', '') or ''
+
+        payload = None
+        if 'dash+xml' in manifest_type or decoded_manifest.lstrip().startswith('<'):
+            payload = self._stream_payload_from_dash(decoded_manifest, prefer_atmos=False)
+        else:
+            try:
+                manifest_json = json.loads(decoded_manifest)
+                urls = manifest_json.get('urls', [])
+                if urls:
+                    payload = {'url': urls[0], 'codec': manifest_json.get('codecs', '')}
+                    if manifest_json.get('encryptionType', 'NONE') not in ('NONE', None, ''):
+                        payload = None  # encrypted stream - AVPlayer cannot decode
+            except Exception:
+                payload = None
+        if not payload:
+            return None
+
+        payload['audioQuality'] = track_data.get('audioQuality') or quality
+        payload['bitDepth'] = self._as_int(track_data.get('bitDepth'))
+        payload['sampleRate'] = self._as_int(track_data.get('sampleRate'))
+        return payload
+
+    def _get_track_title_duration(self, track_id: str):
+        info_response = self._make_request("/info/", {'id': track_id}, timeout=6)
+        if info_response and info_response.status_code == 200:
+            try:
+                info = info_response.json().get('data') or {}
+                return info.get('title', ''), info.get('duration', 0) or 0
+            except Exception:
+                pass
+        return '', 0
+
+    def _resolve_stream(self, track_id: str, for_download: bool) -> Dict[str, Any]:
+        if not HAS_REQUESTS:
+            return {
+                'success': False,
+                'error': 'requests library not available - Tidal streaming not supported'
+            }
+
+        payload = None
+        is_atmos = False
+
+        # Dolby Atmos: a property of the STREAM, never the request. Only report
+        # Atmos when the manifest really carries E-AC-3 JOC; otherwise play stereo.
+        # Downloads are always stereo lossless.
+        if self.dolby_atmos and not for_download:
+            atmos_xml = self._fetch_atmos_manifest_xml(track_id)
+            if atmos_xml and self._is_atmos_manifest(atmos_xml):
+                payload = self._stream_payload_from_dash(atmos_xml, prefer_atmos=True)
+                if payload and self._is_atmos_codec(payload.get('codec')):
+                    is_atmos = True
+                    payload['audioQuality'] = 'DOLBY_ATMOS'
+                else:
+                    payload = None
+
+        if payload is None:
+            for quality in self._quality_attempt_order(self.preferred_quality):
+                payload = self._resolve_track_quality(track_id, quality)
+                if payload:
+                    break
+
+        if not payload:
+            return {
+                'success': False,
+                'error': 'Failed to get Tidal stream at any quality level'
+            }
+
+        title, duration = self._get_track_title_duration(track_id)
+        if not duration and payload.get('manifestDuration'):
+            duration = payload['manifestDuration']
+
+        # Upstream answers a HI_RES_LOSSLESS request with 16-bit on CD-only
+        # masters, so trust the manifest's sampling rate over the request.
+        actual_quality = payload.get('audioQuality') or self.preferred_quality
+        sample_rate = payload.get('manifestSampleRate') or payload.get('sampleRate')
+        bit_depth = payload.get('bitDepth')
+        if is_atmos:
+            sample_rate = sample_rate or 48000
+            bit_depth = None
+        elif actual_quality == 'HI_RES_LOSSLESS' and not bit_depth:
+            bit_depth = 24 if (sample_rate or 0) > 48000 else None
+
+        codec = (payload.get('codec') or '').lower()
+        if is_atmos:
+            quality_info = 'Dolby Atmos (E-AC-3 JOC)'
+        elif bit_depth and sample_rate:
+            quality_info = f"{actual_quality} ({bit_depth}-bit/{sample_rate / 1000:.1f}kHz)"
+        else:
+            quality_info = actual_quality
+
+        if is_atmos:
+            mime_type = 'audio/eac3'
+        elif payload.get('hlsPlaylist'):
+            mime_type = 'audio/mp4'  # fragmented MP4 (FLAC or AAC inside)
+        elif actual_quality in ('HIGH', 'LOW') or 'mp4a' in codec or 'aac' in codec:
+            mime_type = 'audio/mp4'
+        else:
+            mime_type = 'audio/flac'
+
+        data = {
+            'url': payload['url'],
+            'title': title,
+            'duration': int(duration or 0),
+            'quality': actual_quality,
+            'qualityInfo': quality_info,
+            'bitDepth': bit_depth,
+            'sampleRate': sample_rate,
+            'mimeType': mime_type,
+            'codec': codec or None,
+            'audioMode': 'DOLBY_ATMOS' if is_atmos else 'STEREO',
+        }
+        if payload.get('hlsPlaylist'):
+            data['hlsPlaylist'] = payload['hlsPlaylist']
+            data['segmentUrls'] = payload['segmentUrls']
+        return {'success': True, 'data': data}
+
+    def get_stream_info(self, track_id: str) -> Dict[str, Any]:
+        """Get Tidal stream info honouring the user's quality and Dolby Atmos settings."""
+        try:
+            return self._resolve_stream(track_id, for_download=False)
         except Exception as e:
             logger.error(f"Tidal stream extraction failed: {e}")
             return {
                 'success': False,
                 'error': str(e)
             }
-    
+
     def get_stream_info_for_download(self, track_id: str) -> Dict[str, Any]:
-        """Get Tidal stream info optimized for downloading (Hi-Res first)
-        
-        Uses DOWNLOAD_QUALITY_LEVELS which prioritizes:
-        HI_RES_LOSSLESS → HI_RES → LOSSLESS → HIGH → LOW
+        """Get Tidal stream info for downloading (stereo, preferred quality first).
+
+        Segmented (DASH) results carry `segmentUrls`, which the Swift downloader
+        concatenates into one fragmented MP4 before remuxing to FLAC.
         """
         try:
-            if not HAS_REQUESTS:
-                return {
-                    'success': False,
-                    'error': 'requests library not available - Tidal downloading not supported'
-                }
-            
-            # Try each quality level starting from Hi-Res (highest)
-            response = None
-            used_quality = None
-            
-            for quality in self.DOWNLOAD_QUALITY_LEVELS:
-                response = self._make_request("/track/", {
-                    'id': track_id,
-                    'quality': quality
-                }, timeout=6, use_cache=False)  # Don't cache stream URLs
-                
-                if response and response.status_code == 200:
-                    data = response.json()
-                    if data.get('data') and data['data'].get('manifest'):
-                        used_quality = quality
-                        break
-            
-            if not response or not used_quality:
-                return {
-                    'success': False,
-                    'error': 'Failed to get download stream at any quality level'
-                }
-            
-            # Process the response same as get_stream_info
-            data = response.json()
-            track_data = data['data']
-            
-            # Get stream URL from manifest (same logic as get_stream_info)
-            stream_url = ''
-            manifest_base64 = track_data.get('manifest', '')
-            manifest_type = track_data.get('manifestMimeType', '')
-            
-            if manifest_base64:
-                try:
-                    import base64
-                    decoded_manifest = base64.b64decode(manifest_base64).decode('utf-8')
-                    
-                    if 'application/json' in manifest_type or 'application/vnd.tidal.bts' in manifest_type or decoded_manifest.startswith('{'):
-                        manifest_json = json.loads(decoded_manifest)
-                        urls = manifest_json.get('urls', [])
-                        if urls:
-                            stream_url = urls[0]
-                    elif 'application/dash+xml' in manifest_type:
-                        import re
-                        base_url_match = re.search(r'<BaseURL>([^<]+)</BaseURL>', decoded_manifest)
-                        if base_url_match:
-                            stream_url = base_url_match.group(1)
-                        else:
-                            media_match = re.search(r'initialization="([^"]+)"', decoded_manifest)
-                            if media_match:
-                                stream_url = media_match.group(1)
-                            else:
-                                url_match = re.search(r'https?://[^\s<>"]+\.(?:flac|mp4|m4a)', decoded_manifest)
-                                if url_match:
-                                    stream_url = url_match.group(0)
-                except Exception as e:
-                    pass  # Silently handle manifest errors
-            
-            if not stream_url:
-                return {
-                    'success': False,
-                    'error': 'Could not extract stream URL for download'
-                }
-            
-            # Get track info
-            info_response = self._make_request("/info/", {'id': track_id}, timeout=6)
-            
-            title = ''
-            duration = 0
-            
-            if info_response and info_response.status_code == 200:
-                info_data = info_response.json()
-                if info_data.get('data'):
-                    title = info_data['data'].get('title', '')
-                    duration = info_data['data'].get('duration', 0)
-            
-            actual_quality = track_data.get('audioQuality', used_quality)
-            bit_depth = track_data.get('bitDepth', '')
-            sample_rate = track_data.get('sampleRate', '')
-            
-            quality_info = actual_quality
-            if bit_depth and sample_rate:
-                quality_info = f"{actual_quality} ({bit_depth}-bit/{sample_rate/1000:.1f}kHz)"
-            
-            mime_type = 'audio/flac'
-            if actual_quality in ['HIGH', 'LOW']:
-                mime_type = 'audio/mp4'
-            
-            return {
-                'success': True,
-                'data': {
-                    'url': stream_url,
-                    'title': title,
-                    'duration': int(duration),
-                    'quality': actual_quality,
-                    'qualityInfo': quality_info,
-                    'bitDepth': bit_depth,
-                    'sampleRate': sample_rate,
-                    'mimeType': mime_type
-                }
-            }
-            
+            return self._resolve_stream(track_id, for_download=True)
         except Exception as e:
             logger.error(f"Tidal download stream extraction failed: {e}")
             return {
                 'success': False,
                 'error': str(e)
             }
-    
+
     def get_album_tracks(self, album_id: str) -> Dict[str, Any]:
         """Get tracks from a Tidal album using hifi-api"""
         try:
@@ -4122,7 +4338,12 @@ def handle_request(request_data: Dict[str, Any]) -> Dict[str, Any]:
             service = JioSaavnService()
         elif music_source == 'tidal':
             # print("🔥 Using Tidal service (Hi-Res Lossless)", file=sys.stderr)
-            service = TidalService()
+            service = TidalService(
+                preferred_quality=request_data.get('tidalQuality'),
+                dolby_atmos=bool(request_data.get('tidalDolbyAtmos', False)),
+                custom_api_url=request_data.get('tidalApiUrl'),
+                api_key=request_data.get('tidalApiKey'),
+            )
         else:
             # print("🔥 Using YouTube Music service", file=sys.stderr)
             service = YTMusicService()

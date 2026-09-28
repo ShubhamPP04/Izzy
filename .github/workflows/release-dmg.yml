@@ -1,0 +1,90 @@
+name: Build & Release DMG
+
+# Builds Izzy.dmg on macOS and publishes it as a GitHub release tagged
+# v<version>, where <version> comes from update.json. Runs when update.json
+# changes (i.e. a version bump), on a pushed v* tag, or manually.
+on:
+  push:
+    paths:
+      - update.json
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-dmg-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Read version
+        id: version
+        run: |
+          VERSION=$(python3 -c "import json;print(json.load(open('update.json'))['latest']['version'])")
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "tag=v$VERSION" >> "$GITHUB_OUTPUT"
+          python3 - <<'PY' > release_notes.md
+          import json
+          d = json.load(open('update.json'))
+          v = d['latest']['version']
+          notes = next((n for n in d['releaseNotes'] if n['version'] == v), None)
+          print(f"## Izzy {v}\n")
+          for change in (notes or {}).get('changes', []):
+              print(f"- {change}")
+          print("\nDownload **Izzy.dmg**, open it and drag Izzy to Applications. "
+                "The app is ad-hoc signed: on first launch right-click Izzy > Open.")
+          PY
+
+      - name: Skip if release already exists
+        id: exists
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "${{ steps.version.outputs.tag }}" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
+            echo "Release ${{ steps.version.outputs.tag }} already exists; nothing to do."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Select newest Xcode
+        if: steps.exists.outputs.skip != 'true'
+        run: |
+          XCODE=$(ls -d /Applications/Xcode_*.app | grep -v beta | sort -V | tail -1)
+          echo "Using $XCODE"
+          sudo xcode-select -s "$XCODE/Contents/Developer"
+          xcodebuild -version
+
+      - name: Build bundled Python environment
+        if: steps.exists.outputs.skip != 'true'
+        run: |
+          PY=$(command -v /opt/homebrew/bin/python3 || command -v python3)
+          "$PY" --version
+          "$PY" -m venv --copies music_env
+          music_env/bin/pip install --upgrade pip
+          music_env/bin/pip install -r requirements.txt
+
+      - name: Build DMG
+        if: steps.exists.outputs.skip != 'true'
+        run: |
+          chmod +x build_dmg_simple.sh
+          ./build_dmg_simple.sh
+          ls -lh dist/
+
+      - name: Publish release
+        if: steps.exists.outputs.skip != 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.version.outputs.tag }}
+          target_commitish: ${{ github.sha }}
+          name: Izzy ${{ steps.version.outputs.version }}
+          body_path: release_notes.md
+          files: dist/Izzy.dmg
+          make_latest: true

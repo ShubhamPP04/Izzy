@@ -281,6 +281,16 @@ struct StreamInfo: Codable {
     let duration: TimeInterval
     let quality: String?
     let mimeType: String?
+    // Tidal Hi-Res / Dolby Atmos details
+    var qualityInfo: String? = nil
+    var bitDepth: Int? = nil
+    var sampleRate: Int? = nil
+    var codec: String? = nil
+    var audioMode: String? = nil
+    /// HLS media playlist built from a segmented DASH manifest (Hi-Res, Atmos).
+    var hlsPlaylist: String? = nil
+    /// Init segment followed by media segments, for downloading DASH streams.
+    var segmentUrls: [String]? = nil
     
     init(url: String, title: String, duration: TimeInterval, quality: String? = nil, mimeType: String? = nil) {
         self.url = url
@@ -288,6 +298,10 @@ struct StreamInfo: Codable {
         self.duration = duration
         self.quality = quality
         self.mimeType = mimeType
+    }
+
+    var isDolbyAtmos: Bool {
+        audioMode?.uppercased() == "DOLBY_ATMOS"
     }
 }
 

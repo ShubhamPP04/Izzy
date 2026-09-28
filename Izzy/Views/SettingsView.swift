@@ -401,10 +401,12 @@ struct SettingsView: View {
                         .foregroundColor(MusicSource.tidal.color)
                         .font(.system(size: 12))
 
-                    Text("Tidal integration provides access to Hi-Res lossless audio quality (up to 24-bit/192kHz FLAC).")
+                    Text("Tidal integration provides access to Hi-Res lossless audio quality (up to 24-bit/192kHz FLAC) and Dolby Atmos.")
                         .font(.system(size: 11))
                         .foregroundColor(.secondary)
                 }
+
+                TidalSettingsSection()
             }
             
             Divider()
@@ -869,4 +871,69 @@ struct SettingsView: View {
         .frame(width: 600, height: 400)
         .padding()
         .background(Color.black.opacity(0.1))
+}
+
+
+// MARK: - Tidal Settings Section
+
+/// Streaming quality, Dolby Atmos and API endpoint options for the Tidal source.
+struct TidalSettingsSection: View {
+    @AppStorage(TidalSettings.qualityKey) private var quality: String = TidalQualityPreference.max.rawValue
+    @AppStorage(TidalSettings.dolbyAtmosKey) private var dolbyAtmos: Bool = false
+    @AppStorage(TidalSettings.apiURLKey) private var apiURL: String = ""
+    @AppStorage(TidalSettings.apiKeyKey) private var apiKey: String = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Image(systemName: "hifispeaker")
+                    .foregroundColor(MusicSource.tidal.color)
+                    .font(.system(size: 14, weight: .medium))
+                Text("Tidal Streaming Quality")
+                    .font(.system(size: 14, weight: .medium))
+                Spacer()
+            }
+
+            Picker("Quality", selection: $quality) {
+                ForEach(TidalQualityPreference.allCases) { option in
+                    Text(option.displayName).tag(option.rawValue)
+                }
+            }
+            .pickerStyle(MenuPickerStyle())
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Text("If a track is not available at the chosen quality, Izzy tries the next higher tier, then lower ones. Hi-Res masters that only exist at CD quality play as Lossless.")
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+
+            Toggle(isOn: $dolbyAtmos) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Prefer Dolby Atmos")
+                        .font(.system(size: 13, weight: .medium))
+                    Text("Plays the Dolby Atmos (E-AC-3 JOC) mix when Tidal has one, otherwise falls back to stereo at the quality above. Downloads are always stereo.")
+                        .font(.system(size: 11))
+                        .foregroundColor(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            }
+            .toggleStyle(SwitchToggleStyle())
+
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Custom API instance (optional)")
+                    .font(.system(size: 13, weight: .medium))
+                TextField("https://your-hifi-api.example.com", text: $apiURL)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .font(.system(size: 12))
+                SecureField("API key (sent as X-API-Key, optional)", text: $apiKey)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .font(.system(size: 12))
+                Text("A hifi-api compatible server tried before the built-in public instances. Required for playback when the public instances refuse /track/.")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        }
+        .padding(.top, 4)
+    }
 }
