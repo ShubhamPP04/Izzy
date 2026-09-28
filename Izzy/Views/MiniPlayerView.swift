@@ -136,7 +136,7 @@ struct MiniPlayerView: View {
                             .lineLimit(1)
                         
                         // Quality badge for Tidal tracks
-                        if manager.currentTrack?.musicSource == "tidal", let quality = manager.currentTrack?.audioQuality {
+                        if manager.currentTrack?.musicSource == "tidal", let quality = manager.currentStreamQuality ?? manager.currentTrack?.audioQuality {
                             TidalQualityBadge(quality: quality)
                         }
                     }

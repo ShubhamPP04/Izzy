@@ -30,6 +30,9 @@ struct TidalQualityBadge: View {
     
     private var qualityBadgeInfo: (text: String, color: Color)? {
         switch quality.uppercased() {
+        case "DOLBY_ATMOS":
+            // Dolby Atmos spatial mix - purple
+            return ("Dolby Atmos", Color(red: 0.6, green: 0.4, blue: 1.0))
         case "HI_RES_LOSSLESS", "HI_RES":
             // Hi-Res badge - gold/amber for premium quality
             return ("Hi-Res", Color(red: 0.85, green: 0.65, blue: 0.13)) // Gold

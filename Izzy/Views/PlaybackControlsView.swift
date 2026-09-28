@@ -210,6 +210,15 @@ struct TrackInfoView: View {
         self._isQueuePresented = isQueuePresented
     }
     
+    /// Badge for the quality actually streaming (Hi-Res, Lossless, Dolby Atmos).
+    @ViewBuilder private var streamQualityBadge: some View {
+        if track.musicSource == "tidal",
+           let quality = playbackManager.currentStreamQuality ?? track.audioQuality {
+            TidalQualityBadge(quality: quality)
+                .help(playbackManager.currentStreamQualityInfo ?? quality)
+        }
+    }
+    
     var body: some View {
         Group {
             if UserDefaults.standard.bool(forKey: "minimalPlaybackPlayer") {
@@ -254,6 +263,8 @@ struct TrackInfoView: View {
                                     .font(.system(size: 12, weight: .medium))
                                     .foregroundColor(.secondary)
                                     .lineLimit(1)
+
+                                streamQualityBadge
                                 
                                 // Progress bar
                                 VStack(spacing: 4) {
@@ -672,6 +683,8 @@ struct TrackInfoView: View {
                             .font(.system(size: isExpanded ? 14 : (UserDefaults.standard.bool(forKey: "minimalPlaybackPlayer") ? 9 : 12), weight: .medium))
                             .foregroundColor(.secondary)
                             .lineLimit(1)
+
+                        streamQualityBadge
                         
                         // Show resume info if track is stopped but has saved position
                         if playbackManager.playbackState == .stopped && playbackManager.currentTime > 0 {

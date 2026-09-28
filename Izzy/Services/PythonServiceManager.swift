@@ -51,6 +51,11 @@ struct ServiceRequest: Codable {
     let country: String?
     let trackTitle: String?
     let artistName: String?
+    // Tidal playback preferences (Settings > Tidal); only sent for Tidal requests.
+    let tidalQuality: String?
+    let tidalDolbyAtmos: Bool?
+    let tidalApiUrl: String?
+    let tidalApiKey: String?
     
     init(action: String,
          query: String? = nil,
@@ -76,6 +81,11 @@ struct ServiceRequest: Codable {
         self.country = country
         self.trackTitle = trackTitle
         self.artistName = artistName
+        let isTidal = musicSource == "tidal"
+        self.tidalQuality = isTidal ? TidalSettings.quality.rawValue : nil
+        self.tidalDolbyAtmos = isTidal ? TidalSettings.dolbyAtmos : nil
+        self.tidalApiUrl = isTidal ? TidalSettings.apiURL : nil
+        self.tidalApiKey = isTidal ? TidalSettings.apiKey : nil
     }
 }
 

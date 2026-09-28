@@ -34,6 +34,7 @@ class MiniPlayerManager: ObservableObject {
     @Published var duration: TimeInterval = 0
     @Published var playbackState: PlaybackState = .stopped
     @Published var currentTrack: Track?
+    @Published var currentStreamQuality: String?
     
     // Window state properties
     @Published var windowFrame: NSRect = NSRect(x: 100, y: 100, width: 300, height: 120) {
@@ -66,6 +67,14 @@ class MiniPlayerManager: ObservableObject {
             .sink { [weak self] (track: Track?) in
                 self?.currentTrack = track
                 self?.updateMiniPlayerContent()
+            }
+            .store(in: &cancellables)
+        
+        // Listen for the quality actually streaming (Tidal Hi-Res / Dolby Atmos)
+        searchState.playbackManager.$currentStreamQuality
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] quality in
+                self?.currentStreamQuality = quality
             }
             .store(in: &cancellables)
         

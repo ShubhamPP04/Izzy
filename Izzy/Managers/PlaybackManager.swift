@@ -14,16 +14,12 @@ import AppKit
 
 // 🚀 FAST SEEK OPTIMIZATION: Cached stream information for instant seeking
 private class CachedStreamInfo {
-    let url: String
-    let title: String
-    let duration: TimeInterval
+    let streamInfo: StreamInfo
     let cachedTime: Date
     let videoId: String
     
-    init(url: String, title: String, duration: TimeInterval, videoId: String) {
-        self.url = url
-        self.title = title
-        self.duration = duration
+    init(streamInfo: StreamInfo, videoId: String) {
+        self.streamInfo = streamInfo
         self.cachedTime = Date()
         self.videoId = videoId
     }
@@ -43,6 +39,10 @@ class PlaybackManager: ObservableObject {
     @Published var showLyrics: Bool = false
     @Published var duration: TimeInterval = 0
     @Published var isBuffering: Bool = false
+    /// Quality actually being played (e.g. DOLBY_ATMOS, HI_RES_LOSSLESS), which
+    /// can differ from the catalogue quality when a tier falls back.
+    @Published var currentStreamQuality: String?
+    @Published var currentStreamQualityInfo: String?
     @Published var volume: Float = 0.7 {
         didSet {
             player?.volume = volume
@@ -52,6 +52,9 @@ class PlaybackManager: ObservableObject {
 
     private var player: AVPlayer?
     private var playerItem: AVPlayerItem?
+    // Retained for the life of an HLS (Tidal Hi-Res / Atmos) item: the asset's
+    // resource loader only holds its delegate weakly.
+    private var hlsPlaylistLoader: TidalHLSPlaylistLoader?
     private var timeObserver: Any?
     private var cancellables = Set<AnyCancellable>()
     // Subscriptions scoped to the current AVPlayerItem. Kept separate from
@@ -310,12 +313,14 @@ class PlaybackManager: ObservableObject {
     // 🚀 FAST SEEK OPTIMIZATION: Stream caching for instant playback
     private func getStreamInfoWithCaching(videoId: String, musicSource: String? = nil) async throws -> StreamInfo {
         // Include music source in cache key to separate caches for different sources
-        let cacheKey = NSString(string: "\(videoId)_\(musicSource ?? "default")")
+        // Tidal streams also depend on the quality / Dolby Atmos settings.
+        let settingsSignature = musicSource == "tidal" ? "_\(TidalSettings.cacheSignature)" : ""
+        let cacheKey = NSString(string: "\(videoId)_\(musicSource ?? "default")\(settingsSignature)")
         
         // Check if we have cached stream info that hasn't expired
         if let cached = streamCache.object(forKey: cacheKey), !cached.isExpired {
             print("🚀 Using cached stream info for instant playback: \(videoId)")
-            return StreamInfo(url: cached.url, title: cached.title, duration: cached.duration)
+            return cached.streamInfo
         }
         
         // Fetch fresh stream info with the track's music source
@@ -323,12 +328,7 @@ class PlaybackManager: ObservableObject {
         let streamInfo = try await pythonService.getStreamInfo(videoId: videoId, musicSource: musicSource)
         
         // Cache the result for future use
-        let cachedInfo = CachedStreamInfo(
-            url: streamInfo.url,
-            title: streamInfo.title,
-            duration: streamInfo.duration,
-            videoId: videoId
-        )
+        let cachedInfo = CachedStreamInfo(streamInfo: streamInfo, videoId: videoId)
         streamCache.setObject(cachedInfo, forKey: cacheKey)
         
         return streamInfo
@@ -341,17 +341,17 @@ class PlaybackManager: ObservableObject {
         // Only cleanup if we're switching to a different track
         cleanup()
         
-        guard let url = URL(string: streamInfo.url) else {
+        guard let item = makePlayerItem(for: streamInfo, trackId: track.videoId) else {
             print("❌ Invalid stream URL: \(streamInfo.url)")
             playbackState = PlaybackState.error("Invalid stream URL")
             isBuffering = false
             return
         }
         
-        print("🚀 Creating optimized AVPlayer for perfect seeking: \(url)")
+        print("🚀 Creating optimized AVPlayer for perfect seeking")
         
         // Create player item
-        playerItem = AVPlayerItem(url: url)
+        playerItem = item
         player = AVPlayer(playerItem: playerItem)
         
         // 🚀 PERFECT SEEKING: Configure player for partial buffering
@@ -404,6 +404,25 @@ class PlaybackManager: ObservableObject {
         startBufferMonitoring()
         
         print("🚀 Enhanced player setup complete with perfect seeking capabilities")
+    }
+    
+    /// Builds the player item for a resolved stream. Segmented Tidal streams
+    /// (Hi-Res FLAC, Dolby Atmos) arrive as an HLS playlist and play through
+    /// TidalHLSPlaylistLoader; everything else is a plain progressive URL.
+    private func makePlayerItem(for streamInfo: StreamInfo, trackId: String) -> AVPlayerItem? {
+        hlsPlaylistLoader = nil
+        currentStreamQuality = streamInfo.quality
+        currentStreamQualityInfo = streamInfo.qualityInfo
+
+        if let playlist = streamInfo.hlsPlaylist, !playlist.isEmpty,
+           let hls = TidalHLSPlaylistLoader.makeAsset(playlist: playlist, trackId: trackId) {
+            hlsPlaylistLoader = hls.1
+            print("🎧 Tidal \(streamInfo.qualityInfo ?? streamInfo.quality ?? "stream") via HLS")
+            return AVPlayerItem(asset: hls.0)
+        }
+
+        guard let url = URL(string: streamInfo.url) else { return nil }
+        return AVPlayerItem(url: url)
     }
     
     // 🚀 FAST SEEK OPTIMIZATION: Prefetch next track in background
@@ -513,17 +532,17 @@ class PlaybackManager: ObservableObject {
         // Only cleanup if we're switching to a different track
         cleanup()
         
-        guard let url = URL(string: streamInfo.url) else {
+        guard let item = makePlayerItem(for: streamInfo, trackId: currentTrack?.videoId ?? "track") else {
             print("❌ Invalid stream URL: \(streamInfo.url)")
             playbackState = .error("Invalid stream URL")
             isBuffering = false
             return
         }
         
-        print("🎵 Creating AVPlayer with URL: \(url)")
+        print("🎵 Creating AVPlayer for: \(streamInfo.url)")
         
         // Create player item
-        playerItem = AVPlayerItem(url: url)
+        playerItem = item
         player = AVPlayer(playerItem: playerItem)
         
         // Configure audio for better playback
@@ -927,6 +946,7 @@ class PlaybackManager: ObservableObject {
         playerCancellables.removeAll()
         player = nil
         playerItem = nil
+        hlsPlaylistLoader = nil
     }
     
     // MARK: - Persistence

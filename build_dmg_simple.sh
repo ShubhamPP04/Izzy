@@ -26,13 +26,15 @@ xcodebuild -project Izzy.xcodeproj \
            -derivedDataPath "$BUILD_DIR" \
            BUILD_LIBRARY_FOR_DISTRIBUTION=NO \
            CODE_SIGN_IDENTITY="-" \
+           CODE_SIGN_STYLE=Manual \
+           DEVELOPMENT_TEAM="" \
            CODE_SIGNING_REQUIRED=YES \
            CODE_SIGNING_ALLOWED=YES \
            clean build
 
 # Update the Info.plist to the correct version
-APP_VERSION="1.3.1"
-APP_BUILD="21"
+APP_VERSION="1.4.0"
+APP_BUILD="22"
 echo "📝 Updating app version to ${APP_VERSION}..."
 plutil -replace CFBundleShortVersionString -string "$APP_VERSION" "$APP_PATH/Contents/Info.plist"
 plutil -replace CFBundleVersion -string "$APP_BUILD" "$APP_PATH/Contents/Info.plist"
