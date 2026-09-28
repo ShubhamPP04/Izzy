@@ -1,7 +1,7 @@
 {
   "latest": {
-    "version": "1.4.0",
-    "build": "22",
+    "version": "1.4.1",
+    "build": "23",
     "downloadURL": "https://github.com/ShubhamPP04/Izzy/releases/latest",
     "releaseNotesURL": "https://github.com/ShubhamPP04/Izzy/releases/latest",
     "minimumOSVersion": "14.0",
@@ -19,6 +19,14 @@
     ]
   },
   "releaseNotes": [
+    {
+      "version": "1.4.1",
+      "date": "2026-09-28",
+      "changes": [
+        "Fixed 1.4.0 shipping a bundled Python that could not start on most Macs, which left the app without search, Home or Tidal content",
+        "Izzy now falls back to system Python if the bundled Python cannot run"
+      ]
+    },
     {
       "version": "1.4.0",
       "date": "2026-09-28",
