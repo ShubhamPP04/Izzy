@@ -65,7 +65,12 @@ jobs:
       - name: Build bundled Python environment
         if: steps.exists.outputs.skip != 'true'
         run: |
-          PY=$(command -v /opt/homebrew/bin/python3 || command -v python3)
+          # Pin the Python the bundled venv links against. The venv's
+          # interpreter needs this exact Homebrew install on the user's Mac
+          # (music_env/pyvenv.cfg `home`), so it must match what Izzy users
+          # have - python@3.13, same as the v1.3.x releases.
+          brew list python@3.13 >/dev/null 2>&1 || brew install python@3.13
+          PY=/opt/homebrew/opt/python@3.13/bin/python3.13
           "$PY" --version
           "$PY" -m venv --copies music_env
           music_env/bin/pip install --upgrade pip

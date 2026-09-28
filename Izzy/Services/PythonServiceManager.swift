@@ -153,6 +153,27 @@ class PythonServiceManager: ObservableObject {
         }
     }
     
+    /// A venv's interpreter links against the Python it was created from
+    /// (`home` in pyvenv.cfg, e.g. /opt/homebrew/opt/python@3.13/bin). When
+    /// that installation is missing on this Mac the bundled interpreter
+    /// cannot even start, so fall back to system Python instead of silently
+    /// running without a backend.
+    private static func bundledVenvIsUsable(at venvURL: URL) -> Bool {
+        let cfgPath = venvURL.appendingPathComponent("pyvenv.cfg").path
+        guard let cfg = try? String(contentsOfFile: cfgPath, encoding: .utf8) else { return true }
+        for line in cfg.split(separator: "\n") {
+            let parts = line.split(separator: "=", maxSplits: 1).map { $0.trimmingCharacters(in: .whitespaces) }
+            if parts.count == 2, parts[0] == "home" {
+                let usable = FileManager.default.fileExists(atPath: parts[1])
+                if !usable {
+                    print("⚠️ Bundled Python needs \(parts[1]), which is missing - using system Python")
+                }
+                return usable
+            }
+        }
+        return true
+    }
+    
     private func startServiceWithScript(at path: String) throws {
         // Create pipes for communication
         inputPipe = Pipe()
@@ -170,7 +191,10 @@ class PythonServiceManager: ObservableObject {
             // Check Resources/music_env first (created by build script)
             if let resURL = Bundle.main.resourceURL {
                 let venvPython = resURL.appendingPathComponent("music_env/bin/python3").path
-                if FileManager.default.fileExists(atPath: venvPython) { return venvPython }
+                if FileManager.default.fileExists(atPath: venvPython),
+                   Self.bundledVenvIsUsable(at: resURL.appendingPathComponent("music_env")) {
+                    return venvPython
+                }
                 // Fallback to Resources/python_runtime provided by prior builds
                 let runtimePython = resURL.appendingPathComponent("python_runtime/bin/python3").path
                 if FileManager.default.fileExists(atPath: runtimePython) { return runtimePython }
@@ -225,7 +249,7 @@ class PythonServiceManager: ObservableObject {
         // If we are using a bundled venv, set VIRTUAL_ENV and PATH so python can find site-packages
         if let resURL = Bundle.main.resourceURL {
             let venvPath = resURL.appendingPathComponent("music_env").path
-            if FileManager.default.fileExists(atPath: venvPath) {
+            if pythonPath.hasPrefix(venvPath) {
                 environment["VIRTUAL_ENV"] = venvPath
                 let binPath = resURL.appendingPathComponent("music_env/bin").path
                 let existingPath = environment["PATH"] ?? ""

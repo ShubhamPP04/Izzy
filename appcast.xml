@@ -6,6 +6,26 @@
     <description>Most recent changes with links to updates.</description>
     <language>en</language>
 
+    <!-- Version 1.4.1 -->
+    <item>
+      <title>Version 1.4.1</title>
+      <description>
+        <![CDATA[
+          <ul>
+            <li>Fixed 1.4.0 shipping a bundled Python that could not start on most Macs, which left the app without search, Home or Tidal content</li>
+            <li>Izzy now falls back to system Python if the bundled Python cannot run</li>
+          </ul>
+        ]]>
+      </description>
+      <pubDate>Mon, 28 Sep 2026 14:00:00 +0000</pubDate>
+      <sparkle:version>23</sparkle:version>
+      <sparkle:shortVersionString>1.4.1</sparkle:shortVersionString>
+      <enclosure url="https://github.com/ShubhamPP04/Izzy/releases/download/v1.4.1/Izzy.dmg"
+                 sparkle:version="23"
+                 sparkle:shortVersionString="1.4.1"
+                 type="application/octet-stream" />
+    </item>
+
     <!-- Version 1.4.0 -->
     <item>
       <title>Version 1.4.0</title>
