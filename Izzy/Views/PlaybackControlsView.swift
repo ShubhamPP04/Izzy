@@ -269,13 +269,15 @@ struct TrackInfoView: View {
                                 // Progress bar
                                 VStack(spacing: 4) {
                                     Slider(
-                                        value: isDragging ? $dragValue : .constant(playbackManager.progress),
+                                        value: Binding(
+                                            get: { isDragging ? dragValue : playbackManager.progress },
+                                            set: { dragValue = $0 }
+                                        ),
                                         in: 0...1,
                                         onEditingChanged: { editing in
                                             if editing {
-                                                // Started dragging - initialize dragValue with current progress and set seeking flag
+                                                // Started dragging - suppress the time observer until the seek lands
                                                 isDragging = true
-                                                dragValue = playbackManager.progress
                                                 playbackManager.setSeekingState(true)  // Prevent time observer interference
                                             } else {
                                                 // Finished dragging - seek to the new position
@@ -479,13 +481,15 @@ struct TrackInfoView: View {
                             // Progress indicator as a seekable slider
                             VStack(spacing: 4) {
                                 Slider(
-                                    value: isDragging ? $dragValue : .constant(playbackManager.progress),
+                                    value: Binding(
+                                        get: { isDragging ? dragValue : playbackManager.progress },
+                                        set: { dragValue = $0 }
+                                    ),
                                     in: 0...1,
                                     onEditingChanged: { editing in
                                         if editing {
-                                            // Started dragging - initialize dragValue with current progress and set seeking flag
+                                            // Started dragging - suppress the time observer until the seek lands
                                             isDragging = true
-                                            dragValue = playbackManager.progress
                                             playbackManager.setSeekingState(true)  // Prevent time observer interference
                                         } else {
                                             // Finished dragging - seek to the new position
@@ -795,13 +799,15 @@ struct ProgressBarView: View {
                     
                     // Minimal progress slider
                     Slider(
-                        value: isDragging ? $dragValue : .constant(playbackManager.progress),
+                        value: Binding(
+                            get: { isDragging ? dragValue : playbackManager.progress },
+                            set: { dragValue = $0 }
+                        ),
                         in: 0...1,
                         onEditingChanged: { editing in
                             if editing {
-                                // Started dragging - initialize dragValue with current progress and set seeking flag
+                                // Started dragging - suppress the time observer until the seek lands
                                 isDragging = true
-                                dragValue = playbackManager.progress
                                 playbackManager.setSeekingState(true)  // Prevent time observer interference
                             } else {
                                 // Finished dragging - seek to the new position
