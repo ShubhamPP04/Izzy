@@ -18,6 +18,10 @@ rm -rf "$BUILD_DIR"
 rm -rf "$DIST_DIR"
 mkdir -p "$DIST_DIR"
 
+# Local dev runs leave __pycache__ inside the synced Izzy/ folder; Xcode
+# copies it verbatim into the bundle, so strip it before building.
+rm -rf Izzy/__pycache__
+
 # Build the app directly (without archiving)
 echo "📦 Building app with xcodebuild..."
 xcodebuild -project Izzy.xcodeproj \
@@ -32,9 +36,10 @@ xcodebuild -project Izzy.xcodeproj \
            CODE_SIGNING_ALLOWED=YES \
            clean build
 
-# Update the Info.plist to the correct version
-APP_VERSION="1.4.1"
-APP_BUILD="23"
+# Update the Info.plist to the version advertised in update.json (the same
+# values the release workflow and the in-app updater read)
+APP_VERSION=$(python3 -c "import json;print(json.load(open('update.json'))['latest']['version'])")
+APP_BUILD=$(python3 -c "import json;print(json.load(open('update.json'))['latest']['build'])")
 echo "📝 Updating app version to ${APP_VERSION}..."
 plutil -replace CFBundleShortVersionString -string "$APP_VERSION" "$APP_PATH/Contents/Info.plist"
 plutil -replace CFBundleVersion -string "$APP_BUILD" "$APP_PATH/Contents/Info.plist"
@@ -78,18 +83,23 @@ if [ -f "release-notes.html" ]; then
   echo "✅ Copied release-notes.html"
 fi
 
-# Copy virtual environment or runtime if present
-if [ -d "music_env" ]; then
+# Copy bundled Python: prefer the relocatable python_runtime (python-build-
+# standalone, works on any Mac); music_env venvs only run on Macs that have
+# the Python they were created from, so they are a legacy fallback.
+if [ -d "python_runtime" ] || [ -d "build/python_runtime" ]; then
+  SRC="python_runtime"; [ -d "$SRC" ] || SRC="build/python_runtime"
+  mkdir -p "$RESOURCES_DIR/python_runtime"
+  rsync -a --delete --exclude "**/__pycache__" --exclude "**/*.pyc" "$SRC/" "$RESOURCES_DIR/python_runtime/"
+  echo "✅ Bundled relocatable Python runtime from $SRC"
+  "$RESOURCES_DIR/python_runtime/bin/python3" --version
+elif [ -d "music_env" ]; then
   # -L dereferences symlinks: the venv's bin/python3.13 points at /opt/homebrew,
   # and codesign rejects a bundle containing symlinks that escape it. Copying the
   # real binary costs ~1MB and is exactly what `python -m venv --copies` produces.
   rsync -aL --delete --exclude "**/__pycache__" --exclude "**/*.pyc" "music_env" "$RESOURCES_DIR/"
   echo "✅ Copied music_env to Resources"
-elif [ -d "build/python_runtime" ]; then
-  rsync -aL --delete "build/python_runtime" "$RESOURCES_DIR/"
-  echo "✅ Copied python_runtime to Resources"
 else
-  echo "⚠️ No bundled Python env found (music_env or build/python_runtime). App will fall back to system Python."
+  echo "⚠️ No bundled Python env found (python_runtime or music_env). App will fall back to system Python."
 fi
 
 # Re-sign AFTER injecting resources. Copying files into an already-signed bundle

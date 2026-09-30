@@ -30,7 +30,8 @@
         "The quality badge now shows the bit depth and sample rate parsed from the actual audio stream",
         "Fixed the floating panel hiding itself a couple of seconds after appearing",
         "Fixed the Python backend dying shortly after launch on some systems",
-        "Lower battery use: playback-state saves reduced from every 2s to every 5s"
+        "Lower battery use: playback-state saves reduced from every 2s to every 5s",
+        "The DMG now bundles a self-contained Python 3.13 runtime (python-build-standalone), so the music backend starts on Macs without Homebrew or any extra setup"
       ]
     },
     {

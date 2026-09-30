@@ -11,7 +11,12 @@ import logging
 import time
 import traceback  # Add traceback for better error reporting
 from typing import Dict, List, Any, Optional
-from ytmusicapi import YTMusic
+try:
+    from ytmusicapi import YTMusic
+    HAS_YTMUSICAPI = True
+except ImportError:  # bare system-Python fallbacks may lack it
+    YTMusic = None
+    HAS_YTMUSICAPI = False
 
 # Import additional libraries
 try:
@@ -36,13 +41,6 @@ except ImportError as e:
     YoutubeDL = None
     HAS_YTDLP = False
 
-# Check if ytmusicapi is available
-try:
-    HAS_YTMUSICAPI = True
-    # print("✅ Successfully imported ytmusicapi", file=sys.stderr)
-except ImportError as e:
-    HAS_YTMUSICAPI = False
-    print(f"❌ Failed to import ytmusicapi: {e}", file=sys.stderr)
 
 import sys
 import json
@@ -50,7 +48,12 @@ import asyncio
 import logging
 import traceback  # Add traceback for better error reporting
 from typing import Dict, List, Any, Optional
-from ytmusicapi import YTMusic
+try:
+    from ytmusicapi import YTMusic
+    HAS_YTMUSICAPI = True
+except ImportError:  # bare system-Python fallbacks may lack it
+    YTMusic = None
+    HAS_YTMUSICAPI = False
 
 # Import yt-dlp with error handling
 try:
@@ -2941,7 +2944,6 @@ class TidalService:
 # MARK: - YouTube Music Service
 
 # 🔋 BATTERY OPTIMIZATION: Check for optional dependencies
-HAS_YTMUSICAPI = True
 
 try:
     import aiohttp

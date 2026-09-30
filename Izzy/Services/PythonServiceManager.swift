@@ -187,18 +187,22 @@ class PythonServiceManager: ObservableObject {
             throw ServiceError.processCreationFailed
         }
         
-        // Choose Python executable: prefer bundled venv/runtime inside app, then system Python
+        // Choose Python executable: prefer bundled runtime inside app, then system Python
         let bundledPythonPath: String? = {
-            // Check Resources/music_env first (created by build script)
             if let resURL = Bundle.main.resourceURL {
+                // Prefer the python-build-standalone runtime: a full relocatable
+                // CPython install that resolves its libraries via
+                // @executable_path-relative rpaths, so it starts on any Mac.
+                let runtimePython = resURL.appendingPathComponent("python_runtime/bin/python3").path
+                if FileManager.default.fileExists(atPath: runtimePython) { return runtimePython }
+
+                // Legacy music_env venv (created by older builds): only usable
+                // when the Python it was created from actually exists here.
                 let venvPython = resURL.appendingPathComponent("music_env/bin/python3").path
                 if FileManager.default.fileExists(atPath: venvPython),
                    Self.bundledVenvIsUsable(at: resURL.appendingPathComponent("music_env")) {
                     return venvPython
                 }
-                // Fallback to Resources/python_runtime provided by prior builds
-                let runtimePython = resURL.appendingPathComponent("python_runtime/bin/python3").path
-                if FileManager.default.fileExists(atPath: runtimePython) { return runtimePython }
             }
             return nil
         }()

@@ -62,19 +62,28 @@ jobs:
           sudo xcode-select -s "$XCODE/Contents/Developer"
           xcodebuild -version
 
-      - name: Build bundled Python environment
+      - name: Build bundled Python runtime
         if: steps.exists.outputs.skip != 'true'
         run: |
-          # Pin the Python the bundled venv links against. The venv's
-          # interpreter needs this exact Homebrew install on the user's Mac
-          # (music_env/pyvenv.cfg `home`), so it must match what Izzy users
-          # have - python@3.13, same as the v1.3.x releases.
-          brew list python@3.13 >/dev/null 2>&1 || brew install python@3.13
-          PY=/opt/homebrew/opt/python@3.13/bin/python3.13
-          "$PY" --version
-          "$PY" -m venv --copies music_env
-          music_env/bin/pip install --upgrade pip
-          music_env/bin/pip install -r requirements.txt
+          # Bundle a relocatable CPython (python-build-standalone). Its
+          # interpreter resolves libpython via @executable_path-relative
+          # rpaths, so the bundled runtime starts on any Mac. The previous
+          # approach (Homebrew venv with --copies) shipped a binary that still
+          # dyld-linked /opt/homebrew/Cellar/python@3.13 and died with
+          # "Library not loaded" on machines without that exact install,
+          # leaving the app without a backend.
+          PBS_TAG="20251014"
+          PYVER="3.13.9"
+          ARCH="aarch64-apple-darwin"
+          curl -fL -o pbs.tar.gz \
+            "https://github.com/astral-sh/python-build-standalone/releases/download/${PBS_TAG}/cpython-${PYVER}+${PBS_TAG}-${ARCH}-install_only.tar.gz"
+          rm -rf python_runtime
+          mkdir python_runtime
+          tar -xzf pbs.tar.gz -C python_runtime --strip-components=1
+          rm pbs.tar.gz
+          python_runtime/bin/python3 --version
+          python_runtime/bin/python3 -m pip install --upgrade pip
+          python_runtime/bin/python3 -m pip install -r requirements.txt
 
       - name: Build DMG
         if: steps.exists.outputs.skip != 'true'

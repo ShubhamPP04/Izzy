@@ -190,3 +190,4 @@ ExportOptions.plist
 # Local build artifacts
 build-debug/
 *.profraw
+python_runtime/
