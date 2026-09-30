@@ -6,6 +6,32 @@
     <description>Most recent changes with links to updates.</description>
     <language>en</language>
 
+
+    <!-- Version 1.5.0 -->
+    <item>
+      <title>Version 1.5.0</title>
+      <description>
+        <![CDATA[
+          <ul>
+            <li>Tidal playback works again: streams resolve through Monochrome's open API as direct lossless FLAC, with the legacy instance pool as failover and a Deezer fallback by ISRC</li>
+            <li>Synced, time-aligned lyrics for YouTube Music, Tidal and JioSaavn via LRCLIB</li>
+            <li>Fixed Tidal streams failing with 'Cannot Open' on CDNs that challenge requests without a browser User-Agent</li>
+            <li>The quality badge shows the bit depth and sample rate parsed from the actual audio stream</li>
+            <li>Fixed the floating panel hiding itself a couple of seconds after appearing</li>
+            <li>Fixed the Python backend dying shortly after launch on some systems</li>
+            <li>Lower battery use: playback-state saves reduced from every 2s to every 5s</li>
+          </ul>
+        ]]>
+      </description>
+      <pubDate>Wed, 30 Sep 2026 13:00:00 +0000</pubDate>
+      <sparkle:version>24</sparkle:version>
+      <sparkle:shortVersionString>1.5.0</sparkle:shortVersionString>
+      <enclosure url="https://github.com/ShubhamPP04/Izzy/releases/download/v1.5.0/Izzy.dmg"
+                 sparkle:version="24"
+                 sparkle:shortVersionString="1.5.0"
+                 type="application/octet-stream" />
+    </item>
+
     <!-- Version 1.4.1 -->
     <item>
       <title>Version 1.4.1</title>

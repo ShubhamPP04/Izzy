@@ -1,7 +1,7 @@
 {
   "latest": {
-    "version": "1.4.1",
-    "build": "23",
+    "version": "1.5.0",
+    "build": "24",
     "downloadURL": "https://github.com/ShubhamPP04/Izzy/releases/latest",
     "releaseNotesURL": "https://github.com/ShubhamPP04/Izzy/releases/latest",
     "minimumOSVersion": "14.0",
@@ -13,12 +13,26 @@
       "Recently played music tracking",
       "Native macOS media key integration",
       "Auto-update functionality",
+      "Synced lyrics for all music sources (LRCLIB)",
       "Tidal Hi-Res (24-bit/192kHz) and Dolby Atmos streaming",
       "Native macOS 26 Liquid Glass UI",
       "macOS 14.0+ compatibility"
     ]
   },
   "releaseNotes": [
+    {
+      "version": "1.5.0",
+      "date": "2026-09-30",
+      "changes": [
+        "Tidal playback works again: streams resolve through Monochrome's open API as direct lossless FLAC, with the legacy instance pool as failover and a Deezer fallback by ISRC",
+        "Synced, time-aligned lyrics for YouTube Music, Tidal and JioSaavn via LRCLIB, with each provider's native lyrics as fallback",
+        "Fixed Tidal streams failing with 'Cannot Open' - CDNs that challenge requests without a browser User-Agent are now relayed through an in-app loader",
+        "The quality badge now shows the bit depth and sample rate parsed from the actual audio stream",
+        "Fixed the floating panel hiding itself a couple of seconds after appearing",
+        "Fixed the Python backend dying shortly after launch on some systems",
+        "Lower battery use: playback-state saves reduced from every 2s to every 5s"
+      ]
+    },
     {
       "version": "1.4.1",
       "date": "2026-09-28",

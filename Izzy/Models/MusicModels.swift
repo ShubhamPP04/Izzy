@@ -291,6 +291,9 @@ struct StreamInfo: Codable {
     var hlsPlaylist: String? = nil
     /// Init segment followed by media segments, for downloading DASH streams.
     var segmentUrls: [String]? = nil
+    /// Relay bytes through TidalByteRangeLoader: the CDN challenges AVPlayer's
+    /// UA-less requests (Cloudflare 520 -> "Cannot Open").
+    var needsByteProxy: Bool? = nil
     
     init(url: String, title: String, duration: TimeInterval, quality: String? = nil, mimeType: String? = nil) {
         self.url = url

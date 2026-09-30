@@ -55,6 +55,8 @@ class PlaybackManager: ObservableObject {
     // Retained for the life of an HLS (Tidal Hi-Res / Atmos) item: the asset's
     // resource loader only holds its delegate weakly.
     private var hlsPlaylistLoader: TidalHLSPlaylistLoader?
+    // Retained for the life of a proxied FLAC item (same reason).
+    private var byteRangeLoader: TidalByteRangeLoader?
     private var timeObserver: Any?
     private var cancellables = Set<AnyCancellable>()
     // Subscriptions scoped to the current AVPlayerItem. Kept separate from
@@ -408,9 +410,11 @@ class PlaybackManager: ObservableObject {
     
     /// Builds the player item for a resolved stream. Segmented Tidal streams
     /// (Hi-Res FLAC, Dolby Atmos) arrive as an HLS playlist and play through
-    /// TidalHLSPlaylistLoader; everything else is a plain progressive URL.
+    /// TidalHLSPlaylistLoader; proxied FLAC streams go through
+    /// TidalByteRangeLoader; everything else is a plain progressive URL.
     private func makePlayerItem(for streamInfo: StreamInfo, trackId: String) -> AVPlayerItem? {
         hlsPlaylistLoader = nil
+        byteRangeLoader = nil
         currentStreamQuality = streamInfo.quality
         currentStreamQualityInfo = streamInfo.qualityInfo
 
@@ -422,6 +426,12 @@ class PlaybackManager: ObservableObject {
         }
 
         guard let url = URL(string: streamInfo.url) else { return nil }
+        if streamInfo.needsByteProxy == true,
+           let proxy = TidalByteRangeLoader.makeAsset(remoteURL: url, trackId: trackId) {
+            byteRangeLoader = proxy.1
+            print("🎧 Tidal \(streamInfo.qualityInfo ?? streamInfo.quality ?? "stream") via byte proxy")
+            return AVPlayerItem(asset: proxy.0)
+        }
         return AVPlayerItem(url: url)
     }
     
@@ -799,9 +809,11 @@ class PlaybackManager: ObservableObject {
             self.currentTime = time.seconds
             self.throttledUpdateNowPlayingInfo()
             
-            // 🔋 BATTERY EFFICIENCY: Save state more frequently when app is active
-            // Save every 2 seconds when app is active, every 10 seconds when inactive
-            let saveInterval = NSApp.isActive ? 2 : 10
+            // 🔋 BATTERY EFFICIENCY: Save state less often while active - each
+            // save is a JSON encode + UserDefaults flush. State also saves on
+            // pause/track change, so 5s only widens the crash-resume window.
+            // Save every 5 seconds when app is active, every 10 when inactive.
+            let saveInterval = NSApp.isActive ? 5 : 10
             if Int(self.currentTime) % saveInterval == 0 {
                 self.saveCurrentTrack()
             }

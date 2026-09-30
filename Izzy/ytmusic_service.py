@@ -866,63 +866,49 @@ class JioSaavnService:
                 'error': str(e)
             }
     
-    def get_lyrics(self, video_id: str) -> Dict[str, Any]:
-        """Get lyrics for JioSaavn song using saavn.dev API"""
+    def get_lyrics(self, video_id: str, track_title: str = None, artist_name: str = None) -> Dict[str, Any]:
+        """Synced lyrics via LRCLIB first, then JioSaavn's native (plain) lyrics."""
         try:
             if not HAS_REQUESTS:
                 return {
                     'success': False,
                     'error': 'requests library not available'
                 }
-            
+
+            song_data = None
             response = requests.get(f"{self.base_url}/songs", params={
-                'id': video_id
+                'ids': video_id
             }, timeout=10)
-            
-            if response.status_code != 200:
-                return {
-                    'success': False,
-                    'error': f'Failed to fetch song details: HTTP {response.status_code}'
-                }
-            
-            data = response.json()
-            if not data.get('success') or not data.get('data'):
-                return {
-                    'success': False,
-                    'error': 'Song not found'
-                }
-            
-            songs = data['data'] if isinstance(data['data'], list) else [data['data']]
-            if not songs:
-                return {
-                    'success': False,
-                    'error': 'No song data found'
-                }
-            
-            song_data = songs[0]
-            
-            # Check if lyrics are available
-            if song_data.get('lyrics'):
-                return {
-                    'success': True,
-                    'data': {
-                        'lyrics': song_data['lyrics'],
-                        'source': 'JioSaavn'
-                    }
-                }
-            else:
-                return {
-                    'success': False,
-                    'error': 'No lyrics found for this song'
-                }
-            
+            if response.status_code == 200:
+                data = response.json()
+                if data.get('success') and data.get('data'):
+                    songs = data['data'] if isinstance(data['data'], list) else [data['data']]
+                    song_data = songs[0] if songs else None
+
+            title = track_title or (song_data or {}).get('name') or (song_data or {}).get('title') or ''
+            artist = artist_name or (song_data or {}).get('primaryArtists') or ''
+            if isinstance(artist, list):
+                artist = ', '.join(a for a in artist if a)
+            artist = (artist or '').split(',')[0].strip()
+
+            # This API mirror exposes no lyrics text of its own, so LRCLIB
+            # (synced when available) is the lyrics source for JioSaavn too.
+            result = fetch_lrclib_lyrics(title, artist)
+            if result:
+                return result
+
+            return {
+                'success': False,
+                'error': 'No lyrics found for this song'
+            }
+
         except Exception as e:
             logger.error(f"JioSaavn lyrics failed: {e}")
             return {
                 'success': False,
                 'error': str(e)
             }
-    
+
     def get_home(self) -> Dict[str, Any]:
         """Get JioSaavn home feed with trending songs, playlists, etc."""
         try:
@@ -1231,69 +1217,237 @@ class JioSaavnService:
                 'error': str(e)
             }
 
-# MARK: - Tidal Service (using hifi-api)
+# MARK: - LRCLIB synced lyrics (shared by every provider)
+#
+# LRCLIB (https://lrclib.net) is a free, open lyrics database carrying LRC
+# timed lyrics for most commercial music, no API key needed. Every music
+# source layers it over its native lyrics: /api/get gives an exact match when
+# title/artist/duration are known, /api/search is the fuzzy fallback.
+
+def parse_lrc(lrc_text: str) -> list:
+    """Parse LRC format into a list of {time, text} objects."""
+    import re
+    lines = []
+    pattern = re.compile(r'\[(\d{2}):(\d{2})\.(\d{2,3})\]\s*(.*)')
+    for line in lrc_text.strip().split('\n'):
+        match = pattern.match(line.strip())
+        if match:
+            minutes = int(match.group(1))
+            seconds = int(match.group(2))
+            centiseconds = match.group(3)
+            # Handle both .xx and .xxx formats
+            ms = int(centiseconds) * (10 if len(centiseconds) == 2 else 1)
+            time_seconds = minutes * 60 + seconds + ms / 1000.0
+            lines.append({
+                'time': round(time_seconds, 3),
+                'text': match.group(4).strip()
+            })
+    return lines
+
+
+def _lrclib_request(path: str, params: Dict[str, str]) -> Optional[Any]:
+    """GET lrclib.net; None on 404/network trouble."""
+    import urllib.request
+    import urllib.parse
+    url = f"https://lrclib.net{path}?{urllib.parse.urlencode(params)}"
+    req = urllib.request.Request(url, headers={
+        'User-Agent': 'Izzy Music Player v1.5 (https://github.com/ShubhamPP04/Izzy)'
+    })
+    try:
+        with urllib.request.urlopen(req, timeout=5) as response:
+            return json.loads(response.read().decode('utf-8'))
+    except urllib.error.HTTPError as e:
+        if e.code == 404:
+            return None
+        logger.error(f"LRCLIB request failed: {e.code} {path}")
+        return None
+    except Exception as e:
+        logger.error(f"LRCLIB request failed: {e}")
+        return None
+
+
+def fetch_lrclib_lyrics(track: str, artist: str,
+                        album: str = None, duration: float = None) -> Optional[Dict[str, Any]]:
+    """Synced lyrics for a track, tolerating fuzzy metadata.
+
+    Returns {'success': True, 'data': {lyrics, source, syncedLyrics}} where
+    syncedLyrics is [{time, text}] or None for plain lyrics.
+    """
+    if not track or not artist:
+        return None
+
+    params = {'track_name': track, 'artist_name': artist}
+    if album:
+        params['album_name'] = album
+    if duration and duration > 0:
+        params['duration'] = str(int(round(duration)))
+
+    def pick(candidates):
+        """Best candidate: has real synced lyrics, duration nearest the track."""
+        usable = [c for c in candidates
+                  if c.get('syncedLyrics') or (c.get('plainLyrics') or '').strip()]
+
+        def score(item):
+            has_sync = 1 if item.get('syncedLyrics') else 0
+            if duration and item.get('duration'):
+                closeness = -abs(float(item['duration']) - float(duration))
+            else:
+                closeness = 0.0
+            return (has_sync, closeness)
+
+        return max(usable, key=score, default=None)
+
+    data = pick([_lrclib_request('/api/get', params) or []])
+
+    # Exact match missing (or junk) - fuzzy search on title+artist, then on a
+    # free-form query, which copes with multi-artist metadata like
+    # "Mithoon, Arijit Singh".
+    if not data:
+        data = pick(_lrclib_request('/api/search', params) or [])
+    if not data:
+        data = pick(_lrclib_request('/api/search', {
+            'q': f"{track} {artist}"
+        }) or [])
+
+    if not data:
+        return None
+
+    synced_raw = data.get('syncedLyrics')
+    plain = data.get('plainLyrics') or ''
+
+    # Quality guard: LRCLIB carries junk entries (e.g. a single line reading
+    # "probe") and instrumental placeholders with no text at all. Treat
+    # anything too short to be real lyrics as a miss so callers fall back to
+    # their native lyrics source.
+    synced_lines = parse_lrc(synced_raw) if synced_raw else []
+    if synced_lines and (len(synced_lines) < 2 or all(not l['text'] for l in synced_lines)):
+        synced_raw, synced_lines = None, []
+    if not synced_raw and len(plain.strip()) < 20:
+        return None
+
+    if synced_raw:
+        return {
+            'success': True,
+            'data': {
+                'lyrics': plain or synced_raw,
+                'source': 'LRCLIB (Synced)',
+                'syncedLyrics': synced_lines
+            }
+        }
+    if plain:
+        return {
+            'success': True,
+            'data': {
+                'lyrics': plain,
+                'source': 'LRCLIB',
+                'syncedLyrics': None
+            }
+        }
+    return None
+
+
+# MARK: - Tidal Service (via Monochrome)
 
 class TidalService:
     """
-    Tidal music service integration using hifi-api
-    GitHub: https://github.com/uimaxbai/hifi-api
-    Provides Hi-Res lossless audio (up to 24-bit/192kHz FLAC)
-    Uses public API instances that don't require authentication
-    
-    OPTIMIZED: Uses caching and single API calls to reduce CPU/memory usage
+    Tidal catalogue through the Monochrome player's API (2026-09 resolution chain).
+
+    The music underneath is Tidal, but every call goes through Monochrome's own
+    hosts - we never touch Tidal directly:
+
+      1. PRIMARY - metadata AND audio: https://tracks.monochrome.st
+           /search?q=                 tracks / releases / artists / playlists
+           /releases/<releaseId>      album with full track list (incl. ISRCs)
+           /artists/<artistId>        artist metadata
+           /track/<trackId>           direct FLAC stream (proxied, CORS-open,
+                                      range-capable, immutable CDN cache)
+           /proxy/mi/<cover>.jpg      artwork (640x640 JPEG)
+      2. POOL FALLBACK - legacy hifi-api instances, fail over on 429/401/5xx.
+         Their /track/ answers JSON or DASH manifests; DASH is rewritten into
+         an HLS media playlist for AVPlayer below, which keeps Hi-Res and
+         Dolby Atmos alive whenever the pool is reachable.
+      3. DEEZER LAST RESORT - https://dzr.tabs-vs-spaces.wtf/stream/
+         ?isrc=<isrc>&format=FLAC with Origin: https://monochrome.tf, for
+         tracks Monochrome cannot stream when their ISRC is known (stashed
+         from search results / album track lists).
+
+    NOTE: tracks.monochrome.st answers default python-requests / urllib user
+    agents with 403 - keep the browser User-Agent on every request, including
+    stream probes. AVPlayer's AppleCoreMedia agent is accepted.
     """
-    
+
+    PRIMARY_API = "https://tracks.monochrome.st"
+    DEEZER_STREAM_URL = "https://dzr.tabs-vs-spaces.wtf/stream/"
+    DEEZER_ORIGIN = "https://monochrome.tf"
+
+    # Tiers ascending, used to build the pool attempt order: preferred, then
+    # higher, then lower - so a CD-only master still plays when Max is requested.
+    QUALITY_TIERS_ASCENDING = ['LOW', 'HIGH', 'LOSSLESS', 'HI_RES_LOSSLESS']
+
+    # Circuit breaker for the legacy pool: after one full failed round, stop
+    # dialling it for a while. Class-level because the service process is
+    # long-lived but handle_request() builds a fresh instance per call.
+    _pool_dead_until = 0.0
+
     def __init__(self, preferred_quality: Optional[str] = None, dolby_atmos: bool = False,
                  custom_api_url: Optional[str] = None, api_key: Optional[str] = None):
-        # Public Hi-Fi API instances. Only hosts that actually answer are listed.
-        #
-        # Verified 2026-07-26: the entries that used to sit at the top of this list
-        # (tidal-api.binimum.org, triton.squid.wtf, hifi.geeked.wtf) are NXDOMAIN,
-        # and the qqdl.site hosts accept the connection then hang until the socket
-        # times out. Walking them cost ~30s of dead network I/O and up to five 10s
-        # timeouts on EVERY request — a pure battery and CPU drain with no upside.
-        #
-        # These three answer /search/ only. /track/ returns 403 "Upstream API error"
-        # on every reachable instance, so Tidal playback is unavailable regardless
-        # of which host is selected.
+        # Legacy hifi-api streaming pool - failover only, the primary API above
+        # is where search and streams come from. Ordered by weight like the
+        # Monochrome client does; a user-supplied hifi-api compatible instance
+        # (Settings > Tidal) goes first.
         self.api_targets = [
-            {"name": "api-monochrome-tf", "url": "https://api.monochrome.tf", "weight": 10},
-            {"name": "monochrome-samidy", "url": "https://monochrome-api.samidy.com", "weight": 6},
-            {"name": "us-west-monochrome", "url": "https://us-west.monochrome.tf", "weight": 4},
+            {"name": "arran", "url": "https://arran.monochrome.tf", "weight": 10},
+            {"name": "triton", "url": "https://triton.squid.wtf", "weight": 8},
+            {"name": "p1nkhamster", "url": "https://hifi.p1nkhamster.xyz", "weight": 6},
+            {"name": "wolf", "url": "https://wolf.qqdl.site", "weight": 2},
+            {"name": "maus", "url": "https://maus.qqdl.site", "weight": 2},
+            {"name": "vogel", "url": "https://vogel.qqdl.site", "weight": 2},
+            {"name": "katze", "url": "https://katze.qqdl.site", "weight": 2},
+            {"name": "hund", "url": "https://hund.qqdl.site", "weight": 2},
         ]
-        # A user-supplied hifi-api compatible instance (Settings > Tidal) goes first.
         custom_api_url = (custom_api_url or '').strip().rstrip('/')
         if custom_api_url.startswith('http://') or custom_api_url.startswith('https://'):
             self.api_targets.insert(0, {"name": "custom", "url": custom_api_url, "weight": 100})
         self.api_key = (api_key or '').strip()
         self.current_api_index = 0
-        self.base_url = self.api_targets[0]["url"]  # Default to highest weight
-        
+        self.base_url = self.api_targets[0]["url"]
+
         # Preferred quality tier (Settings > Tidal). HI_RES_LOSSLESS = up to 24-bit/192kHz.
         quality = (preferred_quality or 'HI_RES_LOSSLESS').upper()
         self.preferred_quality = quality if quality in self.QUALITY_TIERS_ASCENDING else 'HI_RES_LOSSLESS'
         self.dolby_atmos = bool(dolby_atmos)
-        
-        # Simple cache to reduce API calls (cache for 2 minutes - shorter to avoid stale responses)
+
+        # Cache for pool requests only (2 minutes - shorter to avoid stale responses)
         self._cache = {}
-        self._cache_ttl = 120  # 2 minutes
-        
+        self._cache_ttl = 120
+
         # Reuse session for connection pooling (reduces CPU/memory)
         self._session = None
-    
+
+    # trackId -> {title, artist, isrc, duration, artistIds} stashed from
+    # search results and album track lists. Feeds titles/ISRCs to stream
+    # resolution outside search flows (Deezer fallback, artist radio).
+    # Class-level because handle_request() builds a fresh instance per call
+    # while the service process stays alive across requests.
+    _meta: Dict[str, Dict] = {}
+    _meta_order: List[str] = []
+
+    # MARK: - HTTP plumbing
+
     def _get_session(self):
         """Get or create a reusable requests session"""
         if self._session is None:
             self._session = requests.Session()
-            # Set default headers
             self._session.headers.update({
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7)',
-                'Accept': 'application/json'
+                # tracks.monochrome.st rejects default python-requests/urllib
+                # user agents with 403; a browser UA is required everywhere.
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+                'Accept': 'application/json, text/plain, */*'
             })
             if self.api_key:
                 self._session.headers['X-API-Key'] = self.api_key
         return self._session
-    
+
     def _reset_session(self):
         """Reset the session to get fresh connections"""
         if self._session is not None:
@@ -1302,41 +1456,37 @@ class TidalService:
             except:
                 pass
             self._session = None
-        # print("🔄 Tidal session reset for fresh connection", file=sys.stderr)
-    
-    def _get_cache_key(self, endpoint: str, params: Dict) -> str:
-        """Generate cache key"""
-        return f"{endpoint}:{json.dumps(params, sort_keys=True)}"
-    
-    def _get_cached(self, key: str) -> Optional[Dict]:
-        """Get cached response if valid"""
-        if key in self._cache:
-            cached_time, data = self._cache[key]
-            if time.time() - cached_time < self._cache_ttl:
-                return data
-            else:
-                del self._cache[key]  # Remove expired
-        return None
-    
-    def _set_cache(self, key: str, data: Dict):
-        """Cache response data"""
-        # Limit cache size to prevent memory issues - max 30 entries
-        if len(self._cache) > 30:
-            # Remove oldest entries - keep only 15
-            oldest_keys = sorted(self._cache.keys(), key=lambda k: self._cache[k][0])[:15]
-            for k in oldest_keys:
-                del self._cache[k]
-            # print(f"🧹 Tidal cache cleanup: removed {len(oldest_keys)} old entries", file=sys.stderr)
-        self._cache[key] = (time.time(), data)
-    
+
+    def _primary_get(self, path: str, params: Optional[Dict] = None,
+                     timeout: int = 8, headers: Optional[Dict] = None) -> Optional[requests.Response]:
+        """GET the primary Monochrome API host. Returns a Response or None."""
+        if not HAS_REQUESTS:
+            return None
+        try:
+            url = f"{self.PRIMARY_API}{path}"
+            return self._get_session().get(url, params=params, timeout=timeout, headers=headers)
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Monochrome API request failed: {path}: {e}")
+            self._reset_session()
+            return None
+
     def _get_next_api(self) -> str:
         """Rotate to next API endpoint on failure"""
         self.current_api_index = (self.current_api_index + 1) % len(self.api_targets)
         self.base_url = self.api_targets[self.current_api_index]["url"]
         return self.base_url
-    
-    def _make_request(self, endpoint: str, params: Dict, timeout: int = 6, use_cache: bool = True) -> Optional[requests.Response]:
-        """Make request with automatic fallback to other API instances"""
+
+    def _make_request(self, endpoint: str, params: Dict, timeout: int = 6,
+                      use_cache: bool = True, max_targets: Optional[int] = None) -> Optional[requests.Response]:
+        """Make a pool request with automatic failover on 429/401/5xx.
+
+        `max_targets` caps how many hosts one call may walk (kept small for
+        optional paths like Atmos manifests so a dead pool cannot stall a
+        request for tens of seconds)."""
+        # Circuit breaker: pool recently failed a full round.
+        if time.time() < TidalService._pool_dead_until:
+            return None
+
         # Check cache first
         cache_key = self._get_cache_key(endpoint, params)
         if use_cache:
@@ -1348,16 +1498,18 @@ class TidalService:
                     def json(self):
                         return cached
                 return CachedResponse()
-        
+
         last_error = None
         tried_apis = set()
         session = self._get_session()
-        
-        while len(tried_apis) < len(self.api_targets):
+        target_budget = max_targets if max_targets else len(self.api_targets)
+
+        while len(tried_apis) < len(self.api_targets) and len(tried_apis) < target_budget:
             try:
                 url = f"{self.base_url}{endpoint}"
                 response = session.get(url, params=params, timeout=timeout)
                 if response.status_code == 200:
+                    TidalService._pool_dead_until = 0.0  # pool is alive again
                     # Only cache responses that have actual data
                     if use_cache:
                         try:
@@ -1368,12 +1520,12 @@ class TidalService:
                         except:
                             pass
                     return response
-                elif response.status_code in [500, 502, 503, 504, 429]:
-                    # Server error, try next API
+                elif response.status_code in [401, 429, 500, 502, 503, 504]:
+                    # Rate limited / unauthorized / server error, try next API
                     tried_apis.add(self.base_url)
                     self._get_next_api()
                 else:
-                    return response  # Return non-5xx errors for handling
+                    return response  # Return non-failover errors for handling
             except (requests.exceptions.Timeout, requests.exceptions.ConnectionError) as e:
                 last_error = e
                 tried_apis.add(self.base_url)
@@ -1386,19 +1538,78 @@ class TidalService:
                 self._get_next_api()
                 # Reset session on any error
                 self._reset_session()
-        
-        # All APIs failed - reset session and clear cache for fresh start
-        print(f"❌ All Tidal API endpoints failed. Last error: {last_error}", file=sys.stderr)
+
+        # All APIs failed - reset session, clear cache, and trip the breaker so
+        # the next few requests skip the dead pool entirely.
+        print(f"❌ All Tidal pool endpoints failed. Last error: {last_error}", file=sys.stderr)
         self._reset_session()
-        self._cache.clear()  # Clear cache so next request tries fresh
+        self._cache.clear()
+        TidalService._pool_dead_until = time.time() + 300
         return None
-        
+
+    def _get_cache_key(self, endpoint: str, params: Dict) -> str:
+        """Generate cache key"""
+        return f"{endpoint}:{json.dumps(params, sort_keys=True)}"
+
+    def _get_cached(self, key: str) -> Optional[Dict]:
+        """Get cached response if valid"""
+        if key in self._cache:
+            cached_time, data = self._cache[key]
+            if time.time() - cached_time < self._cache_ttl:
+                return data
+            else:
+                del self._cache[key]  # Remove expired
+        return None
+
+    def _set_cache(self, key: str, data: Dict):
+        """Cache response data"""
+        # Limit cache size to prevent memory issues - max 30 entries
+        if len(self._cache) > 30:
+            # Remove oldest entries - keep only 15
+            oldest_keys = sorted(self._cache.keys(), key=lambda k: self._cache[k][0])[:15]
+            for k in oldest_keys:
+                del self._cache[k]
+        self._cache[key] = (time.time(), data)
+
+    # MARK: - Track metadata stash
+
+    def _stash_meta(self, track: Dict):
+        """Remember title/artist/ISRC/duration from a search or release track
+        so stream resolution can label the track and reach the Deezer fallback."""
+        try:
+            track_id = str(track.get('trackId') or track.get('id') or '')
+            if not track_id:
+                return
+            names = track.get('artistNames')
+            if not names:
+                names = [a.get('name', '') for a in (track.get('artists') or []) if a.get('name')]
+            duration_raw = track.get('duration') or 0
+            # This API reports durations in milliseconds
+            duration = duration_raw / 1000.0 if duration_raw > 10000 else float(duration_raw)
+            self._meta[track_id] = {
+                'title': track.get('title', ''),
+                'artist': ', '.join(n for n in names if n),
+                'isrc': track.get('isrc') or '',
+                'duration': duration,
+                'artistIds': [str(i) for i in (track.get('artistIds') or [])],
+            }
+            self._meta_order.append(track_id)
+            if len(self._meta_order) > 600:
+                for old_id in self._meta_order[:200]:
+                    self._meta.pop(old_id, None)
+                del self._meta_order[:200]
+        except Exception:
+            pass
+
+    def _meta_for(self, track_id) -> Dict:
+        return self._meta.get(str(track_id)) or {}
+
+    # MARK: - Search (primary Monochrome API)
+
     def search_all(self, query: str, limit: int = 20) -> Dict[str, Any]:
         """
-        Search across Tidal music library using hifi-api
-        Extracts tracks, albums, and artists from track search results
-        Note: The hifi-api only supports track search, so we extract album/artist 
-        info from track results
+        Search across the Tidal catalogue via tracks.monochrome.st, which
+        natively returns tracks, releases (albums), artists and playlists.
         """
         try:
             if not HAS_REQUESTS:
@@ -1406,7 +1617,7 @@ class TidalService:
                     'success': False,
                     'error': 'requests library not available - Tidal search not supported'
                 }
-            
+
             results = {
                 'songs': [],
                 'albums': [],
@@ -1414,100 +1625,69 @@ class TidalService:
                 'playlists': [],
                 'videos': []
             }
-            
-            # Search for tracks (songs) - the main API endpoint
-            # We also extract albums and artists from track results
-            seen_albums = set()
-            seen_artists = set()
-            
-            try:
-                response = self._make_request("/search/", {'s': query}, timeout=6)
-                if response and response.status_code == 200:
-                    data = response.json()
-                    # Handle different response formats
-                    items = []
-                    if data.get('data'):
-                        items = data['data'].get('items', [])
-                    elif data.get('items'):
-                        items = data['items']
-                    elif isinstance(data, list):
-                        items = data
-                    
-                    for track in items[:limit * 2]:  # Get more items to extract albums/artists
-                        # Format track as song
-                        formatted_track = self._format_tidal_track(track)
-                        if formatted_track and len(results['songs']) < limit:
-                            results['songs'].append(formatted_track)
-                        
-                        # Extract album from track
-                        album_data = track.get('album', {})
-                        if album_data and album_data.get('id'):
-                            album_id = str(album_data.get('id'))
-                            if album_id not in seen_albums and len(results['albums']) < limit:
-                                seen_albums.add(album_id)
-                                formatted_album = self._format_tidal_album(album_data)
-                                if formatted_album:
-                                    results['albums'].append(formatted_album)
-                        
-                        # Extract artist from track
-                        artist_data = track.get('artist', {})
-                        if artist_data and artist_data.get('id'):
-                            artist_id = str(artist_data.get('id'))
-                            if artist_id not in seen_artists and len(results['artists']) < limit:
-                                seen_artists.add(artist_id)
-                                formatted_artist = self._format_tidal_artist(artist_data)
-                                if formatted_artist:
-                                    results['artists'].append(formatted_artist)
-                        
-                        # Also check artists array (multiple artists)
-                        for artist in track.get('artists', []):
-                            if artist and artist.get('id'):
-                                artist_id = str(artist.get('id'))
-                                if artist_id not in seen_artists and len(results['artists']) < limit:
-                                    seen_artists.add(artist_id)
-                                    formatted_artist = self._format_tidal_artist(artist)
-                                    if formatted_artist:
-                                        results['artists'].append(formatted_artist)
-                        
-            except Exception as e:
-                pass
-                # print(f"Error searching Tidal tracks: {e}", file=sys.stderr)
-            
-            # print(f"🔍 Tidal search: {len(results['songs'])} songs, {len(results['albums'])} albums, {len(results['artists'])} artists", file=sys.stderr)
-            
-            return {
-                'success': True,
-                'data': results
-            }
-            
+
+            response = self._primary_get('/search', {'q': query}, timeout=8)
+            if response is not None and response.status_code == 200:
+                data = response.json()
+
+                for track in (data.get('tracks') or []):
+                    if len(results['songs']) >= limit:
+                        break
+                    if not track.get('playable', True):
+                        continue  # Monochrome marks unstreamable tracks
+                    formatted_track = self._format_monochrome_track(track)
+                    if formatted_track:
+                        results['songs'].append(formatted_track)
+
+                for release in (data.get('releases') or []):
+                    if len(results['albums']) >= limit:
+                        break
+                    formatted_album = self._format_monochrome_release(release)
+                    if formatted_album:
+                        results['albums'].append(formatted_album)
+
+                for artist in (data.get('artists') or []):
+                    if len(results['artists']) >= limit:
+                        break
+                    formatted_artist = self._format_monochrome_artist(artist)
+                    if formatted_artist:
+                        results['artists'].append(formatted_artist)
+
+                for playlist in (data.get('playlists') or []):
+                    if len(results['playlists']) >= limit:
+                        break
+                    formatted_playlist = self._format_monochrome_playlist(playlist)
+                    if formatted_playlist:
+                        results['playlists'].append(formatted_playlist)
+
+                if (results['songs'] or results['albums']
+                        or results['artists'] or results['playlists']):
+                    return {'success': True, 'data': results}
+
+            # Primary unreachable or empty - try the legacy pool before giving up.
+            return self._search_pool(query, limit)
+
         except Exception as e:
             logger.error(f"Tidal search failed: {e}")
             return {
                 'success': False,
                 'error': str(e)
             }
-    
-    def load_more_songs(self, query: str, offset: int = 0, limit: int = 20) -> Dict[str, Any]:
-        """
-        Load more Tidal songs with pagination support.
-        This is specifically for the "Load More" feature in search results.
-        """
+
+    def _search_pool(self, query: str, limit: int = 20) -> Dict[str, Any]:
+        """Legacy hifi-api search fallback (pool instances)."""
         try:
-            if not HAS_REQUESTS:
-                return {
-                    'success': False,
-                    'error': 'requests library not available'
-                }
-            
-            songs = []
-            
-            # Make request with offset parameter
-            response = self._make_request("/search/", {
-                's': query,
-                'offset': offset,
-                'limit': limit
-            }, timeout=6)
-            
+            results = {
+                'songs': [],
+                'albums': [],
+                'artists': [],
+                'playlists': [],
+                'videos': []
+            }
+            seen_albums = set()
+            seen_artists = set()
+
+            response = self._make_request("/search/", {'s': query}, timeout=6)
             if response and response.status_code == 200:
                 data = response.json()
                 items = []
@@ -1517,29 +1697,168 @@ class TidalService:
                     items = data['items']
                 elif isinstance(data, list):
                     items = data
-                
-                for track in items[:limit]:
+
+                for track in items[:limit * 2]:
                     formatted_track = self._format_tidal_track(track)
-                    if formatted_track:
-                        songs.append(formatted_track)
-            
-            # print(f"🔍 Tidal load more (offset={offset}): {len(songs)} more songs", file=sys.stderr)
-            
+                    if formatted_track and len(results['songs']) < limit:
+                        results['songs'].append(formatted_track)
+
+                    album_data = track.get('album', {})
+                    if album_data and album_data.get('id'):
+                        album_id = str(album_data.get('id'))
+                        if album_id not in seen_albums and len(results['albums']) < limit:
+                            seen_albums.add(album_id)
+                            formatted_album = self._format_tidal_album(album_data)
+                            if formatted_album:
+                                results['albums'].append(formatted_album)
+
+                    artist_data = track.get('artist', {})
+                    if artist_data and artist_data.get('id'):
+                        artist_id = str(artist_data.get('id'))
+                        if artist_id not in seen_artists and len(results['artists']) < limit:
+                            seen_artists.add(artist_id)
+                            formatted_artist = self._format_tidal_artist(artist_data)
+                            if formatted_artist:
+                                results['artists'].append(formatted_artist)
+
+                    for artist in track.get('artists', []):
+                        if artist and artist.get('id'):
+                            artist_id = str(artist.get('id'))
+                            if artist_id not in seen_artists and len(results['artists']) < limit:
+                                seen_artists.add(artist_id)
+                                formatted_artist = self._format_tidal_artist(artist)
+                                if formatted_artist:
+                                    results['artists'].append(formatted_artist)
+
             return {
                 'success': True,
-                'data': {
-                    'songs': songs,
-                    'hasMore': len(songs) >= limit  # Indicate if there might be more results
-                }
+                'data': results
             }
-            
         except Exception as e:
-            logger.error(f"Tidal load more failed: {e}")
+            logger.error(f"Tidal pool search failed: {e}")
             return {
                 'success': False,
                 'error': str(e)
             }
-    
+
+    def load_more_songs(self, query: str, offset: int = 0, limit: int = 20) -> Dict[str, Any]:
+        """The primary search endpoint ignores offset/limit parameters, so
+        pagination is not available - report no more results."""
+        return {
+            'success': True,
+            'data': {
+                'songs': [],
+                'hasMore': False
+            }
+        }
+
+    # MARK: - Formatters (primary Monochrome shapes)
+
+    @staticmethod
+    def _track_artist_names(track: Dict) -> str:
+        names = track.get('artistNames')
+        if not names:
+            names = [a.get('name', '') for a in (track.get('artists') or []) if a.get('name')]
+        return ', '.join(n for n in names if n)
+
+    def _format_monochrome_track(self, track: Dict) -> Optional[Dict]:
+        """Format a tracks.monochrome.st track result."""
+        try:
+            track_id = str(track.get('trackId') or track.get('id') or '')
+            self._stash_meta(track)
+            duration_ms = track.get('duration') or 0
+            return {
+                'id': track_id,
+                'type': 'songs',
+                'title': track.get('title', ''),
+                'artist': self._track_artist_names(track),
+                'thumbnailURL': track.get('artwork') or '',
+                'duration': (duration_ms / 1000.0) or None,
+                'explicit': bool(track.get('explicit', False)),
+                'videoId': track_id,
+                'browseId': None,
+                'year': None,
+                'playCount': None,
+                'musicSource': 'tidal',
+                # Monochrome serves the catalogue as lossless FLAC
+                'audioQuality': 'LOSSLESS'
+            }
+        except Exception as e:
+            logger.error(f"Error formatting Monochrome track: {e}")
+            return None
+
+    def _format_monochrome_release(self, release: Dict) -> Optional[Dict]:
+        """Format a tracks.monochrome.st release (album) result."""
+        try:
+            release_id = str(release.get('releaseId') or release.get('id') or '')
+            artist = release.get('artistNames')
+            if not artist:
+                artist = [a.get('name', '') for a in (release.get('artists') or []) if a.get('name')]
+            return {
+                'id': release_id,
+                'type': 'albums',
+                'title': release.get('title', ''),
+                'artist': ', '.join(n for n in artist if n),
+                'thumbnailURL': release.get('artwork') or '',
+                'duration': None,
+                'explicit': bool(release.get('explicit', False)),
+                'videoId': None,
+                'browseId': release_id,
+                'year': str(release.get('releaseDate', ''))[:4] or None,
+                'playCount': None,
+                'musicSource': 'tidal'
+            }
+        except Exception as e:
+            logger.error(f"Error formatting Monochrome release: {e}")
+            return None
+
+    def _format_monochrome_artist(self, artist: Dict) -> Optional[Dict]:
+        """Format a tracks.monochrome.st artist result."""
+        try:
+            artist_id = str(artist.get('artistId') or artist.get('id') or '')
+            name = artist.get('name') or artist.get('displayName') or ''
+            return {
+                'id': artist_id,
+                'type': 'artists',
+                'title': name,
+                'artist': name,
+                'thumbnailURL': artist.get('avatar') or '',
+                'duration': None,
+                'explicit': False,
+                'videoId': None,
+                'browseId': artist_id,
+                'year': None,
+                'playCount': None,
+                'musicSource': 'tidal'
+            }
+        except Exception as e:
+            logger.error(f"Error formatting Monochrome artist: {e}")
+            return None
+
+    def _format_monochrome_playlist(self, playlist: Dict) -> Optional[Dict]:
+        """Format a tracks.monochrome.st playlist result."""
+        try:
+            playlist_id = str(playlist.get('playlistId') or playlist.get('id') or '')
+            return {
+                'id': playlist_id,
+                'type': 'playlists',
+                'title': playlist.get('title', ''),
+                'artist': playlist.get('ownerId') or 'Tidal Playlist',
+                'thumbnailURL': '',
+                'duration': None,
+                'explicit': False,
+                'videoId': None,
+                'browseId': playlist_id,
+                'year': None,
+                'playCount': str(playlist.get('trackCount')) if playlist.get('trackCount') else None,
+                'musicSource': 'tidal'
+            }
+        except Exception as e:
+            logger.error(f"Error formatting Monochrome playlist: {e}")
+            return None
+
+    # MARK: - Formatters (legacy hifi-api shapes, pool fallback)
+
     def _format_tidal_track(self, track: Dict) -> Optional[Dict]:
         """Format Tidal track result from hifi-api"""
         try:
@@ -1550,7 +1869,7 @@ class TidalService:
             if cover:
                 slug = cover.replace('-', '/')
                 image_url = f"https://resources.tidal.com/images/{slug}/640x640.jpg"
-            
+
             # Get artist name
             artist_name = ''
             artist = track.get('artist', {})
@@ -1558,7 +1877,7 @@ class TidalService:
                 artist_name = artist.get('name', '')
             elif track.get('artists') and len(track['artists']) > 0:
                 artist_name = ', '.join([a.get('name', '') for a in track['artists'] if a.get('name')])
-            
+
             # Get audio quality info from track metadata
             audio_quality = track.get('audioQuality', '')
             # Normalize quality names
@@ -1568,7 +1887,7 @@ class TidalService:
                 audio_quality = 'HI_RES_LOSSLESS'
             elif 'HIRES' in str(audio_quality).upper():
                 audio_quality = 'HI_RES'
-            
+
             # Check for HiRes availability from mediaMetadata if present
             media_metadata = track.get('mediaMetadata', {})
             if media_metadata:
@@ -1577,7 +1896,7 @@ class TidalService:
                     audio_quality = 'HI_RES_LOSSLESS'
                 elif 'LOSSLESS' in tags:
                     audio_quality = 'LOSSLESS'
-            
+
             return {
                 'id': str(track.get('id', '')),
                 'type': 'songs',
@@ -1596,7 +1915,7 @@ class TidalService:
         except Exception as e:
             logger.error(f"Error formatting Tidal track: {e}")
             return None
-    
+
     def _format_tidal_album(self, album: Dict) -> Optional[Dict]:
         """Format Tidal album result from hifi-api"""
         try:
@@ -1606,7 +1925,7 @@ class TidalService:
             if cover:
                 slug = cover.replace('-', '/')
                 image_url = f"https://resources.tidal.com/images/{slug}/640x640.jpg"
-            
+
             # Get artist name
             artist_name = ''
             artist = album.get('artist', {})
@@ -1614,7 +1933,7 @@ class TidalService:
                 artist_name = artist.get('name', '')
             elif album.get('artists') and len(album['artists']) > 0:
                 artist_name = ', '.join([a.get('name', '') for a in album['artists'] if a.get('name')])
-            
+
             return {
                 'id': str(album.get('id', '')),
                 'type': 'albums',
@@ -1632,7 +1951,7 @@ class TidalService:
         except Exception as e:
             logger.error(f"Error formatting Tidal album: {e}")
             return None
-    
+
     def _format_tidal_artist(self, artist: Dict) -> Optional[Dict]:
         """Format Tidal artist result from hifi-api"""
         try:
@@ -1642,7 +1961,7 @@ class TidalService:
             if picture:
                 slug = picture.replace('-', '/')
                 image_url = f"https://resources.tidal.com/images/{slug}/640x640.jpg"
-            
+
             return {
                 'id': str(artist.get('id', '')),
                 'type': 'artists',
@@ -1660,7 +1979,7 @@ class TidalService:
         except Exception as e:
             logger.error(f"Error formatting Tidal artist: {e}")
             return None
-    
+
     def _format_tidal_playlist(self, playlist: Dict) -> Optional[Dict]:
         """Format Tidal playlist result from hifi-api"""
         try:
@@ -1670,7 +1989,7 @@ class TidalService:
             if image:
                 slug = image.replace('-', '/')
                 image_url = f"https://resources.tidal.com/images/{slug}/640x640.jpg"
-            
+
             return {
                 'id': str(playlist.get('uuid', '')),
                 'type': 'playlists',
@@ -1688,19 +2007,19 @@ class TidalService:
         except Exception as e:
             logger.error(f"Error formatting Tidal playlist: {e}")
             return None
-    
-    # MARK: - Stream resolution (Hi-Res + Dolby Atmos)
+
+    # MARK: - Stream resolution (direct FLAC -> pool DASH -> Deezer fallback)
     #
-    # Tidal answers /track/ in two manifest shapes:
+    # The primary stream is a plain FLAC file at
+    #   https://tracks.monochrome.st/track/<trackId>
+    # so AVPlayer needs no manifest rewriting for it. The legacy pool path
+    # below is kept for Hi-Res / Dolby Atmos: Tidal answers /track/ there in
+    # two manifest shapes:
     #   * application/vnd.tidal.bts  -> JSON with a direct file URL (LOSSLESS/HIGH/LOW)
     #   * application/dash+xml       -> segmented DASH (HI_RES_LOSSLESS, and Atmos
     #                                   from /trackManifests/?atmos=true)
     # AVPlayer cannot play DASH, so DASH manifests are rewritten into an HLS media
     # playlist (fMP4 segments are valid HLS media) that Swift serves to AVPlayer.
-
-    # Tiers ascending, used to build the attempt order: preferred, then higher,
-    # then lower - so a CD-only master still plays when Max is requested.
-    QUALITY_TIERS_ASCENDING = ['LOW', 'HIGH', 'LOSSLESS', 'HI_RES_LOSSLESS']
 
     def _quality_attempt_order(self, preferred: str) -> List[str]:
         tiers = self.QUALITY_TIERS_ASCENDING
@@ -1730,7 +2049,7 @@ class TidalService:
         response = self._make_request("/trackManifests/", {
             'id': track_id,
             'atmos': 'true'
-        }, timeout=6, use_cache=False)
+        }, timeout=4, use_cache=False, max_targets=2)
         if not response or response.status_code != 200:
             return None
         try:
@@ -1886,7 +2205,6 @@ class TidalService:
 
         chosen = max(candidates, key=rank)
         rep, adaptation, rep_base = chosen['rep'], chosen['adaptation'], chosen['base']
-
         template = child(rep, 'SegmentTemplate')
         if template is None:
             template = child(adaptation, 'SegmentTemplate')
@@ -2009,7 +2327,8 @@ class TidalService:
         }
 
     def _resolve_track_quality(self, track_id: str, quality: str) -> Optional[Dict[str, Any]]:
-        """Fetch /track/ at one quality and turn its manifest into a stream payload."""
+        """Fetch /track/ at one quality from the pool and turn its manifest
+        into a stream payload."""
         response = self._make_request("/track/", {
             'id': track_id,
             'quality': quality
@@ -2050,15 +2369,79 @@ class TidalService:
         payload['sampleRate'] = self._as_int(track_data.get('sampleRate'))
         return payload
 
-    def _get_track_title_duration(self, track_id: str):
-        info_response = self._make_request("/info/", {'id': track_id}, timeout=6)
-        if info_response and info_response.status_code == 200:
-            try:
-                info = info_response.json().get('data') or {}
-                return info.get('title', ''), info.get('duration', 0) or 0
-            except Exception:
-                pass
-        return '', 0
+    def _resolve_direct_flac(self, track_id: str) -> Optional[Dict[str, Any]]:
+        """Resolve the primary Monochrome stream: a direct FLAC file at
+        /track/<id>. A 64-byte range fetch validates availability and yields
+        the FLAC STREAMINFO header (sample rate, bit depth, exact duration),
+        which drives the quality badge - no manifest walk needed."""
+        url = f"{self.PRIMARY_API}/track/{track_id}"
+        try:
+            with self._get_session().get(url, timeout=6, stream=True,
+                                         headers={'Range': 'bytes=0-63'}) as response:
+                if response.status_code not in (200, 206):
+                    return None
+                data = b''
+                for chunk in response.iter_content(64):
+                    data += chunk
+                    if len(data) >= 64:
+                        break
+        except requests.exceptions.RequestException:
+            return None
+
+        if len(data) < 42 or data[:4] != b'fLaC':
+            return None
+        streaminfo = data[8:42]
+        sample_rate = (streaminfo[10] << 12) | (streaminfo[11] << 4) | (streaminfo[12] >> 4)
+        channels = ((streaminfo[12] >> 1) & 0b111) + 1
+        # FLAC stores bits-per-sample minus one
+        bit_depth = (((streaminfo[12] & 1) << 4) | (streaminfo[13] >> 4)) + 1
+        total_samples = ((streaminfo[13] & 0x0F) << 32) | (streaminfo[14] << 24) | \
+                        (streaminfo[15] << 16) | (streaminfo[16] << 8) | streaminfo[17]
+
+        payload = {'url': url, 'codec': 'flac'}
+        if 8000 <= sample_rate <= 192000:
+            payload['sampleRate'] = sample_rate
+            payload['manifestSampleRate'] = sample_rate
+            if 4 <= bit_depth <= 32:
+                payload['bitDepth'] = bit_depth
+            payload['channels'] = channels
+            if sample_rate > 0 and total_samples > 0:
+                payload['duration'] = total_samples / sample_rate
+        return payload
+
+    def _resolve_deezer_fallback(self, track_id: str) -> Optional[Dict[str, Any]]:
+        """Last resort: Deezer FLAC by ISRC for tracks Monochrome cannot
+        stream. The endpoint only answers requests bearing an allowed Origin
+        (Monochrome's own), which we must send ourselves."""
+        isrc = self._meta_for(track_id).get('isrc')
+        if not isrc:
+            return None
+        from urllib.parse import quote
+        url = f"{self.DEEZER_STREAM_URL}?isrc={quote(isrc)}&format=FLAC"
+        try:
+            with self._get_session().get(url, timeout=6, stream=True, allow_redirects=True,
+                                         headers={
+                                             'Origin': self.DEEZER_ORIGIN,
+                                             'Referer': f"{self.DEEZER_ORIGIN}/",
+                                             'Range': 'bytes=0-63'
+                                         }) as response:
+                if response.status_code not in (200, 206):
+                    logger.error(f"Deezer fallback unavailable: HTTP {response.status_code}")
+                    return None
+                data = b''
+                for chunk in response.iter_content(64):
+                    data += chunk
+                    if len(data) >= 64:
+                        break
+        except requests.exceptions.RequestException as e:
+            logger.error(f"Deezer fallback failed: {e}")
+            return None
+
+        if data[4:8] == b'ftyp':
+            codec = 'aac'
+        else:
+            codec = 'flac'  # format=FLAC; accept opaque streams too
+        return {'url': url, 'codec': codec, 'audioQuality': 'LOSSLESS'}
 
     def _resolve_stream(self, track_id: str, for_download: bool) -> Dict[str, Any]:
         if not HAS_REQUESTS:
@@ -2069,6 +2452,7 @@ class TidalService:
 
         payload = None
         is_atmos = False
+        source = 'monochrome'
 
         # Dolby Atmos: a property of the STREAM, never the request. Only report
         # Atmos when the manifest really carries E-AC-3 JOC; otherwise play stereo.
@@ -2083,11 +2467,23 @@ class TidalService:
                 else:
                     payload = None
 
+        # 1) Primary: direct lossless FLAC from Monochrome's own stream host.
         if payload is None:
+            payload = self._resolve_direct_flac(track_id)
+
+        # 2) Pool fallback: legacy hifi-api /track/ (JSON or DASH -> HLS).
+        if payload is None:
+            source = 'pool'
             for quality in self._quality_attempt_order(self.preferred_quality):
                 payload = self._resolve_track_quality(track_id, quality)
                 if payload:
                     break
+
+        # 3) Last resort: Deezer by ISRC for tracks Monochrome cannot serve.
+        if payload is None:
+            payload = self._resolve_deezer_fallback(track_id)
+            if payload:
+                source = 'deezer'
 
         if not payload:
             return {
@@ -2095,24 +2491,32 @@ class TidalService:
                 'error': 'Failed to get Tidal stream at any quality level'
             }
 
-        title, duration = self._get_track_title_duration(track_id)
+        meta = self._meta_for(track_id)
+        title = meta.get('title') or ''
+        duration = meta.get('duration') or 0
+        if not duration and payload.get('duration'):
+            duration = payload['duration']
         if not duration and payload.get('manifestDuration'):
             duration = payload['manifestDuration']
 
-        # Upstream answers a HI_RES_LOSSLESS request with 16-bit on CD-only
-        # masters, so trust the manifest's sampling rate over the request.
+        # Upstream quality answers can lag the actual master, so trust parsed
+        # STREAMINFO over request parameters.
         actual_quality = payload.get('audioQuality') or self.preferred_quality
         sample_rate = payload.get('manifestSampleRate') or payload.get('sampleRate')
         bit_depth = payload.get('bitDepth')
         if is_atmos:
             sample_rate = sample_rate or 48000
             bit_depth = None
+        elif source == 'monochrome':
+            actual_quality = 'HI_RES_LOSSLESS' if ((bit_depth or 16) > 16 or (sample_rate or 44100) > 48000) else 'LOSSLESS'
         elif actual_quality == 'HI_RES_LOSSLESS' and not bit_depth:
             bit_depth = 24 if (sample_rate or 0) > 48000 else None
 
         codec = (payload.get('codec') or '').lower()
         if is_atmos:
             quality_info = 'Dolby Atmos (E-AC-3 JOC)'
+        elif source == 'deezer':
+            quality_info = 'Lossless (FLAC via Deezer fallback)'
         elif bit_depth and sample_rate:
             quality_info = f"{actual_quality} ({bit_depth}-bit/{sample_rate / 1000:.1f}kHz)"
         else:
@@ -2122,6 +2526,8 @@ class TidalService:
             mime_type = 'audio/eac3'
         elif payload.get('hlsPlaylist'):
             mime_type = 'audio/mp4'  # fragmented MP4 (FLAC or AAC inside)
+        elif 'flac' in codec or source == 'monochrome':
+            mime_type = 'audio/flac'
         elif actual_quality in ('HIGH', 'LOW') or 'mp4a' in codec or 'aac' in codec:
             mime_type = 'audio/mp4'
         else:
@@ -2142,6 +2548,11 @@ class TidalService:
         if payload.get('hlsPlaylist'):
             data['hlsPlaylist'] = payload['hlsPlaylist']
             data['segmentUrls'] = payload['segmentUrls']
+        elif source in ('monochrome', 'deezer'):
+            # These CDNs challenge AVPlayer's UA-less requests (Cloudflare 520
+            # -> "Cannot Open"), so Swift relays the bytes through its resource
+            # loader with a browser User-Agent.
+            data['needsByteProxy'] = True
         return {'success': True, 'data': data}
 
     def get_stream_info(self, track_id: str) -> Dict[str, Any]:
@@ -2170,440 +2581,259 @@ class TidalService:
                 'error': str(e)
             }
 
+    # MARK: - Catalogue (primary Monochrome API)
+
     def get_album_tracks(self, album_id: str) -> Dict[str, Any]:
-        """Get tracks from a Tidal album using hifi-api"""
+        """Album track list from /releases/<id> (includes ISRCs, which we
+        stash for the Deezer fallback)."""
         try:
             if not HAS_REQUESTS:
                 return {
                     'success': False,
                     'error': 'requests library not available'
                 }
-            
-            response = self._make_request("/album/", {'id': album_id}, timeout=15)
-            
+
+            response = self._primary_get(f"/releases/{album_id}", timeout=15)
             if not response or response.status_code != 200:
                 return {
                     'success': False,
                     'error': f'Failed to fetch album: HTTP {response.status_code if response else "no response"}'
                 }
-            
+
             data = response.json()
-            if not data.get('data'):
+            tracks = []
+            for track in (data.get('tracks') or []):
+                if not track.get('playable', True):
+                    continue
+                formatted_track = self._format_monochrome_track(track)
+                if formatted_track:
+                    tracks.append(formatted_track)
+
+            if not tracks:
                 return {
                     'success': False,
-                    'error': 'Album not found'
+                    'error': 'Album not found or has no playable tracks'
                 }
-            
-            album_data = data['data']
-            tracks = []
-            
-            # Get tracks from album items (limit to 20)
-            items = album_data.get('items', [])
-            for item in items[:20]:  # Limit to 20 tracks
-                # Handle both direct track and item wrapper
-                track = item.get('item', item)
-                if track.get('type') == 'track' or track.get('id'):
-                    formatted_track = self._format_tidal_track(track)
-                    if formatted_track:
-                        tracks.append(formatted_track)
-            
             return {
                 'success': True,
                 'data': tracks
             }
-            
+
         except Exception as e:
             logger.error(f"Tidal album tracks failed: {e}")
             return {
                 'success': False,
                 'error': str(e)
             }
-    
+
     def get_playlist_tracks(self, playlist_id: str) -> Dict[str, Any]:
-        """Get tracks from a Tidal playlist using hifi-api"""
-        try:
-            if not HAS_REQUESTS:
-                return {
-                    'success': False,
-                    'error': 'requests library not available'
-                }
-            
-            response = self._make_request("/playlist/", {'id': playlist_id}, timeout=15)
-            
-            if not response or response.status_code != 200:
-                return {
-                    'success': False,
-                    'error': f'Failed to fetch playlist: HTTP {response.status_code if response else "no response"}'
-                }
-            
-            data = response.json()
-            if not data.get('items'):
-                return {
-                    'success': False,
-                    'error': 'Playlist not found or empty'
-                }
-            
-            tracks = []
-            for item in data['items'][:20]:  # Limit to 20 tracks
-                track = item.get('item', item)
-                formatted_track = self._format_tidal_track(track)
-                if formatted_track:
-                    tracks.append(formatted_track)
-            
-            return {
-                'success': True,
-                'data': tracks
-            }
-            
-        except Exception as e:
-            logger.error(f"Tidal playlist tracks failed: {e}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
-    
+        """Monochrome exposes no playlist-detail endpoint, so Tidal playlist
+        results cannot be expanded yet."""
+        return {
+            'success': False,
+            'error': 'Tidal playlists are not supported by the current Monochrome API'
+        }
+
     def get_artist_songs(self, artist_id: str) -> Dict[str, Any]:
-        """Get songs from a Tidal artist using hifi-api"""
+        """Monochrome has no artist-tracks endpoint: resolve the artist name
+        via /artists/<id>, then filter a name search by artistIds."""
         try:
             if not HAS_REQUESTS:
                 return {
                     'success': False,
                     'error': 'requests library not available'
                 }
-            
-            # Use 'f' parameter to fetch artist with albums and tracks
-            response = self._make_request("/artist/", {'f': artist_id}, timeout=15)
-            
-            if not response or response.status_code != 200:
+
+            response = self._primary_get(f"/artists/{artist_id}", timeout=10)
+            artist_name = ''
+            if response is not None and response.status_code == 200:
+                try:
+                    artist_name = response.json().get('name') or ''
+                except Exception:
+                    artist_name = ''
+            if not artist_name:
                 return {
                     'success': False,
-                    'error': f'Failed to fetch artist: HTTP {response.status_code if response else "no response"}'
+                    'error': 'Artist not found'
                 }
-            
-            data = response.json()
-            tracks = []
-            
-            # Get tracks from response, sort by popularity, and limit to 20
-            if data.get('tracks'):
-                # Sort by popularity (descending) - higher popularity first
-                sorted_tracks = sorted(
-                    data['tracks'],
-                    key=lambda t: t.get('popularity', 0) or 0,
-                    reverse=True
-                )
-                for track in sorted_tracks[:20]:  # Limit to 20 tracks
-                    formatted_track = self._format_tidal_track(track)
-                    if formatted_track:
-                        tracks.append(formatted_track)
-            
+
+            search_result = self.search_all(artist_name, limit=40)
+            if not search_result.get('success'):
+                return search_result
+            songs = search_result.get('data', {}).get('songs', []) or []
+            if not songs:
+                return {
+                    'success': True,
+                    'data': []
+                }
+
+            own_tracks = [s for s in songs
+                          if artist_id in (self._meta_for(s.get('videoId')).get('artistIds') or [])]
+            picked = own_tracks if len(own_tracks) >= 3 else songs
             return {
                 'success': True,
-                'data': tracks
+                'data': picked[:30]
             }
-            
+
         except Exception as e:
             logger.error(f"Tidal artist songs failed: {e}")
             return {
                 'success': False,
                 'error': str(e)
             }
-    
+
     def get_artist_songs_paginated(self, artist_id: str, offset: int = 0, limit: int = 20) -> Dict[str, Any]:
-        """Get songs from a Tidal artist with pagination support"""
+        """Search-backed artist songs, sliced to the requested page."""
+        result = self.get_artist_songs(artist_id)
+        if not result.get('success'):
+            return result
+        songs = result.get('data') or []
+        return {
+            'success': True,
+            'data': songs[offset:offset + limit]
+        }
+
+    # MARK: - Radio / suggestions
+
+    def _similar_by_artist(self, track_id: str) -> Dict[str, Any]:
+        """Radio-style suggestions: more tracks from the same artist. The
+        Monochrome API has no mix endpoint, so this is search-backed and needs
+        the track's stashed metadata (i.e. the track came from a search or an
+        album view in this session)."""
         try:
             if not HAS_REQUESTS:
                 return {
                     'success': False,
                     'error': 'requests library not available'
                 }
-            
-            # Use 'f' parameter to fetch artist with albums and tracks
-            response = self._make_request("/artist/", {'f': artist_id}, timeout=15, use_cache=False)
-            
-            if not response or response.status_code != 200:
-                return {
-                    'success': False,
-                    'error': f'Failed to fetch artist: HTTP {response.status_code if response else "no response"}'
-                }
-            
-            data = response.json()
-            tracks = []
-            
-            # Get tracks from response with offset and limit
-            if data.get('tracks'):
-                # Sort by popularity (descending) before pagination
-                sorted_tracks = sorted(
-                    data['tracks'],
-                    key=lambda t: t.get('popularity', 0) or 0,
-                    reverse=True
-                )
-                # Apply offset and limit for pagination
-                paginated_tracks = sorted_tracks[offset:offset + limit]
-                
-                for track in paginated_tracks:
-                    formatted_track = self._format_tidal_track(track)
-                    if formatted_track:
-                        tracks.append(formatted_track)
-            
-            # print(f"🔍 Tidal artist songs (offset={offset}): {len(tracks)} songs", file=sys.stderr)
-            
-            return {
-                'success': True,
-                'data': tracks
-            }
-            
-        except Exception as e:
-            logger.error(f"Tidal artist songs paginated failed: {e}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
-    
-    def get_watch_playlist(self, track_id: str, playlist_id: str = None) -> Dict[str, Any]:
-        """Get similar tracks/mix for Tidal"""
-        try:
-            if not HAS_REQUESTS:
-                return {
-                    'success': False,
-                    'error': 'requests library not available'
-                }
-            
-            # First get track info to find mix ID
-            response = self._make_request("/info/", {'id': track_id}, timeout=10)
-            
-            if not response or response.status_code != 200:
-                return self.get_song_suggestions(track_id)
-            
-            data = response.json()
-            if not data.get('data'):
-                return self.get_song_suggestions(track_id)
-            
-            track_data = data['data']
-            mixes = track_data.get('mixes', {})
-            track_mix_id = mixes.get('TRACK_MIX')
-            
-            if track_mix_id:
-                # Get the mix tracks
-                mix_response = self._make_request("/mix/", {'id': track_mix_id}, timeout=15)
-                
-                if mix_response and mix_response.status_code == 200:
-                    mix_data = mix_response.json()
-                    tracks = []
-                    for item in mix_data.get('items', []):
-                        track = item.get('item', item)
-                        formatted_track = self._format_tidal_track(track)
-                        if formatted_track:
-                            tracks.append(formatted_track)
-                    
-                    if tracks:
-                        return {
-                            'success': True,
-                            'data': tracks
-                        }
-            
-            return self.get_song_suggestions(track_id)
-            
-        except Exception as e:
-            logger.error(f"Tidal watch playlist failed: {e}")
-            return {
-                'success': False,
-                'error': str(e)
-            }
-    
-    def get_song_suggestions(self, track_id: str) -> Dict[str, Any]:
-        """Get song suggestions by finding similar tracks"""
-        try:
-            if not HAS_REQUESTS:
-                return {
-                    'success': False,
-                    'error': 'requests library not available'
-                }
-            
-            # Get track info first
-            response = self._make_request("/info/", {'id': track_id}, timeout=10)
-            
-            if not response or response.status_code != 200:
+
+            artist = (self._meta_for(track_id).get('artist') or '').split(',')[0].strip()
+            if not artist:
                 return {
                     'success': False,
                     'error': 'Could not get track info for suggestions'
                 }
-            
-            data = response.json()
-            if not data.get('data'):
+
+            search_result = self.search_all(artist, limit=20)
+            if not search_result.get('success'):
+                return search_result
+            songs = search_result.get('data', {}).get('songs', []) or []
+            others = [s for s in songs if str(s.get('videoId')) != str(track_id)]
+            if not others:
                 return {
                     'success': False,
-                    'error': 'Track not found'
+                    'error': 'No suggestions available'
                 }
-            
-            track_data = data['data']
-            
-            # Try to get album tracks as suggestions
-            album = track_data.get('album', {})
-            album_id = album.get('id')
-            
-            if album_id:
-                album_tracks = self.get_album_tracks(str(album_id))
-                if album_tracks.get('success') and album_tracks.get('data'):
-                    return album_tracks
-            
-            # Fallback: search for similar tracks by artist
-            artist = track_data.get('artist', {})
-            artist_name = artist.get('name', '')
-            
-            if artist_name:
-                search_result = self.search_all(artist_name, limit=20)
-                if search_result.get('success'):
-                    songs = search_result.get('data', {}).get('songs', [])
-                    return {
-                        'success': True,
-                        'data': songs
-                    }
-            
             return {
-                'success': False,
-                'error': 'No suggestions available'
+                'success': True,
+                'data': others
             }
-            
+
         except Exception as e:
             logger.error(f"Tidal song suggestions failed: {e}")
             return {
                 'success': False,
                 'error': str(e)
             }
-    
-    def get_lyrics(self, track_id: str) -> Dict[str, Any]:
-        """Get lyrics for Tidal track using hifi-api"""
+
+    def get_watch_playlist(self, track_id: str, playlist_id: str = None) -> Dict[str, Any]:
+        """Get similar tracks for the queue (artist-based)."""
+        return self._similar_by_artist(track_id)
+
+    def get_song_suggestions(self, track_id: str) -> Dict[str, Any]:
+        """Get song suggestions (artist-based)."""
+        return self._similar_by_artist(track_id)
+
+    def get_lyrics(self, track_id: str, track_title: str = None, artist_name: str = None) -> Dict[str, Any]:
+        """Synced lyrics via LRCLIB - the Monochrome API exposes no lyrics
+        endpoint of its own. Title/artist come from Swift or the metadata
+        stash; the stashed duration sharpens the match."""
         try:
-            if not HAS_REQUESTS:
-                return {
-                    'success': False,
-                    'error': 'requests library not available'
-                }
-            
-            response = self._make_request("/lyrics/", {'id': track_id}, timeout=10)
-            
-            if not response or response.status_code != 200:
-                return {
-                    'success': False,
-                    'error': f'Lyrics not available: HTTP {response.status_code if response else "no response"}'
-                }
-            
-            data = response.json()
-            if not data.get('lyrics'):
-                return {
-                    'success': False,
-                    'error': 'No lyrics found for this track'
-                }
-            
-            lyrics_data = data['lyrics']
-            lyrics_text = lyrics_data.get('lyrics', '')
-            
+            meta = self._meta_for(track_id)
+            title = track_title or meta.get('title') or ''
+            artist = artist_name or (meta.get('artist') or '').split(',')[0].strip()
+            duration = meta.get('duration') or 0
+            result = fetch_lrclib_lyrics(title, artist, duration=duration)
+            if result:
+                return result
             return {
-                'success': True,
-                'data': {
-                    'lyrics': lyrics_text,
-                    'source': 'Tidal'
-                }
+                'success': False,
+                'error': 'No lyrics found for this song'
             }
-            
         except Exception as e:
             logger.error(f"Tidal lyrics failed: {e}")
             return {
                 'success': False,
                 'error': str(e)
             }
-    
+
+    # MARK: - Discovery (search-backed)
+
+    def _quick_track_search(self, query: str, count: int) -> List[Dict[str, Any]]:
+        """Formatted primary tracks for curated sections, empty on failure."""
+        tracks: List[Dict[str, Any]] = []
+        response = self._primary_get('/search', {'q': query}, timeout=10)
+        if response is not None and response.status_code == 200:
+            try:
+                data = response.json()
+            except Exception:
+                return tracks
+            for track in (data.get('tracks') or []):
+                if len(tracks) >= count:
+                    break
+                if not track.get('playable', True):
+                    continue
+                formatted_track = self._format_monochrome_track(track)
+                if formatted_track:
+                    tracks.append(formatted_track)
+        return tracks
+
     def get_home(self) -> Dict[str, Any]:
-        """Get Tidal home feed with curated high-quality content
-        OPTIMIZED: Reduced from 8 API calls to 3 for better performance
-        """
+        """Tidal home feed with curated high-quality content."""
         try:
             if not HAS_REQUESTS:
                 return {
                     'success': False,
                     'error': 'requests library not available'
                 }
-            
-            sections = []
-            
-            # OPTIMIZED: Only 3 curated sections instead of 8
+
             curated_sections = [
                 {'query': 'hi-res lossless', 'title': '🎧 Hi-Res Lossless'},
                 {'query': 'top hits 2024', 'title': '🔥 Top Hits'},
                 {'query': 'new releases', 'title': '🆕 New Releases'},
             ]
-            
+
+            sections = []
             for section_info in curated_sections:
-                try:
-                    response = self._make_request("/search/", {'s': section_info['query']}, timeout=10)
-                    
-                    if response and response.status_code == 200:
-                        data = response.json()
-                        items = []
-                        if data.get('data'):
-                            items = data['data'].get('items', [])
-                        elif data.get('items'):
-                            items = data['items']
-                        
-                        tracks = []
-                        for track in items[:12]:  # Reduced from 15
-                            formatted_track = self._format_tidal_track(track)
-                            if formatted_track:
-                                tracks.append(formatted_track)
-                        
-                        if tracks and len(tracks) >= 3:
-                            sections.append({
-                                'title': section_info['title'],
-                                'contents': tracks
-                            })
-                            
-                except Exception as e:
-                    pass  # Silently skip failed sections
-            
+                tracks = self._quick_track_search(section_info['query'], 12)
+                if len(tracks) >= 3:
+                    sections.append({
+                        'title': section_info['title'],
+                        'contents': tracks
+                    })
+
             return {
                 'success': True,
                 'data': sections
             }
-            
+
         except Exception as e:
             logger.error(f"Tidal home feed failed: {e}")
             return {
                 'success': False,
                 'error': str(e)
             }
-    
+
     def get_charts(self, country: str = 'US') -> Dict[str, Any]:
-        """Get Tidal charts"""
+        """Tidal charts (search-backed)."""
         try:
             if not HAS_REQUESTS:
                 return {
                     'success': False,
                     'error': 'requests library not available'
                 }
-            
-            # Search for chart-like content
-            response = self._make_request("/search/", {'s': 'top hits'}, timeout=15)
-            
-            if not response or response.status_code != 200:
-                return {
-                    'success': False,
-                    'error': f'Failed to fetch charts: HTTP {response.status_code if response else "no response"}'
-                }
-            
-            data = response.json()
-            songs = []
-            
-            items = []
-            if data.get('data'):
-                items = data['data'].get('items', [])
-            elif data.get('items'):
-                items = data['items']
-            
-            for track in items[:50]:
-                formatted_track = self._format_tidal_track(track)
-                if formatted_track:
-                    songs.append(formatted_track)
-            
+
+            songs = self._quick_track_search('top hits', 50)
             return {
                 'success': True,
                 'data': {
@@ -2613,18 +2843,17 @@ class TidalService:
                     'trending': []
                 }
             }
-            
+
         except Exception as e:
             logger.error(f"Tidal charts failed: {e}")
             return {
                 'success': False,
                 'error': str(e)
             }
-    
+
     def get_mood_categories(self) -> Dict[str, Any]:
         """Get Tidal mood/genre categories"""
         try:
-            # Define common moods/genres for Tidal
             categories = {
                 'Moods': [
                     {'title': 'Happy', 'params': 'happy'},
@@ -2647,64 +2876,67 @@ class TidalService:
                     {'title': 'Country', 'params': 'country'}
                 ]
             }
-            
+
             return {
                 'success': True,
                 'data': categories
             }
-            
+
         except Exception as e:
             logger.error(f"Tidal mood categories failed: {e}")
             return {
                 'success': False,
                 'error': str(e)
             }
-    
+
     def get_mood_playlists(self, params: str) -> Dict[str, Any]:
-        """Get Tidal playlists for a specific mood/genre"""
+        """Playlists for a mood/genre, falling back to matching songs."""
         try:
             if not HAS_REQUESTS:
                 return {
                     'success': False,
                     'error': 'requests library not available'
                 }
-            
-            # print(f"🎭 Fetching Tidal playlists for mood: {params}", file=sys.stderr)
-            
-            response = self._make_request("/search/", {'s': params}, timeout=15)
-            
-            if not response or response.status_code != 200:
+
+            playlists = []
+            response = self._primary_get('/search', {'q': params}, timeout=15)
+            if response is not None and response.status_code == 200:
+                try:
+                    data = response.json()
+                except Exception:
+                    data = {}
+                for playlist in (data.get('playlists') or []):
+                    if len(playlists) >= 30:
+                        break
+                    formatted_playlist = self._format_monochrome_playlist(playlist)
+                    if formatted_playlist:
+                        playlists.append(formatted_playlist)
+
+            if playlists:
                 return {
-                    'success': False,
-                    'error': f'Failed to fetch mood playlists: HTTP {response.status_code if response else "no response"}'
+                    'success': True,
+                    'data': playlists
                 }
-            
-            data = response.json()
-            songs = []
-            
-            items = []
-            if data.get('data'):
-                items = data['data'].get('items', [])
-            elif data.get('items'):
-                items = data['items']
-            
-            for track in items[:30]:
-                formatted_track = self._format_tidal_track(track)
-                if formatted_track:
-                    songs.append(formatted_track)
-            
+
+            # Fall back to songs matching the mood
+            songs = self._quick_track_search(params, 30)
+            if songs:
+                return {
+                    'success': True,
+                    'data': songs
+                }
+
             return {
-                'success': True,
-                'data': songs
+                'success': False,
+                'error': 'Failed to fetch mood playlists'
             }
-            
+
         except Exception as e:
             logger.error(f"Tidal mood playlists failed: {e}")
             return {
                 'success': False,
                 'error': str(e)
             }
-
 
 # MARK: - YouTube Music Service
 
@@ -4018,66 +4250,9 @@ class YTMusicService:
             }
     
     def _fetch_lrclib_lyrics(self, track: str, artist: str, album: str = None, duration: int = None) -> Optional[Dict[str, Any]]:
-        """
-        Fetch synced lyrics from LRCLIB API (https://lrclib.net).
-        Free, no API key required.
-        """
-        import urllib.request
-        import urllib.parse
-        
-        params = {
-            'track_name': track,
-            'artist_name': artist,
-        }
-        if album:
-            params['album_name'] = album
-        if duration and duration > 0:
-            params['duration'] = str(duration)
-        
-        url = f"https://lrclib.net/api/get?{urllib.parse.urlencode(params)}"
-        # print(f"LRCLIB request: {url}", file=sys.stderr)
-        
-        req = urllib.request.Request(url, headers={
-            'User-Agent': 'Izzy Music Player v1.0 (https://github.com/izzy)'
-        })
-        
-        try:
-            with urllib.request.urlopen(req, timeout=5) as response:
-                data = json.loads(response.read().decode('utf-8'))
-        except urllib.error.HTTPError as e:
-            if e.code == 404:
-                # print(f"LRCLIB: no lyrics found for {track} - {artist}", file=sys.stderr)
-                return None
-            raise
-        
-        synced_lyrics_raw = data.get('syncedLyrics')
-        plain_lyrics = data.get('plainLyrics', '')
-        
-        if synced_lyrics_raw:
-            # Parse LRC format: [mm:ss.xx] lyrics text
-            synced_lines = self._parse_lrc(synced_lyrics_raw)
-            # print(f"LRCLIB: found {len(synced_lines)} synced lines for {track}", file=sys.stderr)
-            return {
-                'success': True,
-                'data': {
-                    'lyrics': plain_lyrics or synced_lyrics_raw,
-                    'source': 'LRCLIB (Synced)',
-                    'syncedLyrics': synced_lines
-                }
-            }
-        elif plain_lyrics:
-            # print(f"LRCLIB: found plain lyrics for {track} (no sync)", file=sys.stderr)
-            return {
-                'success': True,
-                'data': {
-                    'lyrics': plain_lyrics,
-                    'source': 'LRCLIB',
-                    'syncedLyrics': None
-                }
-            }
-        
-        return None
-    
+        """Synced lyrics from LRCLIB - module helper shared by all providers."""
+        return fetch_lrclib_lyrics(track, artist, album=album, duration=duration)
+
     def _parse_lrc(self, lrc_text: str) -> list:
         """Parse LRC format into list of {time, text} objects."""
         import re

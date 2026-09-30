@@ -57,10 +57,12 @@ final class FloatingPanel: NSPanel, NSWindowDelegate {
         }
         
         // 🔋 Optimize window behavior for minimal system impact
-        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient, .ignoresCycle]
+        // Stay visible after the app resigns active. `.transient` hides the panel
+        // as soon as an accessory app loses activation, which was closing Izzy
+        // a couple of seconds after it appeared.
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         isMovableByWindowBackground = false
-        // Remove hidesOnDeactivate to prevent automatic hiding when losing focus
-        // hidesOnDeactivate = true
+        hidesOnDeactivate = false
         
         // Hide all traffic light buttons
         standardWindowButton(.closeButton)?.isHidden = true
@@ -256,14 +258,10 @@ final class FloatingPanel: NSPanel, NSWindowDelegate {
     
     // MARK: - NSWindowDelegate
     func windowDidResignKey(_ notification: Notification) {
-        print("🔄 Window resigned key (lost focus) - saving position and syncing state")
-        // Save window position before syncing to hidden
-        if let wm = windowManager {
-            wm.saveWindowPosition(self)
-            DispatchQueue.main.async {
-                wm.syncVisibilityState(false)
-            }
-        }
+        print("🔄 Window resigned key (lost focus) - saving position")
+        // Losing key is not the same as closing. Marking the panel hidden here
+        // made the hotkey reopen a window that was still on screen.
+        windowManager?.saveWindowPosition(self)
     }
     
     func windowDidBecomeKey(_ notification: Notification) {

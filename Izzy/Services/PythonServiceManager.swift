@@ -97,6 +97,7 @@ class PythonServiceManager: ObservableObject {
     private var process: Process?
     private var inputPipe: Pipe?
     private var outputPipe: Pipe?
+    private var errorHandle: FileHandle?
     private var isServiceRunning = false
     private let serviceQueue = DispatchQueue(label: "python-service", qos: .utility)
     private let timeout: TimeInterval = 45.0
@@ -263,11 +264,17 @@ class PythonServiceManager: ObservableObject {
         do {
             try process.run()
             
-            // Read stderr in background to capture debug info
-            errorPipe.fileHandleForReading.readabilityHandler = { handle in
-                let data = handle.availableData
-                if !data.isEmpty, let errorString = String(data: data, encoding: .utf8) {
-                    print("Python stderr: \(errorString.trimmingCharacters(in: .whitespacesAndNewlines))")
+            // Read stderr in the background. `availableData` installs its own
+            // dispatch source; calling it from a readability handler resurrects
+            // that source and the process dies with SIGTRAP a few seconds after launch.
+            let stderrHandle = errorPipe.fileHandleForReading
+            errorHandle = stderrHandle
+            stderrHandle.readabilityHandler = { handle in
+                let data = handle.readData(ofLength: 16 * 1024)
+                guard !data.isEmpty, let errorString = String(data: data, encoding: .utf8) else { return }
+                let trimmed = errorString.trimmingCharacters(in: .whitespacesAndNewlines)
+                if !trimmed.isEmpty {
+                    print("Python stderr: \(trimmed)")
                 }
             }
             
@@ -323,6 +330,7 @@ class PythonServiceManager: ObservableObject {
         }
 
         stopInactivityTimer()
+        errorHandle?.readabilityHandler = nil
         if process.isRunning {
             process.terminate()
             process.waitUntilExit()
@@ -345,8 +353,10 @@ class PythonServiceManager: ObservableObject {
     }
 
     private func stopInactivityTimer() {
-        inactivityTimer?.cancel()
+        let timer = inactivityTimer
         inactivityTimer = nil
+        timer?.setEventHandler {}
+        timer?.cancel()
     }
     
     private func cleanup() {
@@ -356,6 +366,9 @@ class PythonServiceManager: ObservableObject {
         // Never drop the handle to a live interpreter. sendRequest() calls cleanup()
         // between retries; without this terminate, the ~50MB Python process was
         // orphaned and a fresh one spawned beside it on every failed request.
+        errorHandle?.readabilityHandler = nil
+        errorHandle = nil
+
         if let process = process, process.isRunning {
             process.terminate()
         }
