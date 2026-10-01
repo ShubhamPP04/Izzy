@@ -10,6 +10,24 @@ import AppKit
 import Foundation
 
 final class FloatingPanel: NSPanel, NSWindowDelegate {
+
+    // 🖥️ Never let the window extend past the screen — whatever grows inside
+    // it (lyrics panel, queue, accessory menus) or wherever it's dragged, the
+    // frame is clamped to the visible screen. AppKit calls this on every
+    // setFrame, including animated ones.
+    override func constrainFrameRect(_ frameRect: NSRect, to screen: NSScreen?) -> NSRect {
+        guard let visible = (screen ?? self.screen ?? NSScreen.main)?.visibleFrame else {
+            return super.constrainFrameRect(frameRect, to: screen)
+        }
+        var frame = frameRect
+        frame.size.width = min(frame.width, visible.width)
+        frame.size.height = min(frame.height, visible.height)
+        if frame.maxY > visible.maxY { frame.origin.y = visible.maxY - frame.height }
+        if frame.minY < visible.minY { frame.origin.y = visible.minY }
+        if frame.maxX > visible.maxX { frame.origin.x = visible.maxX - frame.width }
+        if frame.minX < visible.minX { frame.origin.x = visible.minX }
+        return frame
+    }
     private let didClose: () -> Void
     private var windowManager: WindowManager?
     private var playbackManager: PlaybackManager?

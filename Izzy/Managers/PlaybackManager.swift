@@ -928,10 +928,13 @@ class PlaybackManager: ObservableObject {
         let cmTime = CMTime(seconds: time, preferredTimescale: 600)
         
         // 🚀 Use zero tolerance for pixel-perfect seeking with cached data
+        var completed = false
         player?.seek(to: cmTime, toleranceBefore: CMTime.zero, toleranceAfter: CMTime.zero) { [weak self] finished in
-            guard let self = self, finished else { return }
+            guard finished else { return }
+            completed = true
             
             DispatchQueue.main.async {
+                guard let self else { return }
                 // Update currentTime immediately after seek completes
                 self.currentTime = time
                 
@@ -948,6 +951,18 @@ class PlaybackManager: ObservableObject {
                 
                 print("🚀 Perfect seek completed to: \(Int(time))s with zero latency")
             }
+        }
+        
+        // ⛑️ Safety net: a seek issued against a player that is still
+        // resolving (or whose item never becomes ready) can have a completion
+        // handler that never fires — that would wedge isSeeking and freeze the
+        // time observer (and the seek bar) permanently. Expire the state.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3.0) { [weak self] in
+            guard let self, !completed else { return }
+            print("⚠️ Seek completion timed out - resetting seek state")
+            self.currentTime = time
+            self.setSeekingState(false)
+            self.forceUpdateNowPlayingInfo()
         }
     }
     

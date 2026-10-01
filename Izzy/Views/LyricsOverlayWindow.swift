@@ -27,6 +27,8 @@ final class LyricsOverlayController: ObservableObject {
     private var cachedVideoId: String?
 
     private var panel: NSPanel?
+    /// 🖱️ Panel origin when the current drag began (nil = not dragging).
+    private var dragBaseOrigin: NSPoint?
 
     private init() {}
 
@@ -82,6 +84,33 @@ final class LyricsOverlayController: ObservableObject {
         // subclass re-enables window dragging from anywhere on the chrome.
         overlayPanel.contentView = OverlayHostingView(rootView: LyricsOverlayView(controller: self))
         panel = overlayPanel
+    }
+
+    // MARK: Dragging
+
+    /// 🖱️ Explicit drag handling: isMovableByWindowBackground + the hosting
+    /// view override proved unreliable for a borderless panel with SwiftUI
+    /// material content, so the view drives the frame directly. SwiftUI
+    /// translations run top-down, NSPanel coordinates bottom-up — hence the
+    /// flipped Y. The panel is clamped to the visible screen.
+    func drag(with translation: CGSize) {
+        guard let panel else { return }
+        if dragBaseOrigin == nil {
+            dragBaseOrigin = NSPoint(x: panel.frame.minX, y: panel.frame.minY)
+        }
+        let base = dragBaseOrigin!
+        let visible = NSScreen.main?.visibleFrame ?? panel.screen?.visibleFrame
+        var x = base.x + translation.width
+        var y = base.y - translation.height
+        if let visible {
+            x = min(max(x, visible.minX), visible.maxX - panel.frame.width)
+            y = min(max(y, visible.minY), visible.maxY - panel.frame.height)
+        }
+        panel.setFrameOrigin(NSPoint(x: x, y: y))
+    }
+
+    func endDrag() {
+        dragBaseOrigin = nil
     }
 
     // MARK: Lyrics Fetching
@@ -174,6 +203,16 @@ struct LyricsOverlayView: View {
                 RoundedRectangle(cornerRadius: 16)
                     .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
             }
+            // 🖱️ Drag the panel from anywhere on the chrome.
+            .gesture(
+                DragGesture(minimumDistance: 2)
+                    .onChanged { value in
+                        controller.drag(with: value.translation)
+                    }
+                    .onEnded { _ in
+                        controller.endDrag()
+                    }
+            )
     }
 
     // MARK: Text
