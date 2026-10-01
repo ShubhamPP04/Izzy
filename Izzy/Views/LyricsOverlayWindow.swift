@@ -77,7 +77,10 @@ final class LyricsOverlayController: ObservableObject {
         overlayPanel.ignoresMouseEvents = false
         overlayPanel.becomesKeyOnlyIfNeeded = true
 
-        overlayPanel.contentView = NSHostingView(rootView: LyricsOverlayView(controller: self))
+        // 🖱️ NSHostingView reports mouseDownCanMoveWindow == false, which
+        // disables isMovableByWindowBackground for borderless panels — this
+        // subclass re-enables window dragging from anywhere on the chrome.
+        overlayPanel.contentView = OverlayHostingView(rootView: LyricsOverlayView(controller: self))
         panel = overlayPanel
     }
 
@@ -283,4 +286,11 @@ struct LyricsOverlayView: View {
         }
         return index
     }
+}
+
+/// Hosting view that lets the borderless overlay panel be dragged by its
+/// background (NSHostingView reports mouseDownCanMoveWindow == false, which
+/// otherwise disables isMovableByWindowBackground for borderless panels).
+final class OverlayHostingView: NSHostingView<LyricsOverlayView> {
+    override var mouseDownCanMoveWindow: Bool { true }
 }

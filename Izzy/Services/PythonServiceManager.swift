@@ -196,14 +196,26 @@ class PythonServiceManager: ObservableObject {
                 let runtimePython = resURL.appendingPathComponent("python_runtime/bin/python3").path
                 if FileManager.default.fileExists(atPath: runtimePython) { return runtimePython }
 
-                // Legacy music_env venv (created by older builds): only usable
-                // when the Python it was created from actually exists here.
-                let venvPython = resURL.appendingPathComponent("music_env/bin/python3").path
-                if FileManager.default.fileExists(atPath: venvPython),
-                   Self.bundledVenvIsUsable(at: resURL.appendingPathComponent("music_env")) {
-                    return venvPython
-                }
+            // 🛠️ Dev convenience: Debug builds don't bundle a Python runtime
+            // (only the DMG script does), so prefer the repo-root
+            // python_runtime that CI/local setup creates over the possibly
+            // stale music_env. The path math only resolves for an app inside
+            // <repo>/build/DerivedData/...; on user machines it simply won't
+            // exist and is skipped.
+            var dir = URL(fileURLWithPath: Bundle.main.bundlePath)
+            for _ in 0..<6 { dir = dir.deletingLastPathComponent() } // Izzy.app->Debug->Products->Build->DerivedData->build->repo
+            let devRuntime = dir.appendingPathComponent("python_runtime/bin/python3").path
+            if FileManager.default.fileExists(atPath: devRuntime) { return devRuntime }
+
+            // Legacy music_env venv (created by older builds): only usable
+            // when the Python it was created from actually exists here.
+            let venvPython = resURL.appendingPathComponent("music_env/bin/python3").path
+            if FileManager.default.fileExists(atPath: venvPython),
+               Self.bundledVenvIsUsable(at: resURL.appendingPathComponent("music_env")) {
+                return venvPython
             }
+        }
+
             return nil
         }()
         
