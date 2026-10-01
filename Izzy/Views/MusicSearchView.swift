@@ -181,6 +181,20 @@ struct MusicSearchView: View {
                             playbackManager: playbackManager
                         )
                     }
+                    // 🪟 The player sits in the safe-area inset, outside the
+                    // window's painted background — give it its own glass card
+                    // so it (and every button in it) is never transparent.
+                    .background(
+                        RoundedRectangle(cornerRadius: 16)
+                            .fill(.ultraThinMaterial)
+                            .overlay(
+                                RoundedRectangle(cornerRadius: 16)
+                                    .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
+                            )
+                            .shadow(color: .black.opacity(0.18), radius: 10, x: 0, y: -2)
+                    )
+                    .padding(.horizontal, 10)
+                    .padding(.bottom, 10)
                     .transition(.move(edge: .bottom).combined(with: .opacity))
                     .animation(.spring(response: 0.35, dampingFraction: 0.85), value: playbackManager.showLyrics)
                 }
