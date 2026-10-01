@@ -643,6 +643,7 @@ class PlaybackManager: ObservableObject {
                     print("🚀 Fast start! Buffered: \(String(format: "%.1f", bufferedSeconds))s, starting playback immediately")
                     self.player?.play()
                     self.playbackState = .playing
+                    self.isBuffering = false  // clear the pre-play buffering state
                     self.applyPlaybackSpeed()
                     self.updateNowPlayingInfo()
                     
@@ -684,6 +685,7 @@ class PlaybackManager: ObservableObject {
                     hasStartedPlayback = true
                     self.player?.play()
                     self.playbackState = .playing
+                    self.isBuffering = false  // clear the pre-play buffering state
                     self.applyPlaybackSpeed()
                     self.updateNowPlayingInfo()
                     print("🎵 Buffering complete, starting playback")
