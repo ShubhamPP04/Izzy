@@ -194,7 +194,9 @@ struct LyricsView: View {
                         Spacer(minLength: 20)
                     }
                 }
-                .onChange(of: index) { _, newIndex in
+                .onChange(of: index, initial: true) { _, newIndex in
+                    // initial: true — opening the panel mid-song must land on
+                    // the current line immediately, not line 0.
                     withAnimation(.easeInOut(duration: 0.25)) {
                         scrollProxy.scrollTo(newIndex, anchor: .center)
                     }

@@ -647,6 +647,7 @@ class PlaybackManager: ObservableObject {
                     self.playbackState = .playing
                     self.isBuffering = false  // clear the pre-play buffering state
                     self.applyPlaybackSpeed()
+                    self.anchorSmoothTime()  // 🎤 fresh lyrics clock anchor
                     self.updateNowPlayingInfo()
                     
                     // 🔋 CPU OPTIMIZATION: Stop buffer timer after playback starts!
@@ -689,6 +690,7 @@ class PlaybackManager: ObservableObject {
                     self.playbackState = .playing
                     self.isBuffering = false  // clear the pre-play buffering state
                     self.applyPlaybackSpeed()
+                    self.anchorSmoothTime()  // 🎤 fresh lyrics clock anchor
                     self.updateNowPlayingInfo()
                     print("🎵 Buffering complete, starting playback")
                     
@@ -877,6 +879,10 @@ class PlaybackManager: ObservableObject {
         isSleepTrackEndHandled = false
         player?.play()
         playbackState = .playing
+        // 🎤 Time observer ticks skip while paused — re-anchor the smooth
+        // lyrics clock so the first seconds after a resume don't extrapolate
+        // from a stale anchor (lyrics would jump ahead ~2s).
+        anchorSmoothTime()
         applyPlaybackSpeed()
         forceUpdateNowPlayingInfo() // 🔋 Force immediate update for state changes
         
