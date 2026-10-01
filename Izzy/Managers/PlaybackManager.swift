@@ -612,6 +612,7 @@ class PlaybackManager: ObservableObject {
         // Track if we've started playback
         var hasStartedPlayback = false
         var bufferCheckCount = 0
+        var bufferEmptySince: Date?
         
         // 🔋 Check buffer at reasonable interval (0.5s instead of 0.3s)
         bufferTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] timer in
@@ -651,8 +652,32 @@ class PlaybackManager: ObservableObject {
                     print("🔋 Buffer timer stopped - saving CPU")
                 }
                 
-                // Update buffering indicator (but don't stop playback)
-                self.isBuffering = isBufferEmpty && self.playbackState.isPlaying
+                // Update buffering indicator with a debounce: a transient
+                // buffer-empty while playing is normal (proxied FLAC arrives
+                // in chunks) and must not flip the transport button into a
+                // spinner — only an empty buffer persisting ~1.5s counts.
+                if self.playbackState.isPlaying {
+                    if isBufferEmpty {
+                        if bufferEmptySince == nil { bufferEmptySince = Date() }
+                        if let since = bufferEmptySince,
+                           Date().timeIntervalSince(since) >= 1.5 {
+                            self.isBuffering = true
+                        }
+                    } else {
+                        bufferEmptySince = nil
+                        self.isBuffering = false
+                    }
+                } else {
+                    bufferEmptySince = nil
+                }
+
+                // 🔋 Healthy playback: the monitoring job is done — stop the
+                // timer. Stall recovery restarts it if the stream stalls.
+                if self.playbackState.isPlaying && !isBufferEmpty && !self.isBuffering {
+                    hasStartedPlayback = true
+                    timer.invalidate()
+                    self.bufferTimer = nil
+                }
                 
                 // Normal start if fast start didn't trigger and buffer is ready
                 if !hasStartedPlayback && isBufferLikelyToKeepUp && self.playbackState == .buffering && self.player?.rate == 0 {
@@ -1278,6 +1303,8 @@ class PlaybackManager: ObservableObject {
                 self?.applyPlaybackSpeed()
             }
             self?.isBuffering = false
+            // Keep supervising: the stream stalled once, it may stall again.
+            self?.startBufferMonitoring()
         }
     }
     

@@ -1288,7 +1288,8 @@ def fetch_lrclib_lyrics(track: str, artist: str,
     def pick(candidates):
         """Best candidate: has real synced lyrics, duration nearest the track."""
         usable = [c for c in candidates
-                  if c.get('syncedLyrics') or (c.get('plainLyrics') or '').strip()]
+                  if isinstance(c, dict)
+                  and (c.get('syncedLyrics') or (c.get('plainLyrics') or '').strip())]
 
         def score(item):
             has_sync = 1 if item.get('syncedLyrics') else 0
