@@ -172,10 +172,13 @@ final class TidalByteRangeLoader: NSObject, AVAssetResourceLoaderDelegate {
         }
 
         // AVPlayer probes content info alongside the first data request; it
-        // needs the total size for seeking and progress.
+        // needs the total size for seeking and progress. The probe's 64 bytes
+        // double as the first chunk of data, so the sniff request costs one
+        // round-trip instead of two.
+        var probedData: Data?
         if let info = loadingRequest.contentInformationRequest {
             if totalLength <= 0 {
-                await probeLength()
+                probedData = await probeLength()
             }
             info.contentType = contentType
             info.isByteRangeAccessSupported = true
@@ -191,6 +194,14 @@ final class TidalByteRangeLoader: NSObject, AVAssetResourceLoaderDelegate {
         let chunkSize = Int64(2 * 1024 * 1024)
         var nextOffset = offset
         var responded: Int64 = 0
+
+        // Serve whatever the probe already fetched before hitting the network.
+        if let probedData, !probedData.isEmpty, responded < limit {
+            let slice = probedData.prefix(Int(min(Int64(probedData.count), limit - responded)))
+            dataRequest.respond(with: slice)
+            responded += Int64(slice.count)
+            nextOffset += Int64(slice.count)
+        }
 
         while responded < limit {
             if loadingRequest.isCancelled {
@@ -243,12 +254,14 @@ final class TidalByteRangeLoader: NSObject, AVAssetResourceLoaderDelegate {
     /// One ranged request to learn the file size (Content-Range) and sniff the
     /// container from the leading bytes - AVFoundation only selects the FLAC
     /// parser when the UTI is precise; a generic "public.audio" never goes ready.
-    private func probeLength() async {
+    /// Returns the fetched bytes so the caller can serve them immediately.
+    @discardableResult
+    private func probeLength() async -> Data {
         var request = URLRequest(url: remoteURL)
         request.setValue(Self.userAgent, forHTTPHeaderField: "User-Agent")
         request.setValue("bytes=0-63", forHTTPHeaderField: "Range")
         guard let (data, response) = try? await session.data(for: request),
-              let http = response as? HTTPURLResponse else { return }
+              let http = response as? HTTPURLResponse else { return Data() }
         if let contentRange = http.value(forHTTPHeaderField: "Content-Range"),
            let total = contentRange.split(separator: "/").last,
            let size = Int64(total) {
@@ -263,5 +276,6 @@ final class TidalByteRangeLoader: NSObject, AVAssetResourceLoaderDelegate {
         } else if data.starts(with: Data("ID3".utf8)) {
             contentType = "public.mp3"
         }
+        return data
     }
 }

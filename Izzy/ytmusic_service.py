@@ -1438,22 +1438,30 @@ class TidalService:
 
     # MARK: - HTTP plumbing
 
+    # Shared across instances: handle_request() builds a fresh TidalService
+    # per request, and a per-request session meant a new TLS handshake (and a
+    # fresh Cloudflare scoring window) on every track.
+    _shared_session = None
+
     def _get_session(self):
         """Get or create a reusable requests session"""
         if self._session is None:
-            self._session = requests.Session()
-            self._session.headers.update({
-                # tracks.monochrome.st rejects default python-requests/urllib
-                # user agents with 403; a browser UA is required everywhere.
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
-                'Accept': 'application/json, text/plain, */*'
-            })
+            if TidalService._shared_session is None:
+                TidalService._shared_session = requests.Session()
+                TidalService._shared_session.headers.update({
+                    # tracks.monochrome.st rejects default python-requests/urllib
+                    # user agents with 403; a browser UA is required everywhere.
+                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+                    'Accept': 'application/json, text/plain, */*'
+                })
+            self._session = TidalService._shared_session
             if self.api_key:
                 self._session.headers['X-API-Key'] = self.api_key
         return self._session
 
     def _reset_session(self):
         """Reset the session to get fresh connections"""
+        TidalService._shared_session = None
         if self._session is not None:
             try:
                 self._session.close()
@@ -2336,7 +2344,7 @@ class TidalService:
         response = self._make_request("/track/", {
             'id': track_id,
             'quality': quality
-        }, timeout=6, use_cache=False)  # Don't cache stream URLs
+        }, timeout=5, use_cache=False, max_targets=2)  # Don't cache stream URLs
         if not response or response.status_code != 200:
             return None
         try:
@@ -2379,18 +2387,25 @@ class TidalService:
         the FLAC STREAMINFO header (sample rate, bit depth, exact duration),
         which drives the quality badge - no manifest walk needed."""
         url = f"{self.PRIMARY_API}/track/{track_id}"
-        try:
-            with self._get_session().get(url, timeout=6, stream=True,
-                                         headers={'Range': 'bytes=0-63'}) as response:
-                if response.status_code not in (200, 206):
-                    return None
+        data = b''
+        for attempt in range(3):  # the CDN occasionally 5xx-challenges; retry quick
+            try:
+                with self._get_session().get(url, timeout=5, stream=True,
+                                             headers={'Range': 'bytes=0-63'}) as response:
+                    if response.status_code in (200, 206):
+                        data = b''
+                        for chunk in response.iter_content(64):
+                            data += chunk
+                            if len(data) >= 64:
+                                break
+            except requests.exceptions.RequestException:
                 data = b''
-                for chunk in response.iter_content(64):
-                    data += chunk
-                    if len(data) >= 64:
-                        break
-        except requests.exceptions.RequestException:
-            return None
+            if len(data) >= 64:
+                break
+            # Fresh connection for the next attempt - the challenge is usually
+            # tied to the TLS session, not the URL.
+            self._reset_session()
+            time.sleep(0.25)
 
         if len(data) < 42 or data[:4] != b'fLaC':
             return None
@@ -2476,6 +2491,8 @@ class TidalService:
             payload = self._resolve_direct_flac(track_id)
 
         # 2) Pool fallback: legacy hifi-api /track/ (JSON or DASH -> HLS).
+        #    max_targets bounds the walk so a dead pool cannot stall playback
+        #    for tens of seconds; the circuit breaker handles the rest.
         if payload is None:
             source = 'pool'
             for quality in self._quality_attempt_order(self.preferred_quality):
