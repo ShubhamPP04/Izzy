@@ -161,24 +161,29 @@ struct MusicSearchView: View {
                     .opacity(selectedTab == 9 ? 1 : 0)
                     .allowsHitTesting(selectedTab == 9)
             }
-            
-            // Playback Controls (show when there's a current track OR when there's a playback error OR when buffering)
-            if playbackManager.currentTrack != nil || 
-               playbackManager.playbackState.isError ||
-               playbackManager.playbackState == .buffering {
-                VStack(spacing: 0) {
-                    // Inline Lyrics Panel — always present, animated via height/opacity
-                    LyricsView(playbackManager: playbackManager)
-                        .frame(height: playbackManager.showLyrics ? 280 : 0)
-                        .opacity(playbackManager.showLyrics ? 1 : 0)
-                        .clipped()
-                    
-                    CompactPlaybackControlsView(
-                        playbackManager: playbackManager
-                    )
+            // 🎚️ The player (controls + inline lyrics) is a bottom safe-area
+            // inset instead of a VStack sibling: every tab reserves space for
+            // it, so nothing overlaps and tall content can never push the
+            // layout past the bottom of the window.
+            .safeAreaInset(edge: .bottom, spacing: 0) {
+                // Playback Controls (show when there's a current track OR when there's a playback error OR when buffering)
+                if playbackManager.currentTrack != nil ||
+                   playbackManager.playbackState.isError ||
+                   playbackManager.playbackState == .buffering {
+                    VStack(spacing: 0) {
+                        // Inline Lyrics Panel — always present, animated via height/opacity
+                        LyricsView(playbackManager: playbackManager)
+                            .frame(height: playbackManager.showLyrics ? 280 : 0)
+                            .opacity(playbackManager.showLyrics ? 1 : 0)
+                            .clipped()
+
+                        CompactPlaybackControlsView(
+                            playbackManager: playbackManager
+                        )
+                    }
+                    .transition(.move(edge: .bottom).combined(with: .opacity))
+                    .animation(.spring(response: 0.35, dampingFraction: 0.85), value: playbackManager.showLyrics)
                 }
-                .transition(.move(edge: .bottom).combined(with: .opacity))
-                .animation(.spring(response: 0.35, dampingFraction: 0.85), value: playbackManager.showLyrics)
             }
         }
         

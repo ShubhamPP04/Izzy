@@ -44,7 +44,7 @@ struct StatsView: View {
                 statsContent
             }
         }
-        .frame(minWidth: 440, minHeight: 520)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(
             RoundedRectangle(cornerRadius: 12)
                 .fill(Color(.controlBackgroundColor))
