@@ -13,6 +13,8 @@ struct PlaylistView: View {
     @State private var showingCreatePlaylist = false
     @State private var selectedPlaylist: Playlist? = nil
     @State private var newPlaylistName = ""
+    @State private var importMessage: String?
+    @State private var showingImportAlert = false
     @Binding var scrollOffset: CGFloat
     
     var body: some View {
@@ -43,6 +45,13 @@ struct PlaylistView: View {
                     
                     Spacer()
                     
+                    Button(action: { importM3UFile() }) {
+                        Image(systemName: "square.and.arrow.down")
+                            .font(.system(size: 16, weight: .medium))
+                    }
+                    .buttonStyle(PlainButtonStyle())
+                    .help("Import M3U playlist")
+                    
                     Button(action: {
                         showingCreatePlaylist = true
                     }) {
@@ -51,6 +60,11 @@ struct PlaylistView: View {
                     }
                     .buttonStyle(PlainButtonStyle())
                 }
+            }
+            .alert("Import M3U", isPresented: $showingImportAlert) {
+                Button("OK", role: .cancel) { }
+            } message: {
+                Text(importMessage ?? "")
             }
             .padding(.horizontal, 20)
             .padding(.top, 10)
@@ -122,6 +136,36 @@ struct PlaylistView: View {
             print("🎵 PlaylistView appeared")
         }
     }
+
+    // MARK: - M3U Import / Export
+
+    private func importM3UFile() {
+        let panel = NSOpenPanel()
+        panel.title = "Import M3U Playlist"
+        panel.allowedFileTypes = ["m3u", "m3u8"]
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        do {
+            let entries = try M3UService.parse(url: url)
+            guard !entries.isEmpty else {
+                importMessage = "No songs found in that playlist file"
+                showingImportAlert = true
+                return
+            }
+            var playlist = playlistManager.createPlaylist(
+                name: url.deletingPathExtension().lastPathComponent,
+                description: "Imported from \(url.lastPathComponent)"
+            )
+            playlist.songs = M3UService.favoriteSongs(from: entries)
+            playlistManager.updatePlaylist(playlist)
+            importMessage = "Imported \(entries.count) songs into \(playlist.name)"
+            showingImportAlert = true
+        } catch {
+            importMessage = "Import failed: \(error.localizedDescription)"
+            showingImportAlert = true
+        }
+    }
 }
 
 struct PlaylistItemView: View {
@@ -129,6 +173,8 @@ struct PlaylistItemView: View {
     @ObservedObject var playlistManager: PlaylistManager
     @ObservedObject var searchState: SearchState
     @State private var showingOptions = false
+    @State private var exportMessage: String?
+    @State private var showingExportAlert = false
     var onPlaylistSelected: (Playlist) -> Void
     
     // Computed property to get the playlist cover image
@@ -169,6 +215,22 @@ struct PlaylistItemView: View {
                     .lineLimit(1)
                     .onTapGesture {
                         onPlaylistSelected(playlist)
+                    }
+                    .contextMenu {
+                        Button("Export as M3U") {
+                            do {
+                                let url = try M3UService.export(playlist: playlist)
+                                exportMessage = "Saved to \(url.path)"
+                            } catch {
+                                exportMessage = "Export failed: \(error.localizedDescription)"
+                            }
+                            showingExportAlert = true
+                        }
+                    }
+                    .alert("Export M3U", isPresented: $showingExportAlert) {
+                        Button("OK", role: .cancel) { }
+                    } message: {
+                        Text(exportMessage ?? "")
                     }
                 
                 if let description = playlist.description, !description.isEmpty {

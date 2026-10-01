@@ -418,6 +418,9 @@ struct TrackInfoView: View {
                                     }
                                     .buttonStyle(PlainButtonStyle())
 
+                                    // 🌙⏩ Sleep timer + playback speed menus
+                                    PlaybackAccessoryMenusView(playbackManager: playbackManager, iconSize: 12)
+
                                     // Volume slider
                                     HoverVolumeSlider(playbackManager: playbackManager, iconSize: 12, iconColor: .primary)
                                 }
@@ -629,6 +632,9 @@ struct TrackInfoView: View {
                                         .frame(width: 20, height: 20)
                                 }
                                 .buttonStyle(PlainButtonStyle())
+
+                                // 🌙⏩ Sleep timer + playback speed menus
+                                PlaybackAccessoryMenusView(playbackManager: playbackManager, iconSize: 11)
 
                                 // Volume slider
                                 HoverVolumeSlider(playbackManager: playbackManager, iconSize: 11, iconColor: .primary)
@@ -970,6 +976,9 @@ struct ControlButtonsView: View {
                                 .buttonStyle(ControlButtonStyle())
                             }
 
+                            // 🌙⏩ Sleep timer + playback speed menus
+                            PlaybackAccessoryMenusView(playbackManager: playbackManager, iconSize: minimalMode ? 12 : 14)
+
                             // Volume slider
                             HoverVolumeSlider(playbackManager: playbackManager, iconSize: minimalMode ? 12 : 14, iconColor: .primary)
                         }
@@ -1087,6 +1096,9 @@ struct ControlButtonsView: View {
 
                         Spacer()
 
+                        // 🌙⏩ Sleep timer + playback speed menus
+                        PlaybackAccessoryMenusView(playbackManager: playbackManager, iconSize: minimalMode ? 12 : 14)
+
                         // Volume slider
                         HoverVolumeSlider(playbackManager: playbackManager, iconSize: minimalMode ? 12 : 14, iconColor: .primary)
                     }
@@ -1144,6 +1156,119 @@ struct ControlButtonStyle: ButtonStyle {
             .scaleEffect(configuration.isPressed ? 0.9 : 1.0)
             .opacity(configuration.isPressed ? 0.7 : 1.0)
             .animation(.easeInOut(duration: 0.1), value: configuration.isPressed)
+    }
+}
+
+// MARK: - Sleep Timer & Playback Speed Menus
+
+/// 🌙⏩ Compact accessory menus shown next to the transport buttons in every player layout.
+struct PlaybackAccessoryMenusView: View {
+    @ObservedObject var playbackManager: PlaybackManager
+    var iconSize: CGFloat = 12
+
+    // 🌙 Sleep timer choices in minutes
+    private static let sleepTimerOptions = [15, 30, 45, 60, 90]
+    // ⏩ Playback speed choices
+    private static let speedOptions: [Double] = [0.75, 1.0, 1.25, 1.5, 2.0]
+
+    var body: some View {
+        HStack(spacing: 10) {
+            sleepTimerMenu
+            speedMenu
+        }
+    }
+
+    // 🌙 Sleep timer menu — the icon becomes a live mm:ss countdown while the timer runs
+    private var sleepTimerMenu: some View {
+        Menu {
+            // 🌙 Off cancels any running timer
+            Button {
+                playbackManager.cancelSleepTimer()
+            } label: {
+                if playbackManager.sleepTimerEndDate == nil && !playbackManager.sleepAtTrackEnd {
+                    Label("Off", systemImage: "checkmark")
+                } else {
+                    Text("Off")
+                }
+            }
+
+            Divider()
+
+            ForEach(Self.sleepTimerOptions, id: \.self) { minutes in
+                Button("\(minutes) min") {
+                    playbackManager.startSleepTimer(minutes: minutes)
+                }
+            }
+
+            Divider()
+
+            // 🎵 Stop once the current track finishes
+            Button {
+                playbackManager.startSleepTimerAtTrackEnd()
+            } label: {
+                if playbackManager.sleepAtTrackEnd {
+                    Label("End of current track", systemImage: "checkmark")
+                } else {
+                    Text("End of current track")
+                }
+            }
+        } label: {
+            if let endDate = playbackManager.sleepTimerEndDate {
+                // ⏳ 1s ticking countdown while the timer is active
+                TimelineView(.periodic(from: .now, by: 1)) { context in
+                    Text(Self.timeString(max(0, endDate.timeIntervalSince(context.date))))
+                        .font(.system(size: max(8, iconSize - 3), weight: .medium))
+                        .foregroundColor(.blue)
+                        .monospacedDigit()
+                }
+                .help("Sleep timer running")
+            } else {
+                Image(systemName: "moon.zzz")
+                    .font(.system(size: iconSize, weight: .medium))
+                    .foregroundColor(playbackManager.sleepAtTrackEnd ? .blue : .primary)
+                    .help("Sleep Timer")
+            }
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+    }
+
+    // ⏩ Playback speed menu with a checkmark on the current speed
+    private var speedMenu: some View {
+        Menu {
+            ForEach(Self.speedOptions, id: \.self) { speed in
+                Button {
+                    playbackManager.setPlaybackSpeed(speed)
+                } label: {
+                    if abs(playbackManager.playbackSpeed - speed) < 0.01 {
+                        Label(Self.speedLabel(speed), systemImage: "checkmark")
+                    } else {
+                        Text(Self.speedLabel(speed))
+                    }
+                }
+            }
+        } label: {
+            Image(systemName: "gauge")
+                .font(.system(size: iconSize, weight: .medium))
+                .foregroundColor(abs(playbackManager.playbackSpeed - 1.0) > 0.01 ? .blue : .primary)
+                .help("Playback Speed")
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+    }
+
+    private static func speedLabel(_ speed: Double) -> String {
+        speed == speed.rounded() ? "\(Int(speed))×" : "\(speed)×"
+    }
+
+    // ⏱ mm:ss formatting for the sleep timer countdown
+    private static func timeString(_ interval: TimeInterval) -> String {
+        let total = Int(interval.rounded())
+        return String(format: "%d:%02d", total / 60, total % 60)
     }
 }
 

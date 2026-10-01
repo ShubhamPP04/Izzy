@@ -12,11 +12,14 @@ import SwiftUI
 /// Inline panel displaying lyrics for the current track, synced with playback timestamps.
 struct LyricsView: View {
     @ObservedObject var playbackManager: PlaybackManager
+    @ObservedObject private var overlayController = LyricsOverlayController.shared
     
     @State private var lyrics: LyricsData?
     @State private var isLoading = false
     @State private var lastLoadedVideoId: String?
     @State private var currentLineIndex: Int = 0
+    // 🎤 How far into the current line we are (0...1) — drives the karaoke fill
+    @State private var currentLineProgress: Double = 0
     
     private let pythonService = PythonServiceManager.shared
     
@@ -77,6 +80,20 @@ struct LyricsView: View {
             
             Spacer()
             
+            // 🖥️ Desktop lyrics overlay toggle
+            Button(action: {
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    LyricsOverlayController.shared.setVisible(!overlayController.isVisible)
+                }
+            }) {
+                Image(systemName: desktopLyricsIcon)
+                    .font(.system(size: 14))
+                    .foregroundColor(overlayController.isVisible ? .blue : .secondary)
+            }
+            .buttonStyle(PlainButtonStyle())
+            .accessibilityLabel("Desktop lyrics")
+            .help("Desktop lyrics")
+            
             Button(action: {
                 withAnimation(.easeInOut(duration: 0.2)) {
                     playbackManager.showLyrics = false
@@ -90,6 +107,15 @@ struct LyricsView: View {
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 10)
+    }
+    
+    // 🎛️ The "lyrics" symbol ships with newer macOS; fall back gracefully.
+    private var desktopLyricsIcon: String {
+        let on = overlayController.isVisible
+        if #available(macOS 15.0, *) {
+            return on ? "lyrics" : "lyrics"
+        }
+        return on ? "text.bubble.fill" : "text.bubble"
     }
     
     // MARK: - Content Router
@@ -135,11 +161,18 @@ struct LyricsView: View {
                     Divider().padding(.horizontal, 16).opacity(0.3)
                     
                     ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
-                        Text(line.text.isEmpty ? " " : line.text)
-                            .font(.system(
-                                size: index == currentLineIndex ? 16 : 14,
-                                weight: index == currentLineIndex ? .bold : .medium
-                            ))
+                        Group {
+                            if index == currentLineIndex {
+                                // 🎤 Current line gets the progressive karaoke fill
+                                karaokeFilledLine(line.text)
+                            } else {
+                                Text(line.text.isEmpty ? " " : line.text)
+                            }
+                        }
+                        .font(.system(
+                            size: index == currentLineIndex ? 16 : 14,
+                            weight: index == currentLineIndex ? .bold : .medium
+                        ))
                             .lineSpacing(4)
                             .foregroundColor(syncedLineColor(for: index))
                             .scaleEffect(index == currentLineIndex ? 1.02 : 1.0, anchor: .leading)
@@ -161,6 +194,28 @@ struct LyricsView: View {
         }
     }
     
+    // MARK: - Karaoke Fill
+
+    /// 🎤 Renders the line twice: a dim base plus a bright overlay masked to the
+    /// sung fraction of the line width. The fill is animated linearly between
+    /// time ticks so it looks continuous without per-frame updates.
+    private func karaokeFilledLine(_ text: String) -> some View {
+        let displayText = text.isEmpty ? " " : text
+        return ZStack(alignment: .leading) {
+            Text(displayText)
+                .foregroundColor(.secondary.opacity(0.35))
+
+            Text(displayText)
+                .foregroundColor(.primary)
+                .mask(
+                    Rectangle()
+                        .scaleEffect(x: currentLineProgress, y: 1, anchor: .leading)
+                )
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .animation(.linear(duration: 0.35), value: currentLineProgress)
+    }
+
     // MARK: - Plain Lyrics (estimated sync fallback)
     
     private func plainLyricsView(_ lyrics: LyricsData) -> some View {
@@ -272,6 +327,14 @@ struct LyricsView: View {
                 scrollProxy.scrollTo(newIndex, anchor: .center)
             }
         }
+
+        // 🎤 Estimate the sung fraction of the current line: linear between this
+        // line's timestamp and the next one's (the last line gets a 4s window).
+        // Cheap Double write, in the same place the line index is updated.
+        let lineStart = lines[newIndex].time
+        let lineEnd = newIndex + 1 < lines.count ? lines[newIndex + 1].time : lineStart + 4
+        let span = max(lineEnd - lineStart, 0.25)
+        currentLineProgress = min(max((currentTime - lineStart) / span, 0), 1)
     }
     
     private func syncedLineColor(for index: Int) -> Color {
@@ -322,6 +385,7 @@ struct LyricsView: View {
             isLoading = true
             lastLoadedVideoId = videoId
             currentLineIndex = 0
+            currentLineProgress = 0
         }
         
         let trackTitle = playbackManager.currentTrack?.title

@@ -10,6 +10,15 @@ import AVFoundation
 import Combine
 import AppKit
 
+// MARK: - Track Change Notification
+
+extension Notification.Name {
+    /// 📢 Posted on the main queue whenever PlaybackManager starts a NEW track.
+    /// userInfo["track"] holds the current Track. Not posted when the same
+    /// videoId resumes or retries.
+    static let izzyTrackChanged = Notification.Name("izzyTrackChanged")
+}
+
 // MARK: - Playback Manager
 
 // 🚀 FAST SEEK OPTIMIZATION: Cached stream information for instant seeking
@@ -49,6 +58,26 @@ class PlaybackManager: ObservableObject {
             UserDefaults.standard.set(volume, forKey: "playerVolume")
         }
     }
+    // 📻 AUTOPLAY RADIO: When the queue runs dry, keep playing tracks similar
+    // to the one that just ended. SettingsView writes the same key via
+    // @AppStorage, so the live value is re-read from UserDefaults when the
+    // queue actually exhausts.
+    @Published var autoplayRadio: Bool = false {
+        didSet {
+            UserDefaults.standard.set(autoplayRadio, forKey: "autoplayRadioEnabled")
+        }
+    }
+    // 😴 SLEEP TIMER: nil = off. `sleepAtTrackEnd` pauses when the current
+    // track finishes instead of using a wall-clock timer.
+    @Published var sleepTimerEndDate: Date?
+    @Published var sleepAtTrackEnd: Bool = false
+    // ⏩ PLAYBACK SPEED: Persisted playback rate. AVPlayer's rate preserves
+    // pitch on Apple platforms, so 1.5x audio stays natural.
+    @Published var playbackSpeed: Double = 1.0 {
+        didSet {
+            UserDefaults.standard.set(playbackSpeed, forKey: "playbackSpeed")
+        }
+    }
 
     private var player: AVPlayer?
     private var playerItem: AVPlayerItem?
@@ -75,6 +104,14 @@ class PlaybackManager: ObservableObject {
     // 🎵 DEBOUNCE: Skip navigation debounce for rapid next/previous taps
     private var skipDebounceTask: Task<Void, Never>?
     private var currentPlaybackId: UUID = UUID()  // Track which playback request is current
+
+    // 😴 SLEEP TIMER state: one-shot timer + fade bookkeeping. `isSleepFading`
+    // makes a natural track end during the fade a no-op; the handled latch
+    // keeps the second end detection (time observer + item-end notification
+    // can both fire) from advancing the queue after a sleep-at-track-end pause.
+    private var sleepTimer: Timer?
+    private var isSleepFading = false
+    private var isSleepTrackEndHandled = false
     
     private let queueManager = QueueManager()
     private let pythonService = PythonServiceManager.shared
@@ -85,6 +122,12 @@ class PlaybackManager: ObservableObject {
         let savedVolume = UserDefaults.standard.float(forKey: "playerVolume")
         if savedVolume > 0 {
             volume = savedVolume
+        }
+        // 📻 Load saved autoplay radio + ⏩ playback speed
+        autoplayRadio = UserDefaults.standard.bool(forKey: "autoplayRadioEnabled")
+        let savedSpeed = UserDefaults.standard.double(forKey: "playbackSpeed")
+        if savedSpeed > 0 {
+            playbackSpeed = savedSpeed
         }
         setupQueueManager()
         setupRemoteCommandHandlers()
@@ -167,6 +210,19 @@ class PlaybackManager: ObservableObject {
             .store(in: &cancellables)
     }
     
+    // MARK: - Track Change Notification
+    
+    // 📢 Central setter for `currentTrack`: posts .izzyTrackChanged on the main
+    // queue whenever the track actually changes. Resume/retry of the same
+    // videoId stays silent. Must be called on the main thread.
+    private func setCurrentTrackAndNotify(_ track: Track?) {
+        let isNewTrack = track?.videoId != currentTrack?.videoId
+        currentTrack = track
+        if isNewTrack, let track = track {
+            NotificationCenter.default.post(name: .izzyTrackChanged, object: nil, userInfo: ["track": track])
+        }
+    }
+    
     // MARK: - Queue Access
     
     var queue: QueueManager {
@@ -217,7 +273,33 @@ class PlaybackManager: ObservableObject {
         await playCurrentTrack()
     }
     
+    // 🎵 OFFLINE: Play a local audio file directly through AVPlayer — no
+    // Python service involved. The file URL is stored as the track's videoId
+    // (url.absoluteString) so the regular playback path works end to end.
+    func playLocalFile(url: URL, title: String? = nil, artist: String? = nil) {
+        print("🎵 playLocalFile() called for: \(url.lastPathComponent)")
+        
+        let track = Track(
+            title: title ?? url.deletingPathExtension().lastPathComponent,
+            artist: artist ?? "Unknown Artist",
+            duration: 0,
+            videoId: url.absoluteString,
+            musicSource: "local"
+        )
+        
+        // Make it the current queue entry, then reuse the regular playback path
+        // (which handles the local branch, UI state, observers and Now Playing).
+        queueManager.setCurrentTrack(track)
+        Task {
+            await playCurrentTrack()
+        }
+    }
+    
     func playCurrentTrack(startFromPosition: TimeInterval? = nil, playbackId: UUID? = nil) async {
+        // 😴 New playback request — re-enable end-of-track handling in case the
+        // previous track was parked by a sleep-at-track-end pause.
+        isSleepTrackEndHandled = false
+        
         // 🎵 DEBOUNCE: Check if this playback request is still valid
         let expectedId = playbackId ?? currentPlaybackId
         guard expectedId == currentPlaybackId else {
@@ -236,7 +318,7 @@ class PlaybackManager: ObservableObject {
         print("🎵 Queue position: \(queueManager.currentIndex + 1) of \(queueManager.queueSize)")
         
         await MainActor.run {
-            self.currentTrack = track
+            self.setCurrentTrackAndNotify(track)
             self.playbackState = PlaybackState.buffering
             self.isBuffering = true
             
@@ -261,6 +343,24 @@ class PlaybackManager: ObservableObject {
         // 🎵 DEBOUNCE: Check again before network request
         guard expectedId == currentPlaybackId else {
             print("🎵 Playback cancelled before network - newer request exists")
+            return
+        }
+        
+        // 🎵 OFFLINE: Local files play directly through AVPlayer — resolve the
+        // file URL from videoId (stored as url.absoluteString) and skip stream
+        // resolution + the Python service entirely.
+        if track.musicSource == "local" {
+            guard let fileURL = URL(string: track.videoId), fileURL.isFileURL else {
+                print("❌ Invalid local file path: \(track.videoId)")
+                await MainActor.run {
+                    self.playbackState = .error("Invalid local file")
+                    self.isBuffering = false
+                }
+                return
+            }
+            await MainActor.run {
+                self.setupPlayerForLocalFile(fileURL, track: track, startFromPosition: startFromPosition)
+            }
             return
         }
         
@@ -435,6 +535,38 @@ class PlaybackManager: ObservableObject {
         return AVPlayerItem(url: url)
     }
     
+    // 🎵 OFFLINE: Player setup for a local file. Reuses the exact streamed setup
+    // path (setupPlayerWithPrefetch) with a synthesized StreamInfo — the
+    // plain-URL branch of makePlayerItem() wraps the file URL in a plain
+    // AVPlayerItem, so no Python service call happens anywhere in this path.
+    // (Embedded artwork extraction is skipped on purpose: Track.thumbnailURL is
+    // a remote-URL string today.)
+    private func setupPlayerForLocalFile(_ fileURL: URL, track: Track, startFromPosition: TimeInterval? = nil) {
+        print("🎵 Setting up local file playback: \(fileURL.lastPathComponent)")
+        
+        let streamInfo = StreamInfo(url: fileURL.absoluteString, title: track.title, duration: 0, quality: "LOCAL")
+        setupPlayerWithPrefetch(with: streamInfo, track: track, startFromPosition: startFromPosition)
+        
+        // Duration isn't known up front for local files — load it from the asset
+        // so end-of-track detection and the progress bar work.
+        let asset = AVURLAsset(url: fileURL)
+        Task { [weak self] in
+            do {
+                let seconds = try await asset.load(.duration).seconds
+                await MainActor.run {
+                    guard let self = self,
+                          self.currentTrack?.videoId == track.videoId,
+                          seconds.isFinite, seconds > 0 else { return }
+                    self.duration = seconds
+                    self.saveCurrentTrack()
+                    self.forceUpdateNowPlayingInfo()
+                }
+            } catch {
+                print("⚠️ Failed to load local file duration: \(error)")
+            }
+        }
+    }
+    
     // 🚀 FAST SEEK OPTIMIZATION: Prefetch next track in background
     private func startNextTrackPrefetch() {
         // Cancel any existing prefetch task
@@ -443,6 +575,12 @@ class PlaybackManager: ObservableObject {
         // Only prefetch if there's a next track
         guard queueManager.hasNext, let nextTrack = queueManager.nextTrack else {
             print("🚀 No next track to prefetch")
+            return
+        }
+        
+        // 🎵 OFFLINE: Local files have no stream info to prefetch
+        guard nextTrack.musicSource != "local" else {
+            print("🚀 Next track is a local file - nothing to prefetch")
             return
         }
         
@@ -504,6 +642,7 @@ class PlaybackManager: ObservableObject {
                     print("🚀 Fast start! Buffered: \(String(format: "%.1f", bufferedSeconds))s, starting playback immediately")
                     self.player?.play()
                     self.playbackState = .playing
+                    self.applyPlaybackSpeed()
                     self.updateNowPlayingInfo()
                     
                     // 🔋 CPU OPTIMIZATION: Stop buffer timer after playback starts!
@@ -520,6 +659,7 @@ class PlaybackManager: ObservableObject {
                     hasStartedPlayback = true
                     self.player?.play()
                     self.playbackState = .playing
+                    self.applyPlaybackSpeed()
                     self.updateNowPlayingInfo()
                     print("🎵 Buffering complete, starting playback")
                     
@@ -594,6 +734,103 @@ class PlaybackManager: ObservableObject {
         await playCurrentTrack(startFromPosition: savedTime)
     }
     
+    // MARK: - Sleep Timer
+    
+    // 😴 Start a one-shot wall-clock sleep timer. When it fires, the player
+    // volume fades to 0 over ~5 seconds and playback pauses — never advancing
+    // the queue or triggering radio.
+    func startSleepTimer(minutes: Int) {
+        guard minutes > 0 else { return }
+        sleepTimer?.invalidate()
+        // 😴 Abort any in-flight fade from a previous timer
+        if isSleepFading {
+            isSleepFading = false
+            player?.volume = volume
+        }
+        sleepTimerEndDate = Date().addingTimeInterval(TimeInterval(minutes * 60))
+        sleepAtTrackEnd = false
+        
+        let interval = TimeInterval(minutes * 60)
+        sleepTimer = Timer.scheduledTimer(withTimeInterval: interval, repeats: false) { [weak self] _ in
+            self?.handleSleepTimerFired()
+        }
+        print("😴 Sleep timer started: \(minutes) minutes")
+    }
+    
+    // 😴 Pause once the current track finishes (no wall-clock timer).
+    func startSleepTimerAtTrackEnd() {
+        sleepTimer?.invalidate()
+        sleepTimer = nil
+        sleepTimerEndDate = nil
+        sleepAtTrackEnd = true
+        print("😴 Sleep timer: pause at end of current track")
+    }
+    
+    func cancelSleepTimer() {
+        sleepTimer?.invalidate()
+        sleepTimer = nil
+        sleepTimerEndDate = nil
+        sleepAtTrackEnd = false
+        
+        // 😴 If a fade is mid-flight, stop it and restore the user volume.
+        if isSleepFading {
+            isSleepFading = false
+            player?.volume = volume
+        }
+        print("😴 Sleep timer cancelled")
+    }
+    
+    private func handleSleepTimerFired() {
+        sleepTimer = nil
+        sleepTimerEndDate = nil
+        print("😴 Sleep timer fired")
+        
+        guard let player = player else {
+            print("😴 No player - sleep timer done")
+            return
+        }
+        let isActive: Bool
+        switch playbackState {
+        case .playing, .buffering: isActive = true
+        default: isActive = false
+        }
+        guard isActive else {
+            print("😴 Playback not active - sleep timer done")
+            return
+        }
+        
+        // 😴 Fade player volume to 0 over ~5 seconds, then pause. The user's
+        // stored volume (`volume`) is untouched — we drive player?.volume
+        // directly and restore it afterwards.
+        isSleepFading = true
+        let startVolume = player.volume
+        let fadeDuration = 5.0
+        let steps = 50
+        Task { [weak self] in
+            for step in 1...steps {
+                try? await Task.sleep(nanoseconds: UInt64(fadeDuration / Double(steps) * 1_000_000_000))
+                guard let self = self, self.isSleepFading else { return }
+                let fraction = Double(step) / Double(steps)
+                let fadedVolume = startVolume * Float(1.0 - fraction)
+                await MainActor.run {
+                    self.player?.volume = max(0, fadedVolume)
+                }
+            }
+            await MainActor.run { [weak self] in
+                self?.finishSleepFade()
+            }
+        }
+    }
+    
+    private func finishSleepFade() {
+        isSleepFading = false
+        // 😴 Pause directly — never route through handlePlaybackEnd, so the
+        // radio/next-track logic can't fire from a sleep pause.
+        pause()
+        player?.volume = volume  // Restore the stored user volume
+        print("😴 Sleep timer: playback paused")
+    }
+    
     func pause() {
         player?.pause()
         playbackState = .paused
@@ -606,12 +843,36 @@ class PlaybackManager: ObservableObject {
     }
     
     func resume() {
+        // 😴 A manual resume after a sleep-at-track-end pause opts back into
+        // normal end-of-track handling.
+        isSleepTrackEndHandled = false
         player?.play()
         playbackState = .playing
+        applyPlaybackSpeed()
         forceUpdateNowPlayingInfo() // 🔋 Force immediate update for state changes
         
         // Restart buffer monitoring when resuming
         startBufferMonitoring()
+    }
+    
+    // ⏩ PLAYBACK SPEED: Update the stored speed and apply it to a live player
+    // immediately. When paused, the player's rate is 0 — we don't fight that;
+    // the speed is re-applied when playback starts again. Note: AVPlayer's rate
+    // preserves pitch on Apple platforms, so sped-up audio stays natural.
+    func setPlaybackSpeed(_ s: Double) {
+        let clamped = min(max(s, 0.25), 4.0)
+        playbackSpeed = clamped
+        if isPlaying {
+            player?.rate = Float(clamped)
+        }
+        print("⏩ Playback speed set to \(clamped)x")
+    }
+    
+    // ⏩ Apply the persisted playback rate to a running player (no-op while
+    // paused — rate is 0 there, and resume()/buffer-start re-applies it).
+    private func applyPlaybackSpeed() {
+        guard playbackState.isPlaying else { return }
+        player?.rate = Float(playbackSpeed)
     }
     
     func stop() {
@@ -627,6 +888,9 @@ class PlaybackManager: ObservableObject {
         // Stop buffer monitoring when stopped
         bufferTimer?.invalidate()
         bufferTimer = nil
+        
+        // 😴 Stopping playback also ends any pending sleep timer
+        cancelSleepTimer()
     }
     
     func seek(to time: TimeInterval) {
@@ -701,7 +965,7 @@ class PlaybackManager: ObservableObject {
             // Update UI immediately to show the new track info
             await MainActor.run {
                 if let track = queueManager.currentTrack {
-                    self.currentTrack = track
+                    self.setCurrentTrackAndNotify(track)
                     self.playbackState = .buffering
                     self.currentTime = 0
                     self.duration = track.duration ?? 0
@@ -759,7 +1023,7 @@ class PlaybackManager: ObservableObject {
             // Update UI immediately to show the new track info
             await MainActor.run {
                 if let track = queueManager.currentTrack {
-                    self.currentTrack = track
+                    self.setCurrentTrackAndNotify(track)
                     self.playbackState = .buffering
                     self.currentTime = 0
                     self.duration = track.duration ?? 0
@@ -909,6 +1173,32 @@ class PlaybackManager: ObservableObject {
     private func handlePlaybackEnd() async {
         print("🎵 Song ended - attempting to play next track")
         
+        // 😴 SLEEP TIMER: A sleep-timer fade pauses playback without advancing.
+        // If the track runs out while the fade is in progress, ignore the end
+        // event — the fade finishes and pauses momentarily.
+        guard !isSleepFading else {
+            print("😴 Sleep fade in progress - ignoring end-of-track event")
+            return
+        }
+        
+        // 😴 SLEEP TIMER: "Pause at end of track" — park here before any
+        // radio/next logic. The plain-flag latch makes duplicate end detections
+        // for the same item (time observer + AVPlayerItemDidPlayToEndTime can
+        // both fire) no-ops until the next playback request.
+        guard !isSleepTrackEndHandled else {
+            print("😴 Sleep-at-track-end already handled - ignoring duplicate end event")
+            return
+        }
+        if sleepAtTrackEnd {
+            isSleepTrackEndHandled = true
+            await MainActor.run {
+                self.sleepAtTrackEnd = false
+                self.pause()
+            }
+            print("😴 Sleep timer: paused at end of track")
+            return
+        }
+        
         // Stop the current player to prevent it from continuing
         await MainActor.run {
             self.player?.pause()
@@ -920,7 +1210,58 @@ class PlaybackManager: ObservableObject {
             print("🎵 Moving to next track in queue")
             await playNext()
         } else {
-            print("🎵 No more tracks in queue - stopping playback")
+            // 📻 AUTOPLAY RADIO: Only when the toggle is on. SettingsView binds
+            // the same UserDefaults key via @AppStorage, so re-read the live
+            // value here. The ended track is captured BEFORE anything advances.
+            let radioEnabled = await MainActor.run {
+                self.autoplayRadio = UserDefaults.standard.bool(forKey: "autoplayRadioEnabled")
+                return self.autoplayRadio
+            }
+            if radioEnabled, let lastTrack = queueManager.currentTrack ?? currentTrack {
+                print("📻 Queue exhausted - autoplay radio extending from: \(lastTrack.title)")
+                await extendQueueWithRadioAndContinue(lastTrack: lastTrack)
+            } else {
+                print("🎵 No more tracks in queue - stopping playback")
+                await MainActor.run {
+                    self.stop()
+                }
+            }
+        }
+    }
+    
+    // 📻 AUTOPLAY RADIO: Fetch tracks similar to the one that just ended, append
+    // the ones not already in the queue, then advance normally so playback
+    // continues. Track(from:) keeps each result's own musicSource. If the fetch
+    // fails or adds nothing new, stop as usual.
+    private func extendQueueWithRadioAndContinue(lastTrack: Track) async {
+        do {
+            let similar = try await pythonService.getWatchPlaylist(videoId: lastTrack.videoId)
+            
+            // 📻 Guard against radio loops: skip results already in the queue
+            // (or without a usable videoId).
+            let queuedIds = Set(queueManager.currentQueue.map { $0.videoId })
+            let freshTracks = similar
+                .map { Track(from: $0) }
+                .filter { !$0.videoId.isEmpty && !queuedIds.contains($0.videoId) }
+            
+            guard !freshTracks.isEmpty else {
+                print("📻 Autoplay radio: no new similar tracks - stopping playback")
+                await MainActor.run {
+                    self.stop()
+                }
+                return
+            }
+            
+            await MainActor.run {
+                queueManager.addToQueue(freshTracks)
+                print("📻 Autoplay radio: added \(freshTracks.count) similar tracks")
+            }
+            
+            // Advance normally so the next track (first radio track at the true
+            // end of the queue) starts playing
+            await playNext()
+        } catch {
+            print("⚠️ Autoplay radio fetch failed - stopping playback: \(error)")
             await MainActor.run {
                 self.stop()
             }
@@ -934,6 +1275,7 @@ class PlaybackManager: ObservableObject {
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
             if self?.playbackState.isPlaying == true {
                 self?.player?.play()
+                self?.applyPlaybackSpeed()
             }
             self?.isBuffering = false
         }
@@ -942,6 +1284,10 @@ class PlaybackManager: ObservableObject {
     // MARK: - Cleanup
     
     private func cleanup() {
+        // 😴 Abort any in-flight sleep fade so it can't pause a freshly-set-up
+        // player; the next setup restores volume via player?.volume = volume.
+        isSleepFading = false
+        
         if let timeObserver = timeObserver {
             player?.removeTimeObserver(timeObserver)
             self.timeObserver = nil
@@ -990,7 +1336,7 @@ class PlaybackManager: ObservableObject {
            let playbackData = try? JSONDecoder().decode(PlaybackData.self, from: data) {
             
             // Restore track
-            currentTrack = playbackData.track
+            setCurrentTrackAndNotify(playbackData.track)
             
             // Restore queue state
             if !playbackData.queue.isEmpty {

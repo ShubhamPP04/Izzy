@@ -39,6 +39,15 @@ struct QueueView: View {
             // Queue list
             ScrollView {
                 LazyVStack(spacing: 0) {
+                    // ♾️ Autoplay Radio — keeps the queue alive with similar tracks
+                    AutoplayRadioRow()
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 4)
+
+                    Divider()
+                        .padding(.horizontal, 16)
+                        .padding(.bottom, 4)
+
                     ForEach(Array(playbackManager.queue.currentQueue.enumerated()), id: \.element.id) { index, track in
                         QueueItemView(
                             track: track,
@@ -83,6 +92,42 @@ struct QueueView: View {
                 .fill(Color(.controlBackgroundColor))
                 .shadow(radius: 5)
         )
+    }
+}
+
+// MARK: - Autoplay Radio Row
+
+/// ♾️ Toggle row for Autoplay Radio. The enable flag lives in UserDefaults
+/// ("autoplayRadioEnabled") so the radio logic elsewhere can read it.
+struct AutoplayRadioRow: View {
+    @AppStorage("autoplayRadioEnabled") private var autoplayRadio = false
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "infinity")
+                .font(.system(size: 13, weight: .semibold))
+                .foregroundColor(.blue)
+                .frame(width: 20, alignment: .center)
+
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Autoplay Radio")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundColor(.primary)
+
+                Text("Keep the music going with similar tracks")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+                    .lineLimit(1)
+            }
+
+            Spacer()
+
+            Toggle("", isOn: $autoplayRadio)
+                .labelsHidden()
+                .toggleStyle(SwitchToggleStyle())
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 6)
     }
 }
 

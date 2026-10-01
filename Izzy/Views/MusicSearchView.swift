@@ -148,6 +148,18 @@ struct MusicSearchView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
                     .opacity(selectedTab == 4 ? 1 : 0)
                     .allowsHitTesting(selectedTab == 4)
+                
+                // Offline Library Content (downloaded songs)
+                LibraryView()
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .opacity(selectedTab == 8 ? 1 : 0)
+                    .allowsHitTesting(selectedTab == 8)
+                
+                // Listening Stats Content
+                StatsView(onClose: { selectedTab = 0 })
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .opacity(selectedTab == 9 ? 1 : 0)
+                    .allowsHitTesting(selectedTab == 9)
             }
             
             // Playback Controls (show when there's a current track OR when there's a playback error OR when buffering)
@@ -467,6 +479,8 @@ struct AnimatedTabNavigation: View {
         TabItem(icon: "clock.fill", title: "Recently Played", tag: 3),
         TabItem(icon: "music.note.list", title: "Playlists", tag: 5),
         TabItem(icon: "list.bullet", title: "Up Next", tag: 6),
+        TabItem(icon: "square.stack.fill", title: "Library", tag: 8),
+        TabItem(icon: "chart.bar.fill", title: "Stats", tag: 9),
         TabItem(icon: "gear", title: "Settings", tag: 4)
     ]
     

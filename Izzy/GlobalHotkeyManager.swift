@@ -45,11 +45,22 @@ enum HotkeyModifier: String, CaseIterable, Identifiable {
     }
 }
 
+// 🎹 One transport hotkey: Carbon key code + modifier flags + the action it fires.
+private struct TransportHotkey {
+    let id: UInt32
+    let keyCode: UInt32
+    let modifiers: UInt32
+    let description: String
+    let handler: () -> Void
+}
+
 class GlobalHotkeyManager: ObservableObject {
     static let hotkeyDefaultsKey = "globalHotkeyModifier"
     private var hotKeyRef: EventHotKeyRef?
     private let hotkeyID = EventHotKeyID(signature: OSType(0x497A7A79), id: 1) // 'Izzy'
     private var eventHandler: EventHandlerRef?
+    private var transportHotkeys: [TransportHotkey] = [] // Registered alongside the toggle hotkey (ids 2+)
+    private var transportHotKeyRefs: [EventHotKeyRef?] = []
     private var lastHotkeyTime: Date = Date(timeIntervalSince1970: 0) // Initialize to epoch to prevent initial blocking
     private let hotkeyDebounceInterval: TimeInterval = 0.1 // 100ms debounce (reduced from 200ms)
     private let doublePressInterval: TimeInterval = 0.5 // 500ms window for double press detection
@@ -69,10 +80,12 @@ class GlobalHotkeyManager: ObservableObject {
         hotkeyModifier = HotkeyModifier(rawValue: storedModifier ?? "") ?? .option
         setupEventHandler()
         registerGlobalHotkey(for: hotkeyModifier)
+        registerTransportHotkeys() // Same lifecycle as the toggle hotkey: registered at init, released in deinit
     }
-    
+
     deinit {
         unregisterGlobalHotkey()
+        unregisterTransportHotkeys()
         if let handler = eventHandler {
             RemoveEventHandler(handler)
         }
@@ -90,13 +103,24 @@ class GlobalHotkeyManager: ObservableObject {
             GetEventParameter(event, EventParamName(kEventParamDirectObject), EventParamType(typeEventHotKeyID), 
                             nil, MemoryLayout<EventHotKeyID>.size, nil, &hotkeyID)
             
-            if hotkeyID.signature == manager.hotkeyID.signature && hotkeyID.id == manager.hotkeyID.id {
-                DispatchQueue.main.async {
-                    manager.handleHotkeyPress()
+            if hotkeyID.signature == manager.hotkeyID.signature {
+                // Show/hide toggle hotkey (⌥ + Space)
+                if hotkeyID.id == manager.hotkeyID.id {
+                    DispatchQueue.main.async {
+                        manager.handleHotkeyPress()
+                    }
+                    return OSStatus(noErr)
                 }
-                return OSStatus(noErr)
+
+                // 🎹 Transport hotkeys (⌥⌘ + arrows)
+                if let transportHotkey = manager.transportHotkey(withID: hotkeyID.id) {
+                    DispatchQueue.main.async {
+                        transportHotkey.handler()
+                    }
+                    return OSStatus(noErr)
+                }
             }
-            
+
             return OSStatus(eventNotHandledErr)
         }
         
@@ -140,6 +164,64 @@ class GlobalHotkeyManager: ObservableObject {
             }
             self.hotKeyRef = nil
         }
+    }
+
+    /// 🎹 Builds the transport shortcuts: ⌥⌘→ next, ⌥⌘← previous, ⌥⌘↑ volume up, ⌥⌘↓ volume down.
+    private func makeTransportHotkeys() -> [TransportHotkey] {
+        let flags = UInt32(cmdKey | optionKey) // ⌥⌘
+
+        return [
+            // ⌥⌘→ Next track (playNext is async, hop onto a Task)
+            TransportHotkey(id: 2, keyCode: UInt32(kVK_RightArrow), modifiers: flags, description: "⌥⌘→ Next Track", handler: {
+                Task { await PlaybackManager.shared.playNext() }
+            }),
+            // ⌥⌘← Previous track
+            TransportHotkey(id: 3, keyCode: UInt32(kVK_LeftArrow), modifiers: flags, description: "⌥⌘← Previous Track", handler: {
+                Task { await PlaybackManager.shared.playPrevious() }
+            }),
+            // ⌥⌘↑ Volume up (+0.05, clamped to 1.0)
+            TransportHotkey(id: 4, keyCode: UInt32(kVK_UpArrow), modifiers: flags, description: "⌥⌘↑ Volume Up", handler: {
+                PlaybackManager.shared.volume = min(1.0, PlaybackManager.shared.volume + 0.05)
+            }),
+            // ⌥⌘↓ Volume down (-0.05, clamped to 0.0)
+            TransportHotkey(id: 5, keyCode: UInt32(kVK_DownArrow), modifiers: flags, description: "⌥⌘↓ Volume Down", handler: {
+                PlaybackManager.shared.volume = max(0.0, PlaybackManager.shared.volume - 0.05)
+            }),
+        ]
+    }
+
+    /// 🎹 Registers all transport hotkeys using the same Carbon mechanism as the toggle hotkey.
+    private func registerTransportHotkeys() {
+        unregisterTransportHotkeys()
+        transportHotkeys = makeTransportHotkeys()
+        for hotkey in transportHotkeys {
+            var transportRef: EventHotKeyRef?
+            let hotkeyID = EventHotKeyID(signature: self.hotkeyID.signature, id: hotkey.id)
+            let status = RegisterEventHotKey(hotkey.keyCode, hotkey.modifiers, hotkeyID,
+                                           GetApplicationEventTarget(), 0, &transportRef)
+            if status == noErr {
+                transportHotKeyRefs.append(transportRef)
+                print("✅ Transport hotkey registered (\(hotkey.description))")
+            } else {
+                print("❌ Failed to register transport hotkey \(hotkey.description): \(status)")
+            }
+        }
+    }
+
+    private func unregisterTransportHotkeys() {
+        for ref in transportHotKeyRefs {
+            if let ref = ref {
+                let status = UnregisterEventHotKey(ref)
+                if status != noErr {
+                    print("⚠️ Failed to unregister transport hotkey: \(status)")
+                }
+            }
+        }
+        transportHotKeyRefs.removeAll()
+    }
+
+    private func transportHotkey(withID id: UInt32) -> TransportHotkey? {
+        transportHotkeys.first { $0.id == id }
     }
     
     private func handleHotkeyPress() {

@@ -22,7 +22,11 @@ struct SettingsView: View {
     @AppStorage("startupTab") private var startupTab = 1 // 0 = Home, 1 = Search, 2 = Favorites, 3 = Recently Played, 4 = Settings, 5 = Playlists
     @AppStorage("showAISearch") private var showAISearch = true
     @AppStorage(GlobalHotkeyManager.hotkeyDefaultsKey) private var storedHotkeyModifierRawValue = HotkeyModifier.option.rawValue
+    @AppStorage("autoplayRadioEnabled") private var autoplayRadioEnabled = false
+    @AppStorage("lyricsOverlayEnabled") private var lyricsOverlayEnabled = false
+    @AppStorage("discordRichPresenceEnabled") private var discordRichPresenceEnabled = false
     @StateObject private var updateManager = UpdateManager.shared
+    @ObservedObject private var playback = PlaybackManager.shared
 
     var body: some View {
         ScrollViewReader { _ in
@@ -31,6 +35,7 @@ struct SettingsView: View {
                     headerSection
                     liquidGlassCard
                     musicSourceCard
+                    playbackCard
                     launchAtLoginCard
                     hotkeyCard
                     menuBarPlayerCard
@@ -38,6 +43,7 @@ struct SettingsView: View {
                     customHomeNameCard
                     windowPositionCard
                     aiServicesCard
+                    integrationsCard
                     startupTabCard
                     updatesCard
                     playbackControlsCard
@@ -64,6 +70,10 @@ struct SettingsView: View {
             searchState.musicSearchManager.clearCacheForMusicSourceChange()
             searchState.clearExploreCache()
             searchState.clearSearch()
+        }
+        .onChange(of: lyricsOverlayEnabled) { _, newValue in
+            // 🖥 Keep the desktop lyrics overlay in sync with the setting
+            LyricsOverlayController.shared.setVisible(newValue)
         }
         .onAppear {
             // Check current launch at login status
@@ -445,6 +455,125 @@ struct SettingsView: View {
                 : "Click to open a menu and select any provider directly")
                 .font(.system(size: 11))
                 .foregroundColor(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private var playbackCard: some View {
+        settingsCard {
+            HStack {
+                Image(systemName: "infinity")
+                    .foregroundColor(.blue)
+                    .font(.system(size: 14, weight: .medium))
+
+                Text("Playback")
+                    .font(.system(size: 14, weight: .medium))
+
+                Spacer()
+            }
+
+            // 📻 Autoplay Radio
+            HStack {
+                Text("Autoplay Radio")
+                    .font(.system(size: 14, weight: .medium))
+
+                Spacer()
+
+                Toggle("", isOn: $autoplayRadioEnabled)
+                    .labelsHidden()
+                    .toggleStyle(SwitchToggleStyle())
+            }
+
+            Text("When the queue ends, keep playing similar tracks")
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
+
+            // 🖥 Desktop Lyrics
+            HStack {
+                Text("Desktop Lyrics")
+                    .font(.system(size: 14, weight: .medium))
+
+                Spacer()
+
+                Toggle("", isOn: $lyricsOverlayEnabled)
+                    .labelsHidden()
+                    .toggleStyle(SwitchToggleStyle())
+            }
+
+            Text("Show a floating lyrics overlay on your desktop")
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
+
+            Divider()
+                .padding(.vertical, 4)
+
+            // ⏩ Playback Speed
+            HStack {
+                Text("Playback Speed")
+                    .font(.system(size: 14, weight: .medium))
+
+                Spacer()
+            }
+
+            Picker(
+                "Playback Speed",
+                selection: Binding(
+                    get: { playback.playbackSpeed },
+                    set: { newValue in
+                        playback.setPlaybackSpeed(newValue)
+                    }
+                )
+            ) {
+                ForEach([0.75, 1.0, 1.25, 1.5, 2.0], id: \.self) { speed in
+                    Text(speed == speed.rounded() ? "\(Int(speed))×" : "\(speed)×")
+                        .font(.system(size: 14))
+                        .tag(speed)
+                }
+            }
+            .pickerStyle(MenuPickerStyle())
+            .frame(maxWidth: .infinity, alignment: .leading)
+
+            Text("Speeds up or slows down playback without changing the pitch")
+                .font(.system(size: 11))
+                .foregroundColor(.secondary)
+        }
+    }
+
+    @ViewBuilder
+    private var integrationsCard: some View {
+        settingsCard {
+            HStack {
+                Image(systemName: "link")
+                    .foregroundColor(.blue)
+                    .font(.system(size: 14, weight: .medium))
+
+                Text("Integrations")
+                    .font(.system(size: 14, weight: .medium))
+
+                Spacer()
+            }
+
+            // 🎮 Discord Rich Presence
+            HStack {
+                Text("Discord Rich Presence")
+                    .font(.system(size: 14, weight: .medium))
+
+                Spacer()
+
+                Toggle("", isOn: $discordRichPresenceEnabled)
+                    .labelsHidden()
+                    .toggleStyle(SwitchToggleStyle())
+            }
+
+            Text("Show what you're playing on your Discord profile")
+                .font(.system(size: 12))
+                .foregroundColor(.secondary)
+
+            Divider()
+                .padding(.vertical, 4)
+
+            // 🔐 Last.fm scrobbling
+            LastFMSettingsSection()
         }
     }
 
@@ -935,5 +1064,125 @@ struct TidalSettingsSection: View {
             }
         }
         .padding(.top, 4)
+    }
+}
+
+// MARK: - Last.fm Settings Section
+
+/// 🔐 Scrobbling credentials and connect flow for the Last.fm integration.
+struct LastFMSettingsSection: View {
+    @ObservedObject private var lastFM = LastFMService.shared
+    @AppStorage("lastfmScrobblingEnabled") private var scrobblingEnabled = false
+    @AppStorage("lastfmApiKey") private var apiKey = ""
+    @AppStorage("lastfmSecret") private var sharedSecret = ""
+    @AppStorage("lastfmUsername") private var username = ""
+    @AppStorage("lastfmPassword") private var password = ""
+    @State private var isConnecting = false
+    @State private var connectSucceeded: Bool?
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack {
+                Image(systemName: "antenna.radiowaves.left.and.right")
+                    .foregroundColor(.red)
+                    .font(.system(size: 14, weight: .medium))
+
+                Text("Last.fm")
+                    .font(.system(size: 14, weight: .medium))
+
+                Spacer()
+
+                if lastFM.isAuthenticated {
+                    Label("Connected", systemImage: "checkmark.circle.fill")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(.green)
+                }
+            }
+
+            // 💾 Scrobbling toggle
+            HStack {
+                Text("Scrobbling")
+                    .font(.system(size: 14, weight: .medium))
+
+                Spacer()
+
+                Toggle("", isOn: $scrobblingEnabled)
+                    .labelsHidden()
+                    .toggleStyle(SwitchToggleStyle())
+            }
+
+            // 🔑 API credentials (each user needs their own Last.fm API account)
+            VStack(alignment: .leading, spacing: 4) {
+                TextField("API key", text: $apiKey)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .font(.system(size: 12))
+                TextField("Shared secret", text: $sharedSecret)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .font(.system(size: 12))
+                TextField("Username", text: $username)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .font(.system(size: 12))
+                SecureField("Password", text: $password)
+                    .textFieldStyle(RoundedBorderTextFieldStyle())
+                    .font(.system(size: 12))
+            }
+
+            // 🔌 Connect / Sign Out
+            HStack(spacing: 8) {
+                Button(isConnecting ? "Connecting..." : "Connect") {
+                    connect()
+                }
+                .disabled(isConnecting || !canConnect)
+
+                if lastFM.isAuthenticated {
+                    Button("Sign Out") {
+                        LastFMService.shared.signOut()
+                        connectSucceeded = nil
+                    }
+                    .buttonStyle(.bordered)
+                }
+            }
+            .buttonStyle(.bordered)
+            .controlSize(.small)
+
+            // ✅ / ❌ Connect feedback
+            if let connectSucceeded {
+                HStack(spacing: 6) {
+                    Image(systemName: connectSucceeded ? "checkmark.circle.fill" : "xmark.octagon.fill")
+                        .foregroundColor(connectSucceeded ? .green : .red)
+                        .font(.system(size: 11))
+                    Text(connectSucceeded ? "Connected to Last.fm" : "Couldn't connect — check your credentials and API key")
+                        .font(.system(size: 11))
+                        .foregroundColor(connectSucceeded ? .green : .red)
+                }
+            }
+
+            HStack(spacing: 6) {
+                Image(systemName: "info.circle")
+                    .foregroundColor(.orange)
+                    .font(.system(size: 11))
+
+                Text("Scrobbling needs your own Last.fm API account — create one at last.fm/api, then paste the API key and shared secret here.")
+                    .font(.system(size: 11))
+                    .foregroundColor(.secondary)
+            }
+        }
+        .padding(.top, 4)
+    }
+
+    private var canConnect: Bool {
+        !apiKey.isEmpty && !sharedSecret.isEmpty
+    }
+
+    private func connect() {
+        isConnecting = true
+        connectSucceeded = nil
+        Task {
+            let success = await LastFMService.shared.authenticate()
+            await MainActor.run {
+                isConnecting = false
+                connectSucceeded = success
+            }
+        }
     }
 }
