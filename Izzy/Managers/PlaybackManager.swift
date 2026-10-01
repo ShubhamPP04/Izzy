@@ -325,9 +325,11 @@ class PlaybackManager: ObservableObject {
             // Only reset time for new tracks, not when resuming
             if let startPosition = startFromPosition {
                 self.currentTime = startPosition
+                anchorSmoothTime()
                 print("🎵 Resuming from position: \(startPosition)")
             } else {
                 self.currentTime = 0  // Reset to start from beginning for new tracks
+                anchorSmoothTime()
                 print("🎵 Reset current time to 0 (start from beginning)")
             }
             
@@ -939,6 +941,7 @@ class PlaybackManager: ObservableObject {
                 guard let self else { return }
                 // Update currentTime immediately after seek completes
                 self.currentTime = time
+                self.anchorSmoothTime()
                 
                 // Save the new position for persistence
                 self.saveCurrentTrack()
@@ -963,6 +966,7 @@ class PlaybackManager: ObservableObject {
             guard let self, !completed else { return }
             print("⚠️ Seek completion timed out - resetting seek state")
             self.currentTime = time
+            anchorSmoothTime()
             self.setSeekingState(false)
             self.forceUpdateNowPlayingInfo()
         }
@@ -1010,6 +1014,7 @@ class PlaybackManager: ObservableObject {
                     self.setCurrentTrackAndNotify(track)
                     self.playbackState = .buffering
                     self.currentTime = 0
+                    anchorSmoothTime()
                     self.duration = track.duration ?? 0
                 }
             }
@@ -1068,6 +1073,7 @@ class PlaybackManager: ObservableObject {
                     self.setCurrentTrackAndNotify(track)
                     self.playbackState = .buffering
                     self.currentTime = 0
+                    anchorSmoothTime()
                     self.duration = track.duration ?? 0
                 }
             }
@@ -1095,7 +1101,27 @@ class PlaybackManager: ObservableObject {
         }
     }
     
-    // MARK: - Player Observers
+    // MARK: - Smooth Lyrics Clock
+    
+    // 🎤 The 1s time observer keeps battery low, but synced lyrics need
+    // sub-second resolution. Consumers interpolate: anchor to each observer
+    // tick, then extrapolate by wall-clock elapsed * playback speed between
+    // ticks. Seek/track changes re-anchor so the estimate never drifts.
+    private (set) var smoothAnchorDate = Date()
+    
+    func anchorSmoothTime() {
+        smoothAnchorDate = Date()
+    }
+    
+    /// Best-effort playback position at sub-second resolution.
+    func interpolatedTime(now: Date = Date()) -> Double {
+        guard playbackState.isPlaying else { return currentTime }
+        var elapsed = now.timeIntervalSince(smoothAnchorDate)
+        elapsed = min(max(elapsed, 0), 2.0)  // missed ticks must not run away
+        var estimate = currentTime + elapsed * playbackSpeed
+        if duration > 0 { estimate = min(estimate, duration) }
+        return estimate
+    }
     
     private func setupPlayerObservers() {
         guard let player = player, let playerItem = playerItem else { return }
@@ -1113,6 +1139,7 @@ class PlaybackManager: ObservableObject {
             guard !self.isSeeking else { return }
             
             self.currentTime = time.seconds
+            anchorSmoothTime()
             self.throttledUpdateNowPlayingInfo()
             
             // 🔋 BATTERY EFFICIENCY: Save state less often while active - each
@@ -1392,6 +1419,7 @@ class PlaybackManager: ObservableObject {
             
             // Restore playback position
             currentTime = playbackData.currentTime
+            anchorSmoothTime()
             duration = playbackData.duration
             
             // Set state to stopped (don't auto-resume playback)

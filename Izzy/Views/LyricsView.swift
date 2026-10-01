@@ -18,8 +18,6 @@ struct LyricsView: View {
     @State private var isLoading = false
     @State private var lastLoadedVideoId: String?
     @State private var currentLineIndex: Int = 0
-    // 🎤 How far into the current line we are (0...1) — drives the karaoke fill
-    @State private var currentLineProgress: Double = 0
     
     private let pythonService = PythonServiceManager.shared
     
@@ -154,44 +152,75 @@ struct LyricsView: View {
     
     private func syncedLyricsView(_ lines: [SyncedLine], source: String?) -> some View {
         ScrollViewReader { scrollProxy in
-            ScrollView {
-                VStack(alignment: .leading, spacing: 0) {
-                    trackHeader
-                    
-                    Divider().padding(.horizontal, 16).opacity(0.3)
-                    
-                    ForEach(Array(lines.enumerated()), id: \.offset) { index, line in
-                        Group {
-                            if index == currentLineIndex {
-                                // 🎤 Current line gets the progressive karaoke fill
-                                karaokeFilledLine(line.text)
-                            } else {
-                                Text(line.text.isEmpty ? " " : line.text)
+            // 🎤 ~20fps while playing so line changes land exactly on time and
+            // the karaoke fill is continuous — driven by the interpolated
+            // clock, not the 1s battery-saving observer tick. Paused lyrics
+            // tick at 1fps (nothing moves).
+            TimelineView(.periodic(from: .now, by: playbackManager.playbackState.isPlaying ? 0.05 : 0.5)) { _ in
+                let smoothTime = playbackManager.interpolatedTime()
+                let index = Self.lineIndex(at: smoothTime, lines: lines)
+                let progress = Self.lineProgress(at: smoothTime, lines: lines, index: index)
+                ScrollView {
+                    VStack(alignment: .leading, spacing: 0) {
+                        trackHeader
+
+                        Divider().padding(.horizontal, 16).opacity(0.3)
+
+                        ForEach(Array(lines.enumerated()), id: \.offset) { i, line in
+                            Group {
+                                if i == index {
+                                    // 🎤 Current line gets the progressive karaoke fill
+                                    karaokeFilledLine(line.text, progress: progress)
+                                } else {
+                                    Text(line.text.isEmpty ? " " : line.text)
+                                }
                             }
-                        }
-                        .font(.system(
-                            size: index == currentLineIndex ? 16 : 14,
-                            weight: index == currentLineIndex ? .bold : .medium
-                        ))
+                            .font(.system(
+                                size: i == index ? 16 : 14,
+                                weight: i == index ? .bold : .medium
+                            ))
                             .lineSpacing(4)
-                            .foregroundColor(syncedLineColor(for: index))
-                            .scaleEffect(index == currentLineIndex ? 1.02 : 1.0, anchor: .leading)
+                            .foregroundColor(syncedLineColor(for: i, current: index))
+                            .scaleEffect(i == index ? 1.02 : 1.0, anchor: .leading)
                             .padding(.horizontal, 16)
                             .padding(.vertical, 5)
                             .frame(maxWidth: .infinity, alignment: .leading)
-                            .id(index)
-                            .animation(.easeInOut(duration: 0.25), value: currentLineIndex)
+                            .id(i)
+                            .animation(.easeInOut(duration: 0.25), value: index)
+                        }
+
+                        sourceFooter(source)
+
+                        Spacer(minLength: 20)
                     }
-                    
-                    sourceFooter(source)
-                    
-                    Spacer(minLength: 20)
+                }
+                .onChange(of: index) { _, newIndex in
+                    withAnimation(.easeInOut(duration: 0.25)) {
+                        scrollProxy.scrollTo(newIndex, anchor: .center)
+                    }
                 }
             }
-            .onChange(of: playbackManager.currentTime) { _, newTime in
-                updateSyncedLine(lines: lines, currentTime: newTime, scrollProxy: scrollProxy)
-            }
         }
+    }
+
+    // MARK: - Smooth Sync Helpers
+
+    /// Last line whose timestamp <= the (interpolated) playback time.
+    private static func lineIndex(at time: Double, lines: [SyncedLine]) -> Int {
+        var index = 0
+        for (i, line) in lines.enumerated() {
+            if line.time <= time { index = i } else { break }
+        }
+        return index
+    }
+
+    /// Sung fraction of the current line, linear between its timestamp and the
+    /// next one's (the last line gets a 4s window).
+    private static func lineProgress(at time: Double, lines: [SyncedLine], index: Int) -> Double {
+        let start = lines[index].time
+        let end = index + 1 < lines.count ? lines[index + 1].time : start + 4
+        let span = max(end - start, 0.25)
+        return min(max((time - start) / span, 0), 1)
     }
     
     // MARK: - Karaoke Fill
@@ -199,7 +228,7 @@ struct LyricsView: View {
     /// 🎤 Renders the line twice: a dim base plus a bright overlay masked to the
     /// sung fraction of the line width. The fill is animated linearly between
     /// time ticks so it looks continuous without per-frame updates.
-    private func karaokeFilledLine(_ text: String) -> some View {
+    private func karaokeFilledLine(_ text: String, progress: Double) -> some View {
         let displayText = text.isEmpty ? " " : text
         return ZStack(alignment: .leading) {
             Text(displayText)
@@ -209,11 +238,10 @@ struct LyricsView: View {
                 .foregroundColor(.primary)
                 .mask(
                     Rectangle()
-                        .scaleEffect(x: currentLineProgress, y: 1, anchor: .leading)
+                        .scaleEffect(x: progress, y: 1, anchor: .leading)
                 )
         }
         .frame(maxWidth: .infinity, alignment: .leading)
-        .animation(.linear(duration: 0.35), value: currentLineProgress)
     }
 
     // MARK: - Plain Lyrics (estimated sync fallback)
@@ -309,38 +337,10 @@ struct LyricsView: View {
     
     // MARK: - Synced Line Highlighting
     
-    /// Find the correct line based on actual timestamps.
-    private func updateSyncedLine(lines: [SyncedLine], currentTime: Double, scrollProxy: ScrollViewProxy) {
-        // Binary-search style: find the last line whose time <= currentTime
-        var newIndex = 0
-        for (i, line) in lines.enumerated() {
-            if line.time <= currentTime {
-                newIndex = i
-            } else {
-                break
-            }
-        }
-        
-        if newIndex != currentLineIndex {
-            currentLineIndex = newIndex
-            withAnimation(.easeInOut(duration: 0.25)) {
-                scrollProxy.scrollTo(newIndex, anchor: .center)
-            }
-        }
-
-        // 🎤 Estimate the sung fraction of the current line: linear between this
-        // line's timestamp and the next one's (the last line gets a 4s window).
-        // Cheap Double write, in the same place the line index is updated.
-        let lineStart = lines[newIndex].time
-        let lineEnd = newIndex + 1 < lines.count ? lines[newIndex + 1].time : lineStart + 4
-        let span = max(lineEnd - lineStart, 0.25)
-        currentLineProgress = min(max((currentTime - lineStart) / span, 0), 1)
-    }
-    
-    private func syncedLineColor(for index: Int) -> Color {
-        if index == currentLineIndex {
+    private func syncedLineColor(for index: Int, current: Int) -> Color {
+        if index == current {
             return .primary
-        } else if index < currentLineIndex {
+        } else if index < current {
             return .secondary.opacity(0.45)
         } else {
             return .secondary.opacity(0.3)
@@ -385,7 +385,6 @@ struct LyricsView: View {
             isLoading = true
             lastLoadedVideoId = videoId
             currentLineIndex = 0
-            currentLineProgress = 0
         }
         
         let trackTitle = playbackManager.currentTrack?.title

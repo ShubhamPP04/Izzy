@@ -165,8 +165,9 @@ struct LyricsOverlayView: View {
     @State private var frozenLineIndex: Int?
 
     var body: some View {
-        // ⏱️ Recompute the displayed line every 0.5s (cheap when paused).
-        TimelineView(.periodic(from: .now, by: 0.5)) { _ in
+        // ⏱️ ~20fps while playing (interpolated clock → line changes land on
+        // time), 1fps when paused (nothing moves).
+        TimelineView(.periodic(from: .now, by: playbackManager.playbackState.isPlaying ? 0.05 : 0.5)) { _ in
             overlayContent
         }
         .onChange(of: playbackManager.currentTrack?.videoId) { _, _ in
@@ -318,7 +319,7 @@ struct LyricsOverlayView: View {
 
     private func syncedLineIndex() -> Int {
         guard let lines = controller.lyrics?.syncedLyrics, !lines.isEmpty else { return 0 }
-        let time = playbackManager.currentTime
+        let time = playbackManager.interpolatedTime()
         var index = 0
         for (i, line) in lines.enumerated() where line.time <= time {
             index = i
