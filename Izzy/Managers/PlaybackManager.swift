@@ -928,6 +928,15 @@ class PlaybackManager: ObservableObject {
         cancelSleepTimer()
     }
     
+    /// 🎚️ Display-only position update while the user is dragging the seek
+    /// bar: the time label and thumb track the finger live; the real seek
+    /// fires on release. The time observer is suppressed while seeking, so
+    /// nothing fights the preview.
+    func previewSeek(to time: TimeInterval) {
+        currentTime = time
+        anchorSmoothTime()
+    }
+    
     func seek(to time: TimeInterval) {
         // 🚀 PERFECT SEEKING: Enhanced seeking with prefetched data
         print("🚀 Initiating perfect seek to: \(time)s")
@@ -935,11 +944,20 @@ class PlaybackManager: ObservableObject {
         // Set flag to prevent time observer from interfering
         isSeeking = true
         
+        // 🎚️ Optimistic position: the thumb stays exactly where the user
+        // dropped it while the seek lands (previously it snapped back to the
+        // old position until the seek completed — felt broken over network
+        // streams).
+        currentTime = time
+        anchorSmoothTime()
+        
         let cmTime = CMTime(seconds: time, preferredTimescale: 600)
         
-        // 🚀 Use zero tolerance for pixel-perfect seeking with cached data
+        // 🎚️ 100ms pre-tolerance: an exact-sample (.zero) seek over a network
+        // byte-range stream waits for the precise packet; 100ms is inaudible
+        // and lets AVPlayer land as soon as nearby audio arrives.
         var completed = false
-        player?.seek(to: cmTime, toleranceBefore: CMTime.zero, toleranceAfter: CMTime.zero) { [weak self] finished in
+        player?.seek(to: cmTime, toleranceBefore: CMTime(seconds: 0.1, preferredTimescale: 600), toleranceAfter: CMTime.zero) { [weak self] finished in
             guard finished else { return }
             completed = true
             

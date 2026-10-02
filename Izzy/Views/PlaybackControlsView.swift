@@ -289,11 +289,13 @@ struct TrackInfoView: View {
                                         }
                                     )
                                     .onChange(of: dragValue) { value in
-                                        // Battery efficient: throttle drag updates during dragging
+                                        // 🎚️ Live time preview while dragging
+                                        // (throttled to ~20fps for battery).
                                         if isDragging {
-                                            let currentTime = CFAbsoluteTimeGetCurrent()
-                                            if currentTime - lastDragUpdate >= dragUpdateThrottle {
-                                                lastDragUpdate = currentTime
+                                            let now = CFAbsoluteTimeGetCurrent()
+                                            if now - lastDragUpdate >= dragUpdateThrottle {
+                                                lastDragUpdate = now
+                                                playbackManager.previewSeek(to: dragValue * playbackManager.duration)
                                             }
                                         }
                                     }
@@ -506,9 +508,10 @@ struct TrackInfoView: View {
                                 .onChange(of: dragValue) { value in
                                     // Battery efficient: throttle drag updates during dragging
                                     if isDragging {
-                                        let currentTime = CFAbsoluteTimeGetCurrent()
-                                        if currentTime - lastDragUpdate >= dragUpdateThrottle {
-                                            lastDragUpdate = currentTime
+                                        let now = CFAbsoluteTimeGetCurrent()
+                                        if now - lastDragUpdate >= dragUpdateThrottle {
+                                            lastDragUpdate = now
+                                            playbackManager.previewSeek(to: dragValue * playbackManager.duration)
                                         }
                                     }
                                 }
@@ -827,9 +830,10 @@ struct ProgressBarView: View {
                     .onChange(of: dragValue) { value in
                         // Battery efficient: throttle drag updates during dragging
                         if isDragging {
-                            let currentTime = CFAbsoluteTimeGetCurrent()
-                            if currentTime - lastDragUpdate >= dragUpdateThrottle {
-                                lastDragUpdate = currentTime
+                            let now = CFAbsoluteTimeGetCurrent()
+                            if now - lastDragUpdate >= dragUpdateThrottle {
+                                lastDragUpdate = now
+                                playbackManager.previewSeek(to: dragValue * playbackManager.duration)
                             }
                         }
                     }
