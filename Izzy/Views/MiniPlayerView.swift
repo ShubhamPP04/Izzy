@@ -163,11 +163,8 @@ struct MiniPlayerView: View {
                     .disabled(!searchState.playbackManager.queue.hasPrevious)
                     
                     // Play/Pause button
-                    Button(action: { 
-                        if manager.playbackState.isPlaying {
-                            searchState.playbackManager.pause()
-                            searchState.playbackManager.togglePlayPause()
-                        }
+                    Button(action: {
+                        searchState.playbackManager.togglePlayPause()
                     }) {
                         Image(systemName: manager.playbackState.isPlaying ? "pause.fill" : "play.fill")
                             .font(.system(size: 18))
@@ -247,6 +244,9 @@ struct MiniPlayerView: View {
         .clipShape(RoundedRectangle(cornerRadius: 20))
         .onAppear {
             print("🎵 Mini Player View appeared")
+            .background(
+                MiniPlayerDragLayer()
+            )
         }
     }
     
@@ -314,5 +314,24 @@ struct LiquidGlassMiniPlayerBackground: View {
             RoundedRectangle(cornerRadius: 20)
                 .fill(.ultraThinMaterial)
         }
+    }
+}
+// MARK: - Window Drag Layer
+
+/// 🖱️ Non-consuming drag surface behind the mini player's content: reports
+/// mouseDownCanMoveWindow so AppKit's isMovableByWindowBackground moves the
+/// window, and never handles the click itself — SwiftUI buttons on top keep
+/// working. (NSHostingView consumes mouse-downs everywhere, which is why
+/// isMovableByWindowBackground alone never dragged.)
+struct MiniPlayerDragLayer: NSViewRepresentable {
+    func makeNSView(context: Context) -> DragAreaNSView { DragAreaNSView() }
+    func updateNSView(_ nsView: DragAreaNSView, context: Context) {}
+
+    final class DragAreaNSView: NSView {
+        override var mouseDownCanMoveWindow: Bool { true }
+        override func hitTest(_ point: NSPoint) -> NSView? { self }
+        override func mouseDown(with event: NSEvent) {}
+        override func mouseDragged(with event: NSEvent) {}
+        override func mouseUp(with event: NSEvent) {}
     }
 }
