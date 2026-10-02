@@ -124,6 +124,7 @@ struct MiniPlayerView: View {
             }
             .frame(width: 50, height: 50)
             .clipShape(RoundedRectangle(cornerRadius: 12))
+            .overlay(WindowDragHandle())
             
             // Track info and controls
             VStack(alignment: .leading, spacing: 4) {
@@ -146,6 +147,7 @@ struct MiniPlayerView: View {
                         .foregroundColor(.white.opacity(0.7))
                         .lineLimit(1)
                 }
+                .overlay(WindowDragHandle())
                 
                 // Controls row
                 HStack(spacing: 12) {
@@ -239,9 +241,6 @@ struct MiniPlayerView: View {
         }
         .padding(12)
         .background(
-            MiniPlayerDragLayer()
-        )
-        .background(
             LiquidGlassMiniPlayerBackground()
         )
         .clipShape(RoundedRectangle(cornerRadius: 20))
@@ -316,22 +315,21 @@ struct LiquidGlassMiniPlayerBackground: View {
         }
     }
 }
-// MARK: - Window Drag Layer
+// MARK: - Window Drag Handle
 
-/// 🖱️ Non-consuming drag surface behind the mini player's content: reports
-/// mouseDownCanMoveWindow so AppKit's isMovableByWindowBackground moves the
-/// window, and never handles the click itself — SwiftUI buttons on top keep
-/// working. (NSHostingView consumes mouse-downs everywhere, which is why
-/// isMovableByWindowBackground alone never dragged.)
-struct MiniPlayerDragLayer: NSViewRepresentable {
-    func makeNSView(context: Context) -> DragAreaNSView { DragAreaNSView() }
-    func updateNSView(_ nsView: DragAreaNSView, context: Context) {}
+/// 🖱️ Drag handle: hands the mouse-down to NSWindow.performDrag, which runs
+/// the NATIVE window-drag loop (window-server driven — zero stutter) and
+/// leaves every other control untouched. isMovableByWindowBackground can't do
+/// this job behind an NSHostingView: SwiftUI consumes the mouse-downs first.
+struct WindowDragHandle: NSViewRepresentable {
+    func makeNSView(context: Context) -> DragHandleNSView { DragHandleNSView() }
+    func updateNSView(_ nsView: DragHandleNSView, context: Context) {}
 
-    final class DragAreaNSView: NSView {
+    final class DragHandleNSView: NSView {
         override var mouseDownCanMoveWindow: Bool { true }
-        override func hitTest(_ point: NSPoint) -> NSView? { self }
-        override func mouseDown(with event: NSEvent) {}
-        override func mouseDragged(with event: NSEvent) {}
-        override func mouseUp(with event: NSEvent) {}
+
+        override func mouseDown(with event: NSEvent) {
+            window?.performDrag(with: event)
+        }
     }
 }
