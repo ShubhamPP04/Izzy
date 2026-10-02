@@ -720,16 +720,29 @@ struct SettingsView: View {
                 Spacer()
 
                 if updateManager.isUpdateAvailable {
-                    Button("Download Update") {
-                        updateManager.downloadUpdate()
+                    if updateManager.isDownloading {
+                        VStack(alignment: .trailing, spacing: 4) {
+                            ProgressView(value: updateManager.downloadProgress)
+                                .frame(width: 130)
+                            Text(updateManager.updateStatus)
+                                .font(.system(size: 10))
+                                .foregroundColor(.secondary)
+                        }
+                    } else {
+                        Button("Download & Install") {
+                            updateManager.downloadUpdate()
+                        }
+                        .buttonStyle(.borderedProminent)
+                        .help("Downloads the new version and restarts Izzy")
                     }
-                    .buttonStyle(.borderedProminent)
                 }
             }
 
-            Text(updateManager.updateStatus)
-                .font(.system(size: 12))
-                .foregroundColor(updateManager.isUpdateAvailable ? .blue : .secondary)
+            if !updateManager.isDownloading {
+                Text(updateManager.updateStatus)
+                    .font(.system(size: 12))
+                    .foregroundColor(updateManager.isUpdateAvailable ? .blue : .secondary)
+            }
 
             if !updateManager.updateMessage.isEmpty {
                 Text(updateManager.updateMessage)
