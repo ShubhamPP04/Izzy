@@ -239,14 +239,14 @@ struct MiniPlayerView: View {
         }
         .padding(12)
         .background(
+            MiniPlayerDragLayer()
+        )
+        .background(
             LiquidGlassMiniPlayerBackground()
         )
         .clipShape(RoundedRectangle(cornerRadius: 20))
         .onAppear {
             print("🎵 Mini Player View appeared")
-            .background(
-                MiniPlayerDragLayer()
-            )
         }
     }
     
