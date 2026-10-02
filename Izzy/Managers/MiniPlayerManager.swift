@@ -118,8 +118,10 @@ class MiniPlayerManager: ObservableObject {
         guard searchState != nil else { return }
         
         if miniPlayerWindow == nil {
-            // Create a custom floating window
-            miniPlayerWindow = NSWindow(
+            // Create a custom floating window. Keyable: a plain borderless
+            // NSWindow can't become key, so the first click was swallowed and
+            // SwiftUI controls felt dead.
+            miniPlayerWindow = MiniPlayerWindow(
                 contentRect: windowFrame,
                 styleMask: [.borderless, .resizable, .fullSizeContentView],
                 backing: .buffered,
@@ -147,7 +149,10 @@ class MiniPlayerManager: ObservableObject {
         guard let searchState = searchState else { return }
         
         let contentView = MiniPlayerView(manager: self, searchState: searchState)
-        miniPlayerWindow?.contentView = NSHostingView(rootView: contentView)
+        // Mouse-downs on non-control areas report mouseDownCanMoveWindow,
+        // which drives isMovableByWindowBackground window dragging; SwiftUI
+        // buttons consume their own clicks and are unaffected.
+        miniPlayerWindow?.contentView = MiniPlayerHostingView(rootView: contentView)
     }
     
     private func configureMiniPlayerWindow() {
@@ -199,7 +204,16 @@ class MiniPlayerManager: ObservableObject {
             let width = frameDict["width"] as? CGFloat ?? 300
             let height = frameDict["height"] as? CGFloat ?? 120
             
-            windowFrame = NSRect(x: x, y: y, width: width, height: height)
+            var frame = NSRect(x: x, y: y, width: width, height: height)
+            // ⛑️ Clamp on-screen and sane: a corrupt/off-screen saved frame
+            // made the mini player unfindable and unclickable.
+            if let visible = NSScreen.main?.visibleFrame {
+                frame.size.width = min(max(frame.width, 250), visible.width)
+                frame.size.height = min(max(frame.height, 80), visible.height)
+                frame.origin.x = min(max(frame.origin.x, visible.minX), visible.maxX - frame.width)
+                frame.origin.y = min(max(frame.origin.y, visible.minY), visible.maxY - frame.height)
+            }
+            windowFrame = frame
         }
     }
     
@@ -231,4 +245,13 @@ class MiniPlayerWindowDelegate: NSObject, NSWindowDelegate {
             manager?.updateWindowFrame(window.frame)
         }
     }
+}
+
+// MARK: - Mini Player Hosting View
+
+/// Reports mouseDownCanMoveWindow so isMovableByWindowBackground dragging
+/// works on an NSHostingView-backed borderless window; SwiftUI buttons still
+/// consume their own clicks.
+final class MiniPlayerHostingView: NSHostingView<MiniPlayerView> {
+    override var mouseDownCanMoveWindow: Bool { true }
 }
