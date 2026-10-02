@@ -215,6 +215,10 @@ struct MiniPlayerView: View {
                             DragGesture()
                                 .onChanged { value in
                                     let progress = min(max(0, value.location.x / geometry.size.width), 1)
+                                    previewPosition(progress)
+                                }
+                                .onEnded { value in
+                                    let progress = min(max(0, value.location.x / geometry.size.width), 1)
                                     seekToPosition(progress)
                                 }
                         )
@@ -254,6 +258,14 @@ struct MiniPlayerView: View {
     private func seekToPosition(_ position: Double) {
         let newTime = position * manager.duration
         searchState.playbackManager.seek(to: newTime)
+    }
+    
+    /// 🎚️ Display-only position while dragging — a full seek per drag event
+    /// (with its optimistic state writes + pending completion closures) spiked
+    /// the CPU hard enough for macOS to kill the app.
+    private func previewPosition(_ position: Double) {
+        let newTime = position * manager.duration
+        searchState.playbackManager.previewSeek(to: newTime)
     }
     
     private func formatTime(_ seconds: TimeInterval) -> String {
