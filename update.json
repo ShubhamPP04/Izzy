@@ -31,7 +31,10 @@
         "Synced lyrics are smooth: lines change exactly on time with a continuous karaoke fill, and the panel opens on the current line",
         "Player bar keeps its solid glass background; the lyrics panel no longer overlaps tab content and the window can never extend past the screen",
         "Desktop lyrics overlay is now draggable anywhere on the pill",
-        "Stalled streams resume immediately instead of waiting 2 seconds"
+        "Stalled streams resume immediately instead of waiting 2 seconds",
+        "Desktop lyrics: drag the pill anywhere (native smooth dragging) and resize it with the corner grip — size and position are remembered",
+        "JioSaavn lyrics now come from JioSaavn's own catalogue when LRCLIB doesn't cover a track",
+        "Fixed the mini player: it now uses its proper keyable window (controls respond), drags natively from the artwork or title, and scrubbing no longer spikes CPU"
       ]
     },
     {

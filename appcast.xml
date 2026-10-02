@@ -22,6 +22,9 @@
             <li>Player bar keeps its solid glass background; lyrics panel no longer overlaps tab content</li>
             <li>Desktop lyrics overlay is draggable; the window can never extend past the screen</li>
             <li>Stalled streams resume immediately instead of waiting 2 seconds</li>
+            <li>Desktop lyrics: native smooth dragging plus a resize grip, with size and position remembered</li>
+            <li>JioSaavn lyrics from JioSaavn's own catalogue when LRCLIB doesn't cover a track</li>
+            <li>Mini player fixed: controls respond, native dragging from artwork/title, no more CPU spike while scrubbing</li>
           </ul>
         ]]>
       </description>
