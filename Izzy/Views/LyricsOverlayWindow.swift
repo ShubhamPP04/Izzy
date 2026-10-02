@@ -27,10 +27,18 @@ final class LyricsOverlayController: ObservableObject {
     private var cachedVideoId: String?
 
     private var panel: NSPanel?
-    /// 🖱️ Panel origin when the current drag began (nil = not dragging).
-    private var dragBaseOrigin: NSPoint?
+    /// 🔍 UI scale for the overlay (fonts + panel size), persisted.
+    @Published var scale: Double {
+        didSet {
+            guard scale != oldValue else { return }
+            UserDefaults.standard.set(scale, forKey: "lyricsOverlayScale")
+        }
+    }
 
-    private init() {}
+    private init() {
+        let saved = UserDefaults.standard.double(forKey: "lyricsOverlayScale")
+        scale = min(max(saved > 0 ? saved : 1.0, 0.6), 2.2)
+    }
 
     // MARK: Visibility
 
@@ -53,10 +61,10 @@ final class LyricsOverlayController: ObservableObject {
 
     /// 🏗️ Build the borderless, non-activating overlay panel.
     private func makePanel() {
-        let size = NSSize(width: 600, height: 140)
+        let size = currentSize()
         let screenFrame = NSScreen.main?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1280, height: 800)
 
-        // 📍 Bottom-center of the main screen, a little above the dock.
+        // 📍 Default: bottom-center of the main screen, a little above the dock.
         let origin = NSPoint(
             x: screenFrame.midX - size.width / 2,
             y: screenFrame.minY + 24
@@ -69,7 +77,6 @@ final class LyricsOverlayController: ObservableObject {
             defer: false
         )
         overlayPanel.level = .floating
-        overlayPanel.isMovableByWindowBackground = true
         overlayPanel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary]
         overlayPanel.hidesOnDeactivate = false
         overlayPanel.isOpaque = false
@@ -79,38 +86,57 @@ final class LyricsOverlayController: ObservableObject {
         overlayPanel.ignoresMouseEvents = false
         overlayPanel.becomesKeyOnlyIfNeeded = true
 
-        // 🖱️ NSHostingView reports mouseDownCanMoveWindow == false, which
-        // disables isMovableByWindowBackground for borderless panels — this
-        // subclass re-enables window dragging from anywhere on the chrome.
+        // 🖱️ AppKit mouse-event dragging (see OverlayHostingView) — smoothest
+        // possible: native event rate, no SwiftUI gesture coalescing.
+        overlayPanel.isMovableByWindowBackground = false
         overlayPanel.contentView = OverlayHostingView(rootView: LyricsOverlayView(controller: self))
+        restoreFrame(into: overlayPanel)
         panel = overlayPanel
     }
 
-    // MARK: Dragging
+    // MARK: Sizing & Persistence
 
-    /// 🖱️ Explicit drag handling: isMovableByWindowBackground + the hosting
-    /// view override proved unreliable for a borderless panel with SwiftUI
-    /// material content, so the view drives the frame directly. SwiftUI
-    /// translations run top-down, NSPanel coordinates bottom-up — hence the
-    /// flipped Y. The panel is clamped to the visible screen.
-    func drag(with translation: CGSize) {
-        guard let panel else { return }
-        if dragBaseOrigin == nil {
-            dragBaseOrigin = NSPoint(x: panel.frame.minX, y: panel.frame.minY)
-        }
-        let base = dragBaseOrigin!
-        let visible = NSScreen.main?.visibleFrame ?? panel.screen?.visibleFrame
-        var x = base.x + translation.width
-        var y = base.y - translation.height
-        if let visible {
-            x = min(max(x, visible.minX), visible.maxX - panel.frame.width)
-            y = min(max(y, visible.minY), visible.maxY - panel.frame.height)
-        }
-        panel.setFrameOrigin(NSPoint(x: x, y: y))
+    /// Base size the scale multiplies.
+    static let baseSize = NSSize(width: 600, height: 140)
+
+    func currentSize() -> NSSize {
+        NSSize(width: Self.baseSize.width * scale, height: Self.baseSize.height * scale)
     }
 
-    func endDrag() {
-        dragBaseOrigin = nil
+    /// 🔍 Live resize from the grip; keeps the top-left corner pinned so the
+    /// text stays anchored where the user is looking.
+    func applyScale(_ newScale: Double) {
+        let clamped = min(max(newScale, 0.6), 2.2)
+        guard let panel, abs(clamped - scale) > 0.001 else { return }
+        let oldFrame = panel.frame
+        let newSize = NSSize(width: Self.baseSize.width * clamped,
+                             height: Self.baseSize.height * clamped)
+        let newFrame = NSRect(x: oldFrame.minX,
+                              y: oldFrame.maxY - newSize.height,
+                              width: newSize.width,
+                              height: newSize.height)
+        scale = clamped
+        panel.setFrame(newFrame, display: true)
+        persistFrame()
+        objectWillChange.send()
+    }
+
+    func persistFrame() {
+        guard let panel else { return }
+        UserDefaults.standard.set(NSStringFromRect(panel.frame), forKey: "lyricsOverlayFrame")
+    }
+
+    /// Restores the saved frame (position + size) clamped on-screen.
+    private func restoreFrame(into target: NSPanel) {
+        guard let saved = UserDefaults.standard.string(forKey: "lyricsOverlayFrame") else { return }
+        var frame = NSRectFromString(saved)
+        if let visible = NSScreen.main?.visibleFrame {
+            frame.size.width = min(frame.width, visible.width)
+            frame.size.height = min(frame.height, visible.height)
+            frame.origin.x = min(max(frame.origin.x, visible.minX), visible.maxX - frame.width)
+            frame.origin.y = min(max(frame.origin.y, visible.minY), visible.maxY - frame.height)
+        }
+        target.setFrame(frame, display: false)
     }
 
     // MARK: Lyrics Fetching
@@ -163,6 +189,8 @@ struct LyricsOverlayView: View {
 
     // ⏸️ Frozen line index while paused — lets the timeline skip recompute work.
     @State private var frozenLineIndex: Int?
+    // 🔍 Scale when the current resize gesture began.
+    @State private var dragStartScale: Double?
 
     var body: some View {
         // ⏱️ ~20fps while playing (interpolated clock → line changes land on
@@ -197,23 +225,34 @@ struct LyricsOverlayView: View {
             .fill(.ultraThinMaterial)
             .overlay {
                 overlayText
-                    .padding(.horizontal, 20)
-                    .padding(.vertical, 12)
+                    .padding(.horizontal, 20 * controller.scale)
+                    .padding(.vertical, 12 * controller.scale)
             }
             .overlay {
                 RoundedRectangle(cornerRadius: 16)
                     .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
             }
-            // 🖱️ Drag the panel from anywhere on the chrome.
+            .overlay(alignment: .bottomTrailing) {
+                resizeGrip
+            }
+    }
+
+    /// 🔍 Bottom-right grip: drag to resize (fonts + panel scale together).
+    private var resizeGrip: some View {
+        Image(systemName: "arrow.down.right")
+            .font(.system(size: 10, weight: .bold))
+            .foregroundColor(.secondary.opacity(0.5))
+            .padding(6)
+            .contentShape(Rectangle())
             .gesture(
-                DragGesture(minimumDistance: 2)
+                DragGesture(minimumDistance: 1)
                     .onChanged { value in
-                        controller.drag(with: value.translation)
+                        if dragStartScale == nil { dragStartScale = controller.scale }
+                        controller.applyScale((dragStartScale ?? 1.0) + value.translation.width / 300)
                     }
-                    .onEnded { _ in
-                        controller.endDrag()
-                    }
+                    .onEnded { _ in dragStartScale = nil }
             )
+            .help("Drag to resize")
     }
 
     // MARK: Text
@@ -264,14 +303,14 @@ struct LyricsOverlayView: View {
             let index = displayLineIndex(for: lines)
             VStack(alignment: .leading, spacing: 3) {
                 Text(lines[index].text.isEmpty ? " " : lines[index].text)
-                    .font(.system(size: 18, weight: .semibold))
+                    .font(.system(size: 18 * controller.scale, weight: .semibold))
                     .foregroundColor(.primary)
                     .lineLimit(2)
                     .animation(.easeInOut(duration: 0.3), value: index)
 
                 if index + 1 < lines.count, !lines[index + 1].text.isEmpty {
                     Text(lines[index + 1].text)
-                        .font(.system(size: 13, weight: .medium))
+                        .font(.system(size: 13 * controller.scale, weight: .medium))
                         .foregroundColor(.secondary.opacity(0.6))
                         .lineLimit(1)
                 }
@@ -328,9 +367,41 @@ struct LyricsOverlayView: View {
     }
 }
 
-/// Hosting view that lets the borderless overlay panel be dragged by its
-/// background (NSHostingView reports mouseDownCanMoveWindow == false, which
-/// otherwise disables isMovableByWindowBackground for borderless panels).
+/// Hosting view that drags the borderless overlay with raw AppKit mouse
+/// events — full event-rate tracking, no gesture coalescing, no fighting
+/// between AppKit window-move logic and a SwiftUI DragGesture (the old
+/// approach stuttered).
 final class OverlayHostingView: NSHostingView<LyricsOverlayView> {
-    override var mouseDownCanMoveWindow: Bool { true }
+    private var dragStartOrigin: NSPoint?
+    private var dragStartMouse: NSPoint?
+
+    override var mouseDownCanMoveWindow: Bool { false }
+
+    override func mouseDown(with event: NSEvent) {
+        dragStartOrigin = window?.frame.origin
+        dragStartMouse = NSEvent.mouseLocation
+        super.mouseDown(with: event)
+    }
+
+    override func mouseDragged(with event: NSEvent) {
+        guard let window, let origin = dragStartOrigin, let startMouse = dragStartMouse else {
+            super.mouseDragged(with: event)
+            return
+        }
+        let now = NSEvent.mouseLocation
+        var x = origin.x + (now.x - startMouse.x)
+        var y = origin.y + (now.y - startMouse.y)
+        if let visible = window.screen?.visibleFrame {
+            x = min(max(x, visible.minX), visible.maxX - window.frame.width)
+            y = min(max(y, visible.minY), visible.maxY - window.frame.height)
+        }
+        window.setFrameOrigin(NSPoint(x: x, y: y))
+        rootView.controller.persistFrame()
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        dragStartOrigin = nil
+        dragStartMouse = nil
+        super.mouseUp(with: event)
+    }
 }
