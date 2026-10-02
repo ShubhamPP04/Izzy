@@ -24,6 +24,7 @@
       "version": "1.5.1",
       "date": "2026-10-02",
       "changes": [
+        "In-app updates: Check for Updates now downloads the new version with a progress bar and installs it automatically — no more manual DMG dragging",
         "Fixed the fresh-start Resume button playing the song from the beginning instead of the saved position",
         "Smooth seeking: the time follows your finger while dragging, the thumb no longer snaps back, and seeks land faster",
         "Tidal tracks now start in about a second instead of up to 36 seconds — audio fetching runs in parallel with stream resolution",

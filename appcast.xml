@@ -25,6 +25,7 @@
             <li>Desktop lyrics: native smooth dragging plus a resize grip, with size and position remembered</li>
             <li>JioSaavn lyrics from JioSaavn's own catalogue when LRCLIB doesn't cover a track</li>
             <li>Mini player fixed: controls respond, native dragging from artwork/title, no more CPU spike while scrubbing</li>
+            <li>In-app updates: Check for Updates downloads and installs the new version automatically</li>
           </ul>
         ]]>
       </description>
