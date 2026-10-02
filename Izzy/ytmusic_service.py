@@ -1471,16 +1471,29 @@ class TidalService:
 
     def _primary_get(self, path: str, params: Optional[Dict] = None,
                      timeout: int = 8, headers: Optional[Dict] = None) -> Optional[requests.Response]:
-        """GET the primary Monochrome API host. Returns a Response or None."""
+        """GET the primary Monochrome API host. Returns a Response or None.
+
+        Retries once with a fresh session: the CDN intermittently challenges
+        brand-new TLS sessions (403/5xx), which used to surface as empty
+        search results on a cold app start."""
         if not HAS_REQUESTS:
             return None
-        try:
-            url = f"{self.PRIMARY_API}{path}"
-            return self._get_session().get(url, params=params, timeout=timeout, headers=headers)
-        except requests.exceptions.RequestException as e:
-            logger.error(f"Monochrome API request failed: {path}: {e}")
-            self._reset_session()
-            return None
+        for attempt in range(2):
+            try:
+                url = f"{self.PRIMARY_API}{path}"
+                response = self._get_session().get(url, params=params, timeout=timeout, headers=headers)
+                if response.status_code == 200 or attempt == 1:
+                    return response
+                # Challenged (403/5xx) — fresh connection and retry once.
+                logger.warning(f"Monochrome API challenged ({response.status_code}) {path}; retrying")
+                self._reset_session()
+                time.sleep(0.25)
+            except requests.exceptions.RequestException as e:
+                logger.error(f"Monochrome API request failed: {path}: {e}")
+                self._reset_session()
+                if attempt == 1:
+                    return None
+        return None
 
     def _get_next_api(self) -> str:
         """Rotate to next API endpoint on failure"""
