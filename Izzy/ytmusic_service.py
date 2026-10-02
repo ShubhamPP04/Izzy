@@ -869,6 +869,45 @@ class JioSaavnService:
                 'error': str(e)
             }
     
+    def _fetch_native_jiosaavn_lyrics(self, video_id: str) -> Optional[str]:
+        """Fetch lyrics from JioSaavn's own web API (lyrics.getLyrics).
+
+        The response is HTML-ish text ('<br>' line breaks); returns plain text
+        or None. The endpoint requires a browser User-Agent.
+        """
+        if not HAS_REQUESTS or not video_id:
+            return None
+        try:
+            response = requests.get(
+                "https://www.jiosaavn.com/api.php",
+                params={
+                    '__call': 'lyrics.getLyrics',
+                    'lyrics_id': video_id,
+                    'api_version': '4',
+                    '_format': 'json',
+                    '_marker': '0?',
+                },
+                headers={
+                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36',
+                    'Accept': 'application/json',
+                },
+                timeout=8
+            )
+            if response.status_code != 200:
+                return None
+            data = response.json()
+            lyrics = data.get('lyrics') or data.get('data') or ''
+            if not isinstance(lyrics, str) or len(lyrics.strip()) < 10:
+                return None
+            lyrics = re.sub(r'<br\s*/?>', '\n', lyrics, flags=re.IGNORECASE)
+            lyrics = re.sub(r'<[^>]+>', '', lyrics)
+            if HAS_HTML:
+                lyrics = html.unescape(lyrics)
+            return lyrics.strip()
+        except Exception as e:
+            logger.error(f"JioSaavn native lyrics failed: {e}")
+            return None
+
     def get_lyrics(self, video_id: str, track_title: str = None, artist_name: str = None) -> Dict[str, Any]:
         """Synced lyrics via LRCLIB first, then JioSaavn's native (plain) lyrics."""
         try:
@@ -894,11 +933,24 @@ class JioSaavnService:
                 artist = ', '.join(a for a in artist if a)
             artist = (artist or '').split(',')[0].strip()
 
-            # This API mirror exposes no lyrics text of its own, so LRCLIB
-            # (synced when available) is the lyrics source for JioSaavn too.
+            # LRCLIB first (synced when available)...
             result = fetch_lrclib_lyrics(title, artist)
             if result:
                 return result
+
+            # ...then JioSaavn's own lyrics — the web API carries full lyrics
+            # for most of the Indian catalogue, which is exactly where LRCLIB
+            # is weakest.
+            native = self._fetch_native_jiosaavn_lyrics(video_id)
+            if native:
+                return {
+                    'success': True,
+                    'data': {
+                        'lyrics': native,
+                        'source': 'JioSaavn',
+                        'syncedLyrics': None
+                    }
+                }
 
             return {
                 'success': False,
