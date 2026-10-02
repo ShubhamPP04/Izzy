@@ -1,7 +1,7 @@
 {
   "latest": {
-    "version": "1.5.0",
-    "build": "24",
+    "version": "1.5.1",
+    "build": "25",
     "downloadURL": "https://github.com/ShubhamPP04/Izzy/releases/latest",
     "releaseNotesURL": "https://github.com/ShubhamPP04/Izzy/releases/latest",
     "minimumOSVersion": "14.0",
@@ -20,6 +20,20 @@
     ]
   },
   "releaseNotes": [
+    {
+      "version": "1.5.1",
+      "date": "2026-10-02",
+      "changes": [
+        "Fixed the fresh-start Resume button playing the song from the beginning instead of the saved position",
+        "Smooth seeking: the time follows your finger while dragging, the thumb no longer snaps back, and seeks land faster",
+        "Tidal tracks now start in about a second instead of up to 36 seconds — audio fetching runs in parallel with stream resolution",
+        "Play/pause button no longer sticks on the loading spinner during the first play of a track",
+        "Synced lyrics are smooth: lines change exactly on time with a continuous karaoke fill, and the panel opens on the current line",
+        "Player bar keeps its solid glass background; the lyrics panel no longer overlaps tab content and the window can never extend past the screen",
+        "Desktop lyrics overlay is now draggable anywhere on the pill",
+        "Stalled streams resume immediately instead of waiting 2 seconds"
+      ]
+    },
     {
       "version": "1.5.0",
       "date": "2026-09-30",

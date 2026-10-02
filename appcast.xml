@@ -7,6 +7,33 @@
     <language>en</language>
 
 
+
+    <!-- Version 1.5.1 -->
+    <item>
+      <title>Version 1.5.1</title>
+      <description>
+        <![CDATA[
+          <ul>
+            <li>Fixed the fresh-start Resume button playing the song from the beginning instead of the saved position</li>
+            <li>Smooth seeking: live time preview while dragging, no thumb snap-back, faster seek landing</li>
+            <li>Tidal tracks start in about a second instead of up to 36 seconds</li>
+            <li>Play/pause button no longer sticks on the loading spinner during first play</li>
+            <li>Smooth synced lyrics: lines change exactly on time with a continuous karaoke fill</li>
+            <li>Player bar keeps its solid glass background; lyrics panel no longer overlaps tab content</li>
+            <li>Desktop lyrics overlay is draggable; the window can never extend past the screen</li>
+            <li>Stalled streams resume immediately instead of waiting 2 seconds</li>
+          </ul>
+        ]]>
+      </description>
+      <pubDate>Fri, 02 Oct 2026 10:30:00 +0000</pubDate>
+      <sparkle:version>25</sparkle:version>
+      <sparkle:shortVersionString>1.5.1</sparkle:shortVersionString>
+      <enclosure url="https://github.com/ShubhamPP04/Izzy/releases/download/v1.5.1/Izzy.dmg"
+                 sparkle:version="25"
+                 sparkle:shortVersionString="1.5.1"
+                 type="application/octet-stream" />
+    </item>
+
     <!-- Version 1.5.0 -->
     <item>
       <title>Version 1.5.0</title>
