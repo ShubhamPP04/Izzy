@@ -360,13 +360,7 @@ struct TrackInfoView: View {
                                             playbackManager.pause()
                                         } else {
                                             // Check if we need to resume from a saved position
-                                            if playbackManager.playbackState == .stopped && playbackManager.currentTime > 0 {
-                                                Task {
-                                                    await playbackManager.resumeFromSavedPosition()
-                                                }
-                                            } else {
-                                                playbackManager.resume()
-                                            }
+                                            playbackManager.togglePlayPause()
                                         }
                                     }) {
                                         Image(systemName: playbackManager.isPlaying ? "pause.fill" : "play.fill")
@@ -576,13 +570,7 @@ struct TrackInfoView: View {
                                         playbackManager.pause()
                                     } else {
                                         // Check if we need to resume from a saved position
-                                        if playbackManager.playbackState == .stopped && playbackManager.currentTime > 0 {
-                                            Task {
-                                                await playbackManager.resumeFromSavedPosition()
-                                            }
-                                        } else {
-                                            playbackManager.resume()
-                                        }
+                                        playbackManager.togglePlayPause()
                                     }
                                 }) {
                                     Image(systemName: playbackManager.isPlaying ? "pause.fill" : "play.fill")
@@ -911,13 +899,7 @@ struct ControlButtonsView: View {
                                     playbackManager.pause()
                                 } else {
                                     // Check if we need to resume from a saved position
-                                    if playbackManager.playbackState == .stopped && playbackManager.currentTime > 0 {
-                                        Task {
-                                            await playbackManager.resumeFromSavedPosition()
-                                        }
-                                    } else {
-                                        playbackManager.resume()
-                                    }
+                                    playbackManager.togglePlayPause()
                                 }
                             }) {
                                 Group {
@@ -1023,13 +1005,7 @@ struct ControlButtonsView: View {
                                 playbackManager.pause()
                             } else {
                                 // Check if we need to resume from a saved position
-                                if playbackManager.playbackState == .stopped && playbackManager.currentTime > 0 {
-                                    Task {
-                                        await playbackManager.resumeFromSavedPosition()
-                                    }
-                                } else {
-                                    playbackManager.resume()
-                                }
+                                playbackManager.togglePlayPause()
                             }
                         }) {
                             Group {

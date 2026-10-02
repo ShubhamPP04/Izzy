@@ -166,17 +166,7 @@ struct MiniPlayerView: View {
                     Button(action: { 
                         if manager.playbackState.isPlaying {
                             searchState.playbackManager.pause()
-                        } else {
-                            // Check if we need to resume from a saved position
-                            if manager.playbackState == .stopped && manager.currentTime > 0 {
-                                Task {
-                                    await searchState.playbackManager.resumeFromSavedPosition()
-                                }
-                            } else if searchState.playbackManager.currentTrack != nil {
-                                searchState.playbackManager.resume()
-                            } else {
-                                print("No track to play")
-                            }
+                            searchState.playbackManager.togglePlayPause()
                         }
                     }) {
                         Image(systemName: manager.playbackState.isPlaying ? "pause.fill" : "play.fill")

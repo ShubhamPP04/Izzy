@@ -803,7 +803,14 @@ class PlaybackManager: ObservableObject {
     func resumeFromSavedPosition() async {
         guard currentTrack != nil else { return }
         
-        let savedTime = currentTime
+        var savedTime = currentTime
+        // A position at the very end of the track would resume straight into
+        // the end-of-track path (next track / radio), which reads as "didn't
+        // resume". Back off to the final second so the song finishes
+        // naturally instead.
+        if duration > 0, savedTime > duration - 1 {
+            savedTime = max(duration - 1, 0)
+        }
         print("🎵 Resuming playback from saved position: \(savedTime)")
         await playCurrentTrack(startFromPosition: savedTime)
     }
@@ -916,10 +923,38 @@ class PlaybackManager: ObservableObject {
         bufferTimer = nil
     }
     
+    /// ▶️⏸️ Single source of truth for every play/pause button (player views,
+    /// mini player, menu bar, media keys): always continues from the position
+    /// the user left the song at.
+    func togglePlayPause() {
+        switch playbackState {
+        case .playing:
+            pause()
+        case .paused:
+            resume()
+        case .stopped, .error:
+            if currentTrack != nil, currentTime > 1 {
+                Task { await resumeFromSavedPosition() }
+            } else if currentTrack != nil {
+                Task { await playCurrentTrack() }
+            }
+        case .buffering:
+            // Buffering: pausing is safe; resuming a buffered track resumes.
+            if isPlaying { pause() } else { resume() }
+        }
+    }
+    
     func resume() {
         // 😴 A manual resume after a sleep-at-track-end pause opts back into
         // normal end-of-track handling.
         isSleepTrackEndHandled = false
+        // ⛑️ No live player but a track + position exist (restored session,
+        // post-error): rebuild from the saved position instead of doing
+        // nothing or restarting from zero.
+        if (player == nil || playerItem == nil), currentTrack != nil, currentTime > 1 {
+            Task { await resumeFromSavedPosition() }
+            return
+        }
         player?.play()
         playbackState = .playing
         // 🎤 Time observer ticks skip while paused — re-anchor the smooth

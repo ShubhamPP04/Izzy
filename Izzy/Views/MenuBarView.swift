@@ -177,16 +177,7 @@ struct MenuBarView: View {
                         if searchState.playbackManager.playbackState == .playing {
                             searchState.playbackManager.pause()
                         } else {
-                            // Check if we need to resume from a saved position
-                            if searchState.playbackManager.playbackState == .stopped && searchState.playbackManager.currentTime > 0 {
-                                Task {
-                                    await searchState.playbackManager.resumeFromSavedPosition()
-                                }
-                            } else if searchState.playbackManager.currentTrack != nil {
-                                searchState.playbackManager.resume()
-                            } else {
-                                print("No track to play")
-                            }
+                            searchState.playbackManager.togglePlayPause()
                         }
                     }) {
                         Image(systemName: searchState.playbackManager.playbackState == .playing ? "pause.fill" : "play.fill")
