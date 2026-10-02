@@ -366,13 +366,54 @@ class PlaybackManager: ObservableObject {
             return
         }
         
+        // Check if video ID is valid
+        guard !track.videoId.isEmpty else {
+            await MainActor.run {
+                self.playbackState = .error("Invalid video ID")
+                self.isBuffering = false
+            }
+            return
+        }
+        
+        // ⚡ TIDAL FAST PATH: the direct lossless FLAC URL is deterministic
+        // (Monochrome's /track/<id>), so the player starts fetching audio
+        // IMMEDIATELY — in parallel with stream resolution, which then only
+        // reconciles the quality badge and duration. Real-world players never
+        // serialize metadata resolution ahead of the media fetch. Atmos is
+        // excluded: it needs the pool manifests and the sequential path.
+        if track.musicSource == "tidal", !TidalSettings.dolbyAtmos {
+            // Keep in sync with TidalService.PRIMARY_API in ytmusic_service.py.
+            let directURL = "https://tracks.monochrome.st/track/\(track.videoId)"
+            var fastStream = StreamInfo(
+                url: directURL,
+                title: track.title,
+                duration: track.duration,
+                quality: "LOSSLESS",
+                mimeType: "audio/flac"
+            )
+            fastStream.needsByteProxy = true
+            print("⚡ Tidal fast path: starting player on deterministic URL")
+            await MainActor.run {
+                guard expectedId == self.currentPlaybackId else { return }
+                self.setupPlayerWithPrefetch(with: fastStream, track: track, startFromPosition: startFromPosition)
+            }
+            
+            // Metadata reconciliation in parallel — never blocks audio.
+            let reconciled = try? await getStreamInfoWithCaching(videoId: track.videoId, musicSource: "tidal")
+            await MainActor.run {
+                guard expectedId == self.currentPlaybackId, let reconciled else { return }
+                if reconciled.duration > 0, abs(reconciled.duration - self.duration) > 0.5 {
+                    self.duration = reconciled.duration
+                }
+                if let q = reconciled.quality { self.currentStreamQuality = q }
+                if let qi = reconciled.qualityInfo { self.currentStreamQualityInfo = qi }
+                print("⚡ Tidal fast path reconciled: \(reconciled.qualityInfo ?? reconciled.quality ?? "stream")")
+            }
+            return
+        }
+        
         do {
             print("🎵 Getting stream info for video ID: \(track.videoId)")
-            
-            // Check if video ID is valid
-            guard !track.videoId.isEmpty else {
-                throw NSError(domain: "PlaybackError", code: 1, userInfo: [NSLocalizedDescriptionKey: "Invalid video ID"])
-            }
             
             // 🚀 FAST SEEK: Check cache first for instant playback
             let streamInfo = try await getStreamInfoWithCaching(videoId: track.videoId, musicSource: track.musicSource)
@@ -458,8 +499,9 @@ class PlaybackManager: ObservableObject {
         playerItem = item
         player = AVPlayer(playerItem: playerItem)
         
-        // 🚀 PERFECT SEEKING: Configure player for partial buffering
-        player?.automaticallyWaitsToMinimizeStalling = true  // Wait for buffering before playing
+        // 🚀 Buffering is governed by our own fast-start monitor; AVPlayer's
+        // internal wait would stack a second delay on top of it.
+        player?.automaticallyWaitsToMinimizeStalling = false
         player?.volume = volume
         
         // 🚀 Configure player item for better buffering and seeking
@@ -480,15 +522,16 @@ class PlaybackManager: ObservableObject {
         }
         
         // Handle starting position
+        // 🎚️ 100ms pre-tolerance: exact-sample seeks wait for the precise
+        // packet over the network before the first audio byte lands.
         if let startPosition = startFromPosition {
             let startTime = CMTime(seconds: startPosition, preferredTimescale: 600)
-            player?.seek(to: startTime, toleranceBefore: .zero, toleranceAfter: .zero) // Precise seeking
-            print("🚀 Precise seeking to resume position: \(startPosition) seconds")
+            player?.seek(to: startTime, toleranceBefore: CMTime(seconds: 0.1, preferredTimescale: 600), toleranceAfter: .zero)
+            print("🚀 Seeking to resume position: \(startPosition) seconds")
         } else {
-            // For new tracks, start from beginning (0:00)
             let startTime = CMTime.zero
-            player?.seek(to: startTime, toleranceBefore: .zero, toleranceAfter: .zero) // Precise seeking
-            print("🚀 Precise seeking to start (0:00)")
+            player?.seek(to: startTime, toleranceBefore: CMTime(seconds: 0.1, preferredTimescale: 600), toleranceAfter: .zero)
+            print("🚀 Seeking to start (0:00)")
         }
         
         // Set duration immediately
@@ -1364,14 +1407,23 @@ class PlaybackManager: ObservableObject {
     private func handlePlaybackStalled() {
         isBuffering = true
         
-        // Try to resume after a short delay
+        // ⚡ Re-kick playback immediately: a stalled rate=0 player doesn't pull
+        // data as aggressively, so playing right away starts the fetch instead
+        // of idling. (The old 2s sleep added that entire duration to every
+        // seek past the buffered range.)
+        if playbackState.isPlaying {
+            player?.play()
+            applyPlaybackSpeed()
+        }
+        
+        // Fallback kick + keep supervising: the stream stalled once, it may
+        // stall again.
         DispatchQueue.main.asyncAfter(deadline: .now() + 2.0) { [weak self] in
             if self?.playbackState.isPlaying == true {
                 self?.player?.play()
                 self?.applyPlaybackSpeed()
             }
             self?.isBuffering = false
-            // Keep supervising: the stream stalled once, it may stall again.
             self?.startBufferMonitoring()
         }
     }
