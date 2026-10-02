@@ -81,6 +81,11 @@ class PlaybackManager: ObservableObject {
 
     private var player: AVPlayer?
     private var playerItem: AVPlayerItem?
+    // 🎚️ Start position to apply when the player item becomes READY. Seeks
+    // issued on an un-ready resource-loader item are silently dropped by the
+    // media pipeline: the timeline reports the target while the audio plays
+    // from 0 (fresh-start resume started at the beginning because of this).
+    private var pendingStartPosition: TimeInterval?
     // Retained for the life of an HLS (Tidal Hi-Res / Atmos) item: the asset's
     // resource loader only holds its delegate weakly.
     private var hlsPlaylistLoader: TidalHLSPlaylistLoader?
@@ -522,16 +527,13 @@ class PlaybackManager: ObservableObject {
         }
         
         // Handle starting position
-        // 🎚️ 100ms pre-tolerance: exact-sample seeks wait for the precise
-        // packet over the network before the first audio byte lands.
+        // 🎚️ Parked for .readyToPlay — seeking before the item is ready gets
+        // dropped by the media pipeline (timeline shows the target, audio
+        // plays from 0). Pending seeks are 100ms-tolerant so the first audio
+        // byte isn't delayed by an exact-sample wait.
+        pendingStartPosition = startFromPosition ?? 0
         if let startPosition = startFromPosition {
-            let startTime = CMTime(seconds: startPosition, preferredTimescale: 600)
-            player?.seek(to: startTime, toleranceBefore: CMTime(seconds: 0.1, preferredTimescale: 600), toleranceAfter: .zero)
-            print("🚀 Seeking to resume position: \(startPosition) seconds")
-        } else {
-            let startTime = CMTime.zero
-            player?.seek(to: startTime, toleranceBefore: CMTime(seconds: 0.1, preferredTimescale: 600), toleranceAfter: .zero)
-            print("🚀 Seeking to start (0:00)")
+            print("🚀 Start position parked for ready: \(startPosition) seconds")
         }
         
         // Set duration immediately
@@ -685,7 +687,7 @@ class PlaybackManager: ObservableObject {
                 
                 if shouldStartFast {
                     hasStartedPlayback = true
-                    print("🚀 Fast start! Buffered: \(String(format: "%.1f", bufferedSeconds))s, starting playback immediately")
+                    print("🚀 Fast start! Buffered: \(String(format: "%.1f", bufferedSeconds))s, starting playback immediately; player at \(self.player?.currentTime().seconds ?? -1)s")
                     self.player?.play()
                     self.playbackState = .playing
                     self.isBuffering = false  // clear the pre-play buffering state
@@ -1305,6 +1307,17 @@ class PlaybackManager: ObservableObject {
         switch status {
         case .readyToPlay:
             print("🎵 Player ready to play")
+            // 🎚️ Apply the parked start position now — the item is ready, so
+            // the seek actually lands in the media pipeline.
+            if let start = pendingStartPosition {
+                pendingStartPosition = nil
+                player?.seek(to: CMTime(seconds: start, preferredTimescale: 600),
+                             toleranceBefore: CMTime(seconds: 0.1, preferredTimescale: 600),
+                             toleranceAfter: .zero)
+                currentTime = start
+                anchorSmoothTime()
+                print("🚀 Applied parked start position: \(start) seconds")
+            }
             // For partial loading, we wait for buffering to complete before playing
             // Buffering state is now handled by our timer-based monitoring
             updateNowPlayingInfo()
@@ -1466,6 +1479,8 @@ class PlaybackManager: ObservableObject {
     // MARK: - Cleanup
     
     private func cleanup() {
+        // 🎚️ A parked start position belongs to the item being torn down.
+        pendingStartPosition = nil
         // 😴 Abort any in-flight sleep fade so it can't pause a freshly-set-up
         // player; the next setup restores volume via player?.volume = volume.
         isSleepFading = false

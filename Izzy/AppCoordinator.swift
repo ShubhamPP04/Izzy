@@ -156,6 +156,17 @@ class AppCoordinator: ObservableObject {
         // The floating panel will be created when the hotkey is pressed
         print("🚀 Izzy app initialized - ready for hotkey (\(hotkeyManager.currentShortcutDescription))")
 
+        // 🧪 Repro harness: launch with --auto-resume-test to drive the exact
+        // fresh-start "Resume" button flow with full logging.
+        if ProcessInfo.processInfo.arguments.contains("--auto-resume-test") {
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                print("🧪 TEST: tapping Resume (resumeFromSavedPosition)")
+                let pm = self.searchState.playbackManager
+                print("🧪 pre-resume: state=\(pm.playbackState) time=\(pm.currentTime) dur=\(pm.duration) track=\(pm.currentTrack?.title ?? "nil")")
+                Task { await pm.resumeFromSavedPosition() }
+            }
+        }
+
         // Prewarm the floating panel so the first hotkey press is instant
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) {
             self.windowManager.prewarmWindow()
