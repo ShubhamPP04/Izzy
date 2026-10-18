@@ -12,6 +12,7 @@ import SwiftUI
 /// Inline panel displaying lyrics for the current track, synced with playback timestamps.
 struct LyricsView: View {
     @ObservedObject var playbackManager: PlaybackManager
+    @ObservedObject private var playbackClock = PlaybackManager.shared.clock
     @ObservedObject private var overlayController = LyricsOverlayController.shared
     
     @State private var lyrics: LyricsData?
@@ -156,7 +157,10 @@ struct LyricsView: View {
             // the karaoke fill is continuous — driven by the interpolated
             // clock, not the 1s battery-saving observer tick. Paused lyrics
             // tick at 1fps (nothing moves).
-            TimelineView(.periodic(from: .now, by: playbackManager.playbackState.isPlaying ? 0.05 : 0.5)) { _ in
+            TimelineView(.animation(
+                minimumInterval: ProcessInfo.processInfo.isLowPowerModeEnabled ? 0.25 : 0.1,
+                paused: !playbackManager.playbackState.isPlaying || !playbackManager.showLyrics
+            )) { _ in
                 let smoothTime = playbackManager.interpolatedTime()
                 let index = Self.lineIndex(at: smoothTime, lines: lines)
                 let progress = Self.lineProgress(at: smoothTime, lines: lines, index: index)
@@ -274,7 +278,7 @@ struct LyricsView: View {
                     Spacer(minLength: 20)
                 }
             }
-            .onChange(of: playbackManager.currentTime) { _, _ in
+            .onChange(of: playbackClock.currentTime) { _, _ in
                 updateEstimatedLine(lines: lyrics.lines, scrollProxy: scrollProxy)
             }
         }

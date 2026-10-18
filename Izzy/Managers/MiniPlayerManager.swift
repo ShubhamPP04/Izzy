@@ -96,7 +96,7 @@ class MiniPlayerManager: ObservableObject {
             .store(in: &cancellables)
         
         // Listen for time changes
-        searchState.playbackManager.$currentTime
+        searchState.playbackManager.clock.$currentTime
             .receive(on: DispatchQueue.main)
             .sink { [weak self] (time: TimeInterval) in
                 self?.currentTime = time

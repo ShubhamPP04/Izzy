@@ -9,6 +9,7 @@ import Foundation
 import MediaPlayer
 import AppKit
 import AVFoundation
+import ImageIO
 
 class NowPlayingManager: ObservableObject {
     static let shared = NowPlayingManager()
@@ -182,9 +183,11 @@ class NowPlayingManager: ObservableObject {
         // 🔋 Load artwork on background queue to avoid blocking main thread
         DispatchQueue.global(qos: .utility).async {
             URLSession.shared.dataTask(with: url) { [weak self] data, response, error in
+                // Control Center art is small. Decode a 400px thumbnail
+                // instead of a full Hi-Res cover.
                 guard let data = data,
                       error == nil,
-                      let image = NSImage(data: data) else {
+                      let image = Self.downsampledArtwork(data, maxPixel: 400) else {
                     DispatchQueue.main.async {
                         completion(nil)
                     }
@@ -205,6 +208,24 @@ class NowPlayingManager: ObservableObject {
         }
     }
     
+    /// ImageIO thumbnail decode. Full NSImage(data:) expands multi-megapixel
+    /// covers on the CPU for a widget that shows a few hundred points.
+    private static func downsampledArtwork(_ data: Data, maxPixel: CGFloat) -> NSImage? {
+        let sourceOptions: [CFString: Any] = [kCGImageSourceShouldCache: false]
+        guard let source = CGImageSourceCreateWithData(data as CFData, sourceOptions as CFDictionary) else {
+            return nil
+        }
+        let thumbOptions: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixel,
+            kCGImageSourceCreateThumbnailWithTransform: true
+        ]
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(source, 0, thumbOptions as CFDictionary) else {
+            return nil
+        }
+        return NSImage(cgImage: cgImage, size: NSSize(width: cgImage.width, height: cgImage.height))
+    }
+
     // MARK: - Remote Command Center
     
     private func setupRemoteCommandCenter() {

@@ -194,6 +194,9 @@ struct ErrorMessageView: View {
 struct TrackInfoView: View {
     let track: Track
     @ObservedObject var playbackManager: PlaybackManager
+    /// Scrubber clock. Observing this, not PlaybackManager, keeps the rest of
+    /// the window from redrawing on every playhead tick.
+    @ObservedObject private var playbackClock = PlaybackManager.shared.clock
     @State private var isExpanded: Bool
     @State private var isDragging = false
     @State private var dragValue: Double = 0
@@ -220,6 +223,7 @@ struct TrackInfoView: View {
     }
     
     var body: some View {
+        let _ = playbackClock.currentTime
         Group {
             if UserDefaults.standard.bool(forKey: "minimalPlaybackPlayer") {
                 // New minimal style with expandable album art
@@ -773,6 +777,7 @@ struct TrackInfoView: View {
 
 struct ProgressBarView: View {
     @ObservedObject var playbackManager: PlaybackManager
+    @ObservedObject private var playbackClock = PlaybackManager.shared.clock
     @State private var isDragging = false
     @State private var dragValue: Double = 0
     @State private var lastDragUpdate: TimeInterval = 0  // Battery efficient: throttle drag updates
@@ -780,6 +785,7 @@ struct ProgressBarView: View {
     private let dragUpdateThrottle: TimeInterval = 0.05  // 20 FPS max for battery efficiency
     
     var body: some View {
+        let _ = playbackClock.currentTime
         Group {
             if UserDefaults.standard.bool(forKey: "minimalPlaybackPlayer") {
                 // Hidden in minimal mode since progress is shown in TrackInfoView

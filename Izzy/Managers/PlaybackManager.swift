@@ -39,12 +39,25 @@ private class CachedStreamInfo {
     }
 }
 
+/// Playhead clock, separate from PlaybackManager.
+/// A 1 Hz tick on the manager redraws every screen that observes it (Home,
+/// search, library) even when those screens do not show the time. Only the
+/// scrubber, lyrics, and the mini/menu players subscribe to this.
+final class PlaybackClock: ObservableObject {
+    @Published var currentTime: TimeInterval = 0
+}
+
 class PlaybackManager: ObservableObject {
     static let shared = PlaybackManager()
     
     @Published var currentTrack: Track?
     @Published var playbackState: PlaybackState = .stopped
-    @Published var currentTime: TimeInterval = 0
+    /// Live playhead. Not @Published on this object — see PlaybackClock.
+    var currentTime: TimeInterval {
+        get { clock.currentTime }
+        set { clock.currentTime = newValue }
+    }
+    let clock = PlaybackClock()
     @Published var showLyrics: Bool = false
     @Published var duration: TimeInterval = 0
     @Published var isBuffering: Bool = false
@@ -118,6 +131,11 @@ class PlaybackManager: ObservableObject {
     private var isSleepFading = false
     private var isSleepTrackEndHandled = false
     
+    /// Low Power Mode: smaller buffer, no next-track prefetch.
+    private static var conservePower: Bool {
+        ProcessInfo.processInfo.isLowPowerModeEnabled
+    }
+
     private let queueManager = QueueManager()
     private let pythonService = PythonServiceManager.shared
     private let nowPlayingManager = NowPlayingManager.shared
@@ -511,18 +529,15 @@ class PlaybackManager: ObservableObject {
         
         // 🚀 Configure player item for better buffering and seeking
         if let playerItem = playerItem {
-            // Prefer forward buffer for smooth playback - 2 minutes ahead for better performance with long songs
-            playerItem.preferredForwardBufferDuration = 120.0  // 2 minutes ahead
-            
-            // Configure for better buffering behavior with long songs
-            // This API is only available on macOS 15.0+
+            // ~30s is enough for a song to ride out a hiccup, then the radio
+            // can sleep. Two minutes of Hi-Res keeps the network awake. Low
+            // Power Mode buffers even less and skips the next-track prefetch.
+            playerItem.preferredForwardBufferDuration = Self.conservePower ? 8 : 30
+
             if #available(macOS 15.0, *) {
-                playerItem.canUseNetworkResourcesForLiveStreamingWhilePaused = true
-            }
-            
-            // Set maximum duration for complete song loading
-            if #available(macOS 13.0, *) {
-                playerItem.preferredMaximumResolution = CGSize(width: 1920, height: 1080)
+                // Pausing should stop fetching. Leaving this on keeps the
+                // radio up for a stream nobody is hearing.
+                playerItem.canUseNetworkResourcesForLiveStreamingWhilePaused = false
             }
         }
         
@@ -630,6 +645,8 @@ class PlaybackManager: ObservableObject {
             print("🚀 Next track is a local file - nothing to prefetch")
             return
         }
+
+        guard !Self.conservePower else { return }
         
         print("🚀 Starting prefetch for next track: \(nextTrack.title)")
         
@@ -1283,15 +1300,6 @@ class PlaybackManager: ObservableObject {
             }
             .store(in: &playerCancellables)
         
-        // Add boundary time observer for more precise end detection
-        if duration > 0 {
-            let endTime = CMTime(seconds: max(0, duration - 0.5), preferredTimescale: 600)
-            player.addBoundaryTimeObserver(forTimes: [NSValue(time: endTime)], queue: .main) {
-                print("🎵 Boundary time observer triggered - song near end")
-                // Don't auto-advance here, let the main end detection handle it
-            }
-        }
-        
         // Buffer status is now handled by our timer-based monitoring
         
         // Stalled playback observer
@@ -1321,12 +1329,7 @@ class PlaybackManager: ObservableObject {
             // For partial loading, we wait for buffering to complete before playing
             // Buffering state is now handled by our timer-based monitoring
             updateNowPlayingInfo()
-            
-            // Test remote commands after starting playback
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) {
-                self.nowPlayingManager.testRemoteCommands()
-            }
-            
+
         case .failed:
             let errorMessage: String
             if let error = playerItem?.error {

@@ -195,7 +195,10 @@ struct LyricsOverlayView: View {
     var body: some View {
         // ⏱️ ~20fps while playing (interpolated clock → line changes land on
         // time), 1fps when paused (nothing moves).
-        TimelineView(.periodic(from: .now, by: playbackManager.playbackState.isPlaying ? 0.05 : 0.5)) { _ in
+        TimelineView(.animation(
+            minimumInterval: ProcessInfo.processInfo.isLowPowerModeEnabled ? 0.25 : 0.1,
+            paused: !playbackManager.playbackState.isPlaying
+        )) { _ in
             overlayContent
         }
         .onChange(of: playbackManager.currentTrack?.videoId) { _, _ in

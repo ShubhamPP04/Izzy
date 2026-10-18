@@ -51,7 +51,7 @@ final class StatsService: ObservableObject {
         load()
 
         // 🔋 Accumulate listened seconds from the player's time ticks.
-        PlaybackManager.shared.$currentTime
+        PlaybackManager.shared.clock.$currentTime
             .receive(on: DispatchQueue.main)
             .sink { [weak self] time in
                 self?.accumulate(time: time)

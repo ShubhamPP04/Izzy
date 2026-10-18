@@ -8,6 +8,29 @@
 
 
 
+    <!-- Version 1.5.2 -->
+    <item>
+      <title>Version 1.5.2</title>
+      <description>
+        <![CDATA[
+          <ul>
+            <li>Playback no longer redraws Home, search, and the library once a second</li>
+            <li>Audio buffer is 30 seconds instead of 2 minutes; Low Power Mode uses 8 seconds and skips prefetch</li>
+            <li>Pausing a song stops the download</li>
+            <li>Lyrics redraw at 10 frames a second, only while the panel is open and playing</li>
+            <li>Now Playing artwork is decoded at 400 pixels</li>
+          </ul>
+        ]]>
+      </description>
+      <pubDate>Sun, 18 Oct 2026 05:30:00 +0000</pubDate>
+      <sparkle:version>26</sparkle:version>
+      <sparkle:shortVersionString>1.5.2</sparkle:shortVersionString>
+      <enclosure url="https://github.com/ShubhamPP04/Izzy/releases/download/v1.5.2/Izzy.dmg"
+                 sparkle:version="26"
+                 sparkle:shortVersionString="1.5.2"
+                 type="application/octet-stream" />
+    </item>
+
     <!-- Version 1.5.1 -->
     <item>
       <title>Version 1.5.1</title>

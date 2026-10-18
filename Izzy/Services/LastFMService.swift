@@ -58,7 +58,7 @@ final class LastFMService: ObservableObject {
             }
             .store(in: &cancellables)
 
-        PlaybackManager.shared.$currentTime
+        PlaybackManager.shared.clock.$currentTime
             .receive(on: DispatchQueue.main)
             .sink { [weak self] time in
                 self?.accumulate(time: time)

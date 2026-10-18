@@ -1,7 +1,7 @@
 {
   "latest": {
-    "version": "1.5.1",
-    "build": "25",
+    "version": "1.5.2",
+    "build": "26",
     "downloadURL": "https://github.com/ShubhamPP04/Izzy/releases/latest",
     "releaseNotesURL": "https://github.com/ShubhamPP04/Izzy/releases/latest",
     "minimumOSVersion": "14.0",
@@ -20,6 +20,17 @@
     ]
   },
   "releaseNotes": [
+    {
+      "version": "1.5.2",
+      "date": "2026-10-18",
+      "changes": [
+        "Playback no longer redraws Home, search, and the library once a second. The playhead lives on its own clock, so only the scrubber, lyrics, mini player, and menu bar update",
+        "Audio buffer is 30 seconds instead of 2 minutes, so the radio can sleep between fetches. Low Power Mode uses 8 seconds and does not prefetch the next track",
+        "Pausing a song stops the download instead of keeping the network awake",
+        "Lyrics redraw at 10 frames a second, and only while the panel is open and a song is playing. Low Power Mode uses 4 frames a second",
+        "Now Playing artwork is decoded at 400 pixels instead of expanding full-size covers"
+      ]
+    },
     {
       "version": "1.5.1",
       "date": "2026-10-02",

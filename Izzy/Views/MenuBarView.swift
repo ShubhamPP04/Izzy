@@ -109,6 +109,7 @@ struct HoverVolumeSlider: View {
 struct MenuBarView: View {
     @ObservedObject var searchState: SearchState
     @ObservedObject var windowManager: WindowManager
+    @ObservedObject private var playbackClock = PlaybackManager.shared.clock
     let onClose: () -> Void
     
     var body: some View {
@@ -146,7 +147,7 @@ struct MenuBarView: View {
                             .foregroundColor(.secondary)
                         
                         // Progress bar
-                        ProgressView(value: searchState.playbackManager.currentTime, 
+                        ProgressView(value: playbackClock.currentTime,
                                    total: searchState.playbackManager.duration)
                             .progressViewStyle(LinearProgressViewStyle(tint: .blue))
                             .scaleEffect(x: 1, y: 0.5)
